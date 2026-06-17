@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chat-buddy"
+version = "0.1.0"
+description = "A ChatGPT-like experience, using a local LLM with basic memory"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name="babaksoft", email="babak.eslamieh@gmail.com" },
+]
+keywords = ["general", "utility"]
+classifiers = [
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+license-files = ["LICEN[CS]E*"]
+
+dependencies = [
+    "alembic",
+    "arize-phoenix",
+    "boto3",
+    "jupyterlab",
+    "llama-index",
+    "llama-index-callbacks-arize-phoenix",
+    "llama-index-llms-ollama",
+    "notebook",
+    "ollama",
+    "openinference-instrumentation-llama-index",
+    "prometheus_client",
+    "psycopg2",
+    "python-dotenv",
+    "requests",
+    "sentence-transformers",
+    "SQLAlchemy",
+    "streamlit",
+]
+
+[project.urls]
+Homepage = "https://github.com/babaksoft/chat_buddy"
+Issues = "https://github.com/babaksoft/chat_buddy/issues"
+
+[project.optional-dependencies]
+build = [
+    "build",
+    "hatchling"
+]
+
+dev = [
+    "black",
+    "ipykernel",
+    "isort",
+    "mypy",
+    "ruff",
+    "pytest",
+]
+
+[tool.isort]
+profile = "black"
+
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chat_buddy"]
