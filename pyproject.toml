@@ -12,7 +12,7 @@ license = "MIT"
 authors = [
   { name="babaksoft", email="babak.eslamieh@gmail.com" },
 ]
-keywords = ["general", "utility"]
+
 classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.10",
@@ -45,8 +45,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/babaksoft/chat_buddy"
-Issues = "https://github.com/babaksoft/chat_buddy/issues"
+Homepage = "https://github.com/babaksoft/chat-buddy"
+Issues = "https://github.com/babaksoft/chat-buddy/issues"
 
 [project.optional-dependencies]
 build = [
