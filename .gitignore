@@ -8,3 +8,6 @@ __pycache__/
 # Common virtual environment and Jupyter notebook stuff
 .ipynb_checkpoints/
 .venv/
+
+# Application logs
+logs/
