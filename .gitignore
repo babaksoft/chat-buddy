@@ -10,4 +10,4 @@ __pycache__/
 .venv/
 
 # Application logs
-logs/
+**/logs/

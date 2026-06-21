@@ -1,5 +1,0 @@
-[2026-06-21 20:00:32,517] [__main__] [DEBUG] [logging:56] A very low-level information
-[2026-06-21 20:00:32,517] [__main__] [INFO] [logging:57] Some user-friendly information
-[2026-06-21 20:00:32,517] [__main__] [WARNING] [logging:58] Something may be slightly malfunctioning...
-[2026-06-21 20:00:32,518] [__main__] [ERROR] [logging:59] Oh NO! We're in serious trouble here.
-[2026-06-21 20:00:32,518] [__main__] [CRITICAL] [logging:60] Apocalypse now!
