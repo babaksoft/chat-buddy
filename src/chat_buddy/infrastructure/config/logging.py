@@ -51,7 +51,7 @@ def configure_logging() -> None:
     root_logger.addHandler(file_handler)
 
 
-def log_messages():
+def log_messages() -> None:
     logger = logging.getLogger(__name__)
     logger.debug("A very low-level information")
     logger.info("Some user-friendly information")
