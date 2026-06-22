@@ -6,6 +6,7 @@ A conversational AI application for interacting with local LLMs through a persis
 ![Static Badge](https://img.shields.io/badge/category-genai-orange)
 ![Static Badge](https://img.shields.io/badge/framework-llamaindex-orange)
 ![GitHub License](https://img.shields.io/github/license/babaksoft/chat-buddy)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/babaksoft/chat-buddy/ci.yml)
 
 
 ## Goals
