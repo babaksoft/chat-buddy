@@ -63,8 +63,21 @@ dev = [
     "pytest",
 ]
 
+[tool.black]
+target-version = ["py310"]
+
 [tool.isort]
 profile = "black"
+src_paths = ["src", "tests"]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.mypy]
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.hatch.build]
 sources = ["src"]

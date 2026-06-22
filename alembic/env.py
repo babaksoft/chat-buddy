@@ -2,11 +2,11 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
+from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import ORM models so Alembic can discover them via Base.metadata.
 import chat_buddy.infrastructure.db.models  # noqa: F401
-from alembic import context
 from chat_buddy.infrastructure.db.base import Base
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
