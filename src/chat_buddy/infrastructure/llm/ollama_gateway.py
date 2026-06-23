@@ -14,7 +14,7 @@ class OllamaGateway(LLMGateway):
 
     def __init__(
         self,
-        model_name: str,
+        model_name: str = "samantha-mistral:7b",
         host: str = "http://localhost:11434",
     ) -> None:
         """

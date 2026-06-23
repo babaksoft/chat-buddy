@@ -68,7 +68,10 @@ class Message(Base):
     )
 
     role: Mapped[MessageRole] = mapped_column(
-        SqlEnum(MessageRole),
+        SqlEnum(
+            MessageRole,
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
         nullable=False,
     )
 

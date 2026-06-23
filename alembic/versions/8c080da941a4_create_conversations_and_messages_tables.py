@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("conversation_id", sa.Uuid(), nullable=False),
         sa.Column(
-            "role", sa.Enum("USER", "ASSISTANT", name="messagerole"), nullable=False
+            "role", sa.Enum("user", "assistant", name="messagerole"), nullable=False
         ),
         sa.Column("content", sa.String(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

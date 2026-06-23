@@ -1,9 +1,11 @@
 import logging
-from uuid import uuid4
+from uuid import UUID
 
 from chat_buddy.application.schemas import (
+    ChatMessage,
     ChatRequest,
     ChatResponse,
+    ChatRole,
 )
 from chat_buddy.infrastructure.db.models import (
     MessageRole,
@@ -48,7 +50,7 @@ class ChatService:
         request: ChatRequest,
     ) -> ChatResponse:
         """
-        Process a chat request.
+        Process a chat request. Create new conversation if necessary.
 
         Args:
             request:
@@ -58,13 +60,19 @@ class ChatService:
             Assistant response.
         """
 
+        if request.conversation_id is None:
+            conversation = self._repository.create_conversation()
+            conversation_id = conversation.id
+        else:
+            conversation_id = request.conversation_id
+
         logger.info(
             "Processing message for conversation %s.",
-            request.conversation_id,
+            conversation_id,
         )
 
         self._repository.add_message(
-            conversation_id=request.conversation_id,
+            conversation_id=conversation_id,
             role=MessageRole.USER,
             content=request.message,
         )
@@ -74,18 +82,40 @@ class ChatService:
         )
 
         self._repository.add_message(
-            conversation_id=request.conversation_id,
+            conversation_id=conversation_id,
             role=MessageRole.ASSISTANT,
             content=response_text,
         )
 
         logger.info(
             "Generated response for conversation %s.",
-            request.conversation_id,
+            conversation_id,
         )
 
-        # Temporary patch until we ensure conversation exists
         return ChatResponse(
-            conversation_id=request.conversation_id or uuid4(),
+            conversation_id=conversation_id,
             response=response_text,
         )
+
+    def get_messages(self, conversation_id: UUID) -> list[ChatMessage]:
+        """
+        Retrieve messages in a conversation.
+
+        Args:
+            conversation_id:
+                Unique conversation identifier.
+
+        Returns:
+            List of conversation messages ordered
+            from oldest to newest.
+        """
+
+        db_messages = self._repository.get_messages(conversation_id=conversation_id)
+
+        return [
+            ChatMessage(
+                role=ChatRole(msg.role.value),
+                content=msg.content,
+            )
+            for msg in db_messages
+        ]
