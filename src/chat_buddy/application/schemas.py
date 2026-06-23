@@ -36,3 +36,13 @@ class ChatMessage:
 
     role: ChatRole
     content: str
+
+
+@dataclass(slots=True, frozen=True)
+class ConversationSummary:
+    """
+    Summary information for a conversation.
+    """
+
+    id: UUID
+    title: str | None
