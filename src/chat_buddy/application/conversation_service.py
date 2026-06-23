@@ -28,9 +28,7 @@ class ConversationService:
             most recently updated first.
         """
 
-        conversations = (
-            self._repository.list_conversations()
-        )
+        conversations = self._repository.list_conversations()
 
         return [
             ConversationSummary(
@@ -39,3 +37,19 @@ class ConversationService:
             )
             for conversation in conversations
         ]
+
+    def new_conversation(
+        self,
+    ) -> ConversationSummary:
+        """
+        Create a new conversation.
+
+        Returns:
+            Newly created conversation.
+        """
+
+        conversation = self._repository.create_conversation()
+        return ConversationSummary(
+            id=conversation.id,
+            title=conversation.title,
+        )
