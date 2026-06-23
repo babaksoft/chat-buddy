@@ -1,4 +1,5 @@
 import logging
+from uuid import uuid4
 
 from chat_buddy.application.schemas import (
     ChatRequest,
@@ -83,6 +84,8 @@ class ChatService:
             request.conversation_id,
         )
 
+        # Temporary patch until we ensure conversation exists
         return ChatResponse(
+            conversation_id=request.conversation_id or uuid4(),
             response=response_text,
         )

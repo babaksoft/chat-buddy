@@ -122,7 +122,7 @@ class ConversationRepository:
 
     def add_message(
         self,
-        conversation_id: UUID,
+        conversation_id: UUID | None,
         role: MessageRole,
         content: str,
     ) -> Message:

@@ -8,7 +8,7 @@ class ChatRequest:
     User chat request.
     """
 
-    conversation_id: UUID
+    conversation_id: UUID | None
     message: str
 
 
@@ -18,4 +18,5 @@ class ChatResponse:
     Assistant chat response.
     """
 
+    conversation_id: UUID
     response: str

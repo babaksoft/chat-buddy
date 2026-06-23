@@ -3,8 +3,8 @@
 A conversational AI application for interacting with local LLMs through a persistent chat interface.
 
 ![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https://github.com/babaksoft/chat-buddy/raw/refs/heads/master/pyproject.toml)
-![Static Badge](https://img.shields.io/badge/category-genai-orange)
-![Static Badge](https://img.shields.io/badge/framework-llamaindex-orange)
+![Static Badge](https://img.shields.io/badge/category-gen_ai-orange)
+![Static Badge](https://img.shields.io/badge/framework-llama_index-orange)
 ![GitHub License](https://img.shields.io/github/license/babaksoft/chat-buddy)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/babaksoft/chat-buddy/ci.yml)
 
