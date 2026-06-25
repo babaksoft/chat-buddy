@@ -2,9 +2,11 @@ import logging
 from uuid import UUID
 
 from chat_buddy.application.schemas import (
-    ChatMessage,
     ChatRequest,
     ChatResponse,
+)
+from chat_buddy.domain.chat import (
+    ChatMessage,
     ChatRole,
 )
 from chat_buddy.infrastructure.db.models import (
@@ -77,14 +79,13 @@ class ChatService:
             content=request.message,
         )
 
-        response_text = self._llm_gateway.generate(
-            request.message,
-        )
+        messages = self.get_messages(conversation_id)
+        response = self._llm_gateway.generate(messages)
 
         self._repository.add_message(
             conversation_id=conversation_id,
             role=MessageRole.ASSISTANT,
-            content=response_text,
+            content=response,
         )
 
         logger.info(
@@ -94,7 +95,7 @@ class ChatService:
 
         return ChatResponse(
             conversation_id=conversation_id,
-            response=response_text,
+            response=response,
         )
 
     def get_messages(self, conversation_id: UUID) -> list[ChatMessage]:
@@ -110,12 +111,12 @@ class ChatService:
             from oldest to newest.
         """
 
-        db_messages = self._repository.get_messages(conversation_id=conversation_id)
+        messages = self._repository.get_messages(conversation_id=conversation_id)
 
         return [
             ChatMessage(
-                role=ChatRole(msg.role.value),
-                content=msg.content,
+                role=ChatRole(message.role.value),
+                content=message.content,
             )
-            for msg in db_messages
+            for message in messages
         ]

@@ -4,21 +4,16 @@ from chat_buddy.application.chat_service import (
     ChatRequest,
     ChatService,
 )
-from chat_buddy.infrastructure.db.models import (
-    MessageRole,
-)
-from chat_buddy.infrastructure.db.repositories import (
-    ConversationRepository,
-)
-from chat_buddy.infrastructure.llm.base import (
-    LLMGateway,
-)
+from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.infrastructure.db.models import MessageRole
+from chat_buddy.infrastructure.db.repositories import ConversationRepository
+from chat_buddy.infrastructure.llm.base import LLMGateway
 
 
 class FakeGateway(LLMGateway):
     def generate(
         self,
-        prompt: str,
+        messages: list[ChatMessage],
     ) -> str:
         return "Hello from Samantha."
 

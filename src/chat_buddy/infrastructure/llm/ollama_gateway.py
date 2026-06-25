@@ -2,6 +2,7 @@ import logging
 
 from ollama import Client
 
+from chat_buddy.domain.chat import ChatMessage
 from chat_buddy.infrastructure.llm.base import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -33,14 +34,14 @@ class OllamaGateway(LLMGateway):
 
     def generate(
         self,
-        prompt: str,
+        messages: list[ChatMessage],
     ) -> str:
         """
         Generate a response using Ollama.
 
         Args:
-            prompt:
-                Prompt sent to the model.
+            messages:
+                Current conversation history, including the last user message.
 
         Returns:
             Generated response text.
@@ -55,9 +56,10 @@ class OllamaGateway(LLMGateway):
             model=self._model_name,
             messages=[
                 {
-                    "role": "user",
-                    "content": prompt,
-                },
+                    "role": message.role.value,
+                    "content": message.content,
+                }
+                for message in messages
             ],
         )
 

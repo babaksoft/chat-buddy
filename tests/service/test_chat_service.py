@@ -3,15 +3,10 @@ from uuid import uuid4
 
 import pytest
 
-from chat_buddy.application.chat_service import (
-    ChatService,
-)
-from chat_buddy.application.schemas import (
-    ChatRequest,
-)
-from chat_buddy.infrastructure.db.models import (
-    MessageRole,
-)
+from chat_buddy.application.chat_service import ChatService
+from chat_buddy.application.schemas import ChatRequest
+from chat_buddy.domain.chat import ChatRole
+from chat_buddy.infrastructure.db.models import MessageRole
 
 
 def test_chat_returns_llm_response() -> None:
@@ -21,6 +16,7 @@ def test_chat_returns_llm_response() -> None:
     """
 
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from Samantha."
@@ -37,7 +33,7 @@ def test_chat_returns_llm_response() -> None:
 
     response = service.chat(request)
 
-    assert response.response == ("Hello from Samantha.")
+    assert response.response == "Hello from Samantha."
 
 
 def test_chat_persists_user_and_assistant_messages() -> None:
@@ -47,6 +43,7 @@ def test_chat_persists_user_and_assistant_messages() -> None:
     """
 
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from Samantha."
@@ -77,6 +74,12 @@ def test_chat_persists_user_and_assistant_messages() -> None:
 
 def test_chat_passes_message_to_gateway() -> None:
     repository = Mock()
+    repository.get_messages.return_value = [
+        Mock(
+            role=MessageRole.USER,
+            content="Hello",
+        )
+    ]
 
     gateway = Mock()
     gateway.generate.return_value = "Hi"
@@ -93,13 +96,17 @@ def test_chat_passes_message_to_gateway() -> None:
 
     service.chat(request)
 
-    gateway.generate.assert_called_once_with(
-        "Hello",
-    )
+    gateway.generate.assert_called_once()
+
+    messages = gateway.generate.call_args.args[0]
+    assert len(messages) == 1
+    assert messages[0].role == ChatRole.USER
+    assert messages[0].content == "Hello"
 
 
 def test_chat_uses_conversation_id_for_persistence() -> None:
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hi"
@@ -127,6 +134,7 @@ def test_chat_uses_conversation_id_for_persistence() -> None:
 
 def test_chat_persists_assistant_response_content() -> None:
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Response"
@@ -150,6 +158,7 @@ def test_chat_persists_assistant_response_content() -> None:
 
 def test_chat_propagates_gateway_errors() -> None:
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.side_effect = RuntimeError("Ollama unavailable")
@@ -170,6 +179,7 @@ def test_chat_propagates_gateway_errors() -> None:
 
 def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
     repository = Mock()
+    repository.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.side_effect = RuntimeError()
@@ -192,3 +202,56 @@ def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
     first_call = repository.add_message.call_args_list[0]
 
     assert first_call.kwargs["role"] == MessageRole.USER
+
+
+def test_chat_passes_conversation_history_to_gateway() -> None:
+    """
+    Verify that the complete conversation history
+    is passed to the language model gateway.
+    """
+
+    repository = Mock()
+    repository.get_messages.return_value = [
+        Mock(
+            role=MessageRole.USER,
+            content="Hello",
+        ),
+        Mock(
+            role=MessageRole.ASSISTANT,
+            content="Hi there!",
+        ),
+        Mock(
+            role=MessageRole.USER,
+            content="How are you?",
+        ),
+    ]
+
+    gateway = Mock()
+    gateway.generate.return_value = "I'm doing well."
+
+    service = ChatService(
+        repository=repository,
+        llm_gateway=gateway,
+    )
+
+    request = ChatRequest(
+        conversation_id=uuid4(),
+        message="How are you?",
+    )
+
+    service.chat(request)
+
+    gateway.generate.assert_called_once()
+
+    messages = gateway.generate.call_args.args[0]
+
+    assert len(messages) == 3
+
+    assert messages[0].role == ChatRole.USER
+    assert messages[0].content == "Hello"
+
+    assert messages[1].role == ChatRole.ASSISTANT
+    assert messages[1].content == "Hi there!"
+
+    assert messages[2].role == ChatRole.USER
+    assert messages[2].content == "How are you?"

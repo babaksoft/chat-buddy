@@ -1,11 +1,5 @@
 from dataclasses import dataclass
-from enum import Enum
 from uuid import UUID
-
-
-class ChatRole(str, Enum):
-    USER = "user"
-    ASSISTANT = "assistant"
 
 
 @dataclass(slots=True, frozen=True)
@@ -26,16 +20,6 @@ class ChatResponse:
 
     conversation_id: UUID
     response: str
-
-
-@dataclass(slots=True, frozen=True)
-class ChatMessage:
-    """
-    A message in an existing chat.
-    """
-
-    role: ChatRole
-    content: str
 
 
 @dataclass(slots=True, frozen=True)

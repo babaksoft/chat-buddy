@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from chat_buddy.domain.chat import ChatMessage
+
 
 class LLMGateway(ABC):
     """Abstract interface for LLM integrations."""
@@ -7,14 +9,14 @@ class LLMGateway(ABC):
     @abstractmethod
     def generate(
         self,
-        prompt: str,
+        messages: list[ChatMessage],
     ) -> str:
         """
         Generate a response from the language model.
 
         Args:
-            prompt:
-                User prompt sent to the model.
+            messages:
+                Current conversation history, including the last user message.
 
         Returns:
             Generated model response.
