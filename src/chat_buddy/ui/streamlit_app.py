@@ -1,12 +1,5 @@
 """
-Minimal Streamlit UI for Chat Buddy.
-
-Vertical slice:
-
-Streamlit
-    -> ChatService
-    -> Ollama
-    -> PostgreSQL
+Streamlit UI for Chat Buddy.
 """
 
 from uuid import UUID
@@ -21,6 +14,9 @@ from chat_buddy.infrastructure.config.logging import configure_logging
 from chat_buddy.infrastructure.db.repositories import ConversationRepository
 from chat_buddy.infrastructure.db.session import SessionLocal
 from chat_buddy.infrastructure.llm.ollama_gateway import OllamaGateway
+from chat_buddy.infrastructure.tokenization.mistral_token_counter import (
+    MistralTokenCounter,
+)
 
 configure_logging()
 
@@ -43,7 +39,7 @@ def build_services() -> tuple[ChatService, ConversationService]:
     chat_service = ChatService(
         repository=repository,
         llm_gateway=gateway,
-        context_builder=DefaultContextBuilder(),
+        context_builder=DefaultContextBuilder(token_counter=MistralTokenCounter()),
     )
     conversation_service = ConversationService(repository=repository)
 

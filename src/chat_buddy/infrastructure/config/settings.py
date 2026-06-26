@@ -10,3 +10,8 @@ LOG_LEVEL = logging.DEBUG
 
 # Database settings
 DATABASE_URL = "postgresql+psycopg2://postgres:postgres@localhost:5432/chat_buddy"
+
+# LLM settings
+OLLAMA_ENDPOINT_URL = "http://localhost:11434"
+MODEL_NAME = "samantha-mistral:7b"
+MODEL_CONTEXT_WINDOW = 32_768

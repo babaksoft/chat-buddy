@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from chat_buddy.application.context_builder import (
     DefaultContextBuilder,
 )
@@ -13,7 +15,9 @@ def test_build_context_returns_original_messages() -> None:
     the original message list unchanged.
     """
 
-    builder = DefaultContextBuilder()
+    token_counter = Mock()
+    token_counter.count_tokens.return_value = 10
+    builder = DefaultContextBuilder(token_counter=token_counter)
 
     messages = [
         ChatMessage(
@@ -37,7 +41,9 @@ def test_build_context_returns_empty_list() -> None:
     an empty conversation.
     """
 
-    builder = DefaultContextBuilder()
+    token_counter = Mock()
+    token_counter.count_tokens.return_value = 10
+    builder = DefaultContextBuilder(token_counter=token_counter)
 
     context = builder.build_context([])
 
