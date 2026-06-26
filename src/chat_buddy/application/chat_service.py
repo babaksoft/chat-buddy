@@ -9,6 +9,7 @@ from chat_buddy.domain.chat import (
     ChatMessage,
     ChatRole,
 )
+from chat_buddy.domain.context import ContextBuilder
 from chat_buddy.infrastructure.db.models import (
     MessageRole,
 )
@@ -31,6 +32,7 @@ class ChatService:
     def __init__(
         self,
         repository: ConversationRepository,
+        context_builder: ContextBuilder,
         llm_gateway: LLMGateway,
     ) -> None:
         """
@@ -40,11 +42,15 @@ class ChatService:
             repository:
                 Conversation repository.
 
+            context_builder:
+                Context window builder.
+
             llm_gateway:
                 Language model gateway.
         """
 
         self._repository = repository
+        self._context_builder = context_builder
         self._llm_gateway = llm_gateway
 
     def chat(
@@ -80,7 +86,8 @@ class ChatService:
         )
 
         messages = self.get_messages(conversation_id)
-        response = self._llm_gateway.generate(messages)
+        context = self._context_builder.build_context(messages)
+        response = self._llm_gateway.generate(context)
 
         self._repository.add_message(
             conversation_id=conversation_id,

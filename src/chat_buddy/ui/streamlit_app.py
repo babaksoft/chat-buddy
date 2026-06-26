@@ -14,16 +14,13 @@ from uuid import UUID
 import streamlit as st
 
 from chat_buddy.application.chat_service import ChatService
+from chat_buddy.application.context_builder import DefaultContextBuilder
 from chat_buddy.application.conversation_service import ConversationService
 from chat_buddy.application.schemas import ChatRequest
 from chat_buddy.infrastructure.config.logging import configure_logging
-from chat_buddy.infrastructure.db.repositories import (
-    ConversationRepository,
-)
+from chat_buddy.infrastructure.db.repositories import ConversationRepository
 from chat_buddy.infrastructure.db.session import SessionLocal
-from chat_buddy.infrastructure.llm.ollama_gateway import (
-    OllamaGateway,
-)
+from chat_buddy.infrastructure.llm.ollama_gateway import OllamaGateway
 
 configure_logging()
 
@@ -46,6 +43,7 @@ def build_services() -> tuple[ChatService, ConversationService]:
     chat_service = ChatService(
         repository=repository,
         llm_gateway=gateway,
+        context_builder=DefaultContextBuilder(),
     )
     conversation_service = ConversationService(repository=repository)
 

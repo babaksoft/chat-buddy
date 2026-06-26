@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from sqlalchemy.orm import Session
 
 from chat_buddy.application.chat_service import (
@@ -30,6 +32,7 @@ def test_chat_persists_messages(
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
+        context_builder=Mock(),
     )
 
     service.chat(
@@ -65,6 +68,7 @@ def test_chat_returns_response(
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
+        context_builder=Mock(),
     )
 
     response = service.chat(
@@ -89,6 +93,7 @@ def test_chat_supports_multiple_turns(
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
+        context_builder=Mock(),
     )
 
     service.chat(
