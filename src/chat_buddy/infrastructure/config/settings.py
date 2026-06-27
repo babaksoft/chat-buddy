@@ -15,3 +15,4 @@ DATABASE_URL = "postgresql+psycopg2://postgres:postgres@localhost:5432/chat_budd
 OLLAMA_ENDPOINT_URL = "http://localhost:11434"
 MODEL_NAME = "samantha-mistral:7b"
 MODEL_CONTEXT_WINDOW = 32_768
+MODEL_RESERVED_TOKENS = 64  # Reserved for Ollama system prompt and formatting tokens

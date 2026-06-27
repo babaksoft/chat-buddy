@@ -70,7 +70,7 @@ class OllamaGateway(LLMGateway):
         prompt_tokens = int(response["prompt_eval_count"])
         completion_tokens = int(response["eval_count"])
         logger.info(
-            ("LLM token usage: " "model=%s " "prompt=%d " "completion=%d " "total=%d"),
+            "LLM token usage: model=%s prompt=%d completion=%d total=%d",
             self._model_name,
             prompt_tokens,
             completion_tokens,
