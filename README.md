@@ -3,8 +3,8 @@
 A conversational AI application for interacting with local LLMs through a persistent chat interface.
 
 ![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https://github.com/babaksoft/chat-buddy/raw/refs/heads/master/pyproject.toml)
-![Static Badge](https://img.shields.io/badge/category-gen_ai-orange)
-![Static Badge](https://img.shields.io/badge/framework-llama_index-orange)
+![Static Badge](https://img.shields.io/badge/category-GenAI-orange)
+![Static Badge](https://img.shields.io/badge/framework-LlamaIndex-orange)
 ![GitHub License](https://img.shields.io/github/license/babaksoft/chat-buddy)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/babaksoft/chat-buddy/ci.yml)
 
@@ -32,13 +32,15 @@ A conversational AI application for interacting with local LLMs through a persis
 
 ## Architecture
 
+```text
 UI (Streamlit)
     ↓
 Application Services
     ↓
 LLM Gateway + Repository
-    ↓
+    ↓          ↓
 Ollama + PostgreSQL
+```
 
 ## Development Status
 
@@ -47,9 +49,9 @@ Ollama + PostgreSQL
 - [x] ORM Models
 - [x] Alembic Migrations
 - [x] Repository Layer
-- [ ] Application Services
-- [ ] Ollama Integration
-- [ ] Streamlit Chat UI
+- [x] Application Services
+- [x] Ollama Integration
+- [x] Streamlit Chat UI
 - [ ] Context Management
 - [ ] Evaluation Framework
 - [ ] Monitoring Dashboard
