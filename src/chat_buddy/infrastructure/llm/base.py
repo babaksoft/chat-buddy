@@ -4,19 +4,36 @@ from chat_buddy.domain.chat import ChatMessage
 
 
 class LLMGateway(Protocol):
-    """Abstract interface for LLM integrations."""
+    """
+    Abstraction for language model interactions.
+    """
 
     def generate(
         self,
         messages: list[ChatMessage],
     ) -> str:
         """
-        Generate a response from the language model.
+        Generate an assistant response.
 
         Args:
             messages:
-                Current conversation history, including the last user message.
+                Conversation context.
 
         Returns:
-            Generated model response.
+            Assistant response.
+        """
+
+    def summarize(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        """
+        Generate a summary of a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Conversation summary.
         """

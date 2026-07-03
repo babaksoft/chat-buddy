@@ -1,10 +1,9 @@
 from transformers import AutoTokenizer
 
 from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.domain.tokenization import TokenCounter
 
 
-class MistralTokenCounter(TokenCounter):
+class MistralTokenCounter:
     """
     Token counter using the Mistral tokenizer.
     """

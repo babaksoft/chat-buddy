@@ -1,7 +1,6 @@
 import logging
 
 from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.domain.context import ContextBuilder
 from chat_buddy.domain.exceptions import ContextWindowExceededError
 from chat_buddy.domain.tokenization import TokenCounter
 from chat_buddy.infrastructure.config.settings import (
@@ -12,7 +11,7 @@ from chat_buddy.infrastructure.config.settings import (
 logger = logging.getLogger(__name__)
 
 
-class DefaultContextBuilder(ContextBuilder):
+class DefaultContextBuilder:
     """
     Build the prompt context passed to the language model.
     """

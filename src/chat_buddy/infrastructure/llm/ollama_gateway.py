@@ -7,12 +7,11 @@ from chat_buddy.infrastructure.config.settings import (
     MODEL_NAME,
     OLLAMA_ENDPOINT_URL,
 )
-from chat_buddy.infrastructure.llm.base import LLMGateway
 
 logger = logging.getLogger(__name__)
 
 
-class OllamaGateway(LLMGateway):
+class OllamaGateway:
     """
     Ollama-backed implementation of the LLM gateway.
     """
@@ -80,6 +79,54 @@ class OllamaGateway(LLMGateway):
         content: str = str(response["message"]["content"])
         logger.debug(
             "Generated response (%d characters).",
+            len(content),
+        )
+
+        return content
+
+    def summarize(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        """
+        Summarize a conversation.
+        """
+
+        logger.debug(
+            "Generating conversation summary using model '%s'.",
+            self._model_name,
+        )
+
+        conversation = "\n".join(
+            (f"{message.role.value}: " f"{message.content}") for message in messages
+        )
+
+        response = self._client.chat(
+            model=self._model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize the following conversation.\n\n"
+                        "Preserve:\n"
+                        "- important facts\n"
+                        "- user preferences\n"
+                        "- decisions made\n"
+                        "- open questions\n\n"
+                        "Keep the summary concise."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": conversation,
+                },
+            ],
+        )
+
+        content: str = str(response["message"]["content"])
+
+        logger.info(
+            "Generated conversation summary (%d characters).",
             len(content),
         )
 

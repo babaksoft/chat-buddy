@@ -19,6 +19,12 @@ class FakeGateway(LLMGateway):
     ) -> str:
         return "Hello from Samantha."
 
+    def summarize(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        return "Conversation summary."
+
 
 def test_chat_persists_messages(
     session: Session,
