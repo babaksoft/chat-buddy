@@ -16,6 +16,7 @@ from chat_buddy.infrastructure.db.base import Base
 class MessageRole(str, Enum):
     """Supported chat message roles."""
 
+    SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
 
