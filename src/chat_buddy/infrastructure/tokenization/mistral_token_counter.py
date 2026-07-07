@@ -22,7 +22,7 @@ class MistralTokenCounter:
 
         Args:
             messages:
-                Messages to count.
+                Conversation messages.
 
         Returns:
             Total token count.

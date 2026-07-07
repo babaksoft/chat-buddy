@@ -3,10 +3,8 @@ import logging
 from ollama import Client
 
 from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.infrastructure.config.settings import (
-    MODEL_NAME,
-    OLLAMA_ENDPOINT_URL,
-)
+from chat_buddy.infrastructure.config import settings
+from chat_buddy.prompts.chat_templates import SUMMARIZE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +16,8 @@ class OllamaGateway:
 
     def __init__(
         self,
-        model_name: str = MODEL_NAME,
-        host: str = OLLAMA_ENDPOINT_URL,
+        model_name: str = settings.MODEL_NAME,
+        host: str = settings.OLLAMA_ENDPOINT_URL,
     ) -> None:
         """
         Initialize the Ollama gateway.
@@ -90,6 +88,13 @@ class OllamaGateway:
     ) -> str:
         """
         Summarize a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Conversation summary.
         """
 
         logger.debug(
@@ -98,7 +103,7 @@ class OllamaGateway:
         )
 
         conversation = "\n".join(
-            (f"{message.role.value}: " f"{message.content}") for message in messages
+            f"{message.role.value}: {message.content}" for message in messages
         )
 
         response = self._client.chat(
@@ -106,15 +111,7 @@ class OllamaGateway:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Summarize the following conversation.\n\n"
-                        "Preserve:\n"
-                        "- important facts\n"
-                        "- user preferences\n"
-                        "- decisions made\n"
-                        "- open questions\n\n"
-                        "Keep the summary concise."
-                    ),
+                    "content": SUMMARIZE_PROMPT,
                 },
                 {
                     "role": "user",

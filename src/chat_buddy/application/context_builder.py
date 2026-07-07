@@ -48,7 +48,7 @@ class DefaultContextBuilder:
 
         if total_tokens > self._model_context_window:
             logger.warning(
-                ("Context window exceeded: " "estimated_total_tokens=%d " "limit=%d"),
+                "Context window exceeded: estimated_total_tokens=%d limit=%d",
                 total_tokens,
                 self._model_context_window,
             )
