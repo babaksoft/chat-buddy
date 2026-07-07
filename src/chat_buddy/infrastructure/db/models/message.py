@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.domain.chat import ChatRole
@@ -34,13 +34,14 @@ class Message(Base):
     role: Mapped[ChatRole] = mapped_column(
         SqlEnum(
             ChatRole,
+            name="messagerole",
             values_callable=lambda obj: [item.value for item in obj],
         ),
         nullable=False,
     )
 
     content: Mapped[str] = mapped_column(
-        String,
+        Text,
         nullable=False,
     )
 
