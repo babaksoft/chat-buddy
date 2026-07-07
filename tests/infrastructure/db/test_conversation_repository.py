@@ -1,9 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from chat_buddy.infrastructure.db.models import (
-    MessageRole,
-)
+from chat_buddy.domain.chat import ChatRole
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
 )
@@ -90,7 +88,7 @@ def test_add_message(
 
     message = repository.add_message(
         conversation.id,
-        MessageRole.USER,
+        ChatRole.USER,
         "Hello Samantha",
     )
 
@@ -109,13 +107,13 @@ def test_get_messages(
 
     repository.add_message(
         conversation.id,
-        MessageRole.USER,
+        ChatRole.USER,
         "First",
     )
 
     repository.add_message(
         conversation.id,
-        MessageRole.ASSISTANT,
+        ChatRole.ASSISTANT,
         "Second",
     )
 
@@ -167,7 +165,7 @@ def test_delete_conversation_removes_messages(
 
     repository.add_message(
         conversation.id,
-        MessageRole.USER,
+        ChatRole.USER,
         "Hello",
     )
 

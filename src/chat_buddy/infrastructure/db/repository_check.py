@@ -1,5 +1,5 @@
+from chat_buddy.domain.chat import ChatRole
 from chat_buddy.infrastructure.config.logging import configure_logging
-from chat_buddy.infrastructure.db.models import MessageRole
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
 )
@@ -28,13 +28,13 @@ def run_smoke_test() -> None:
 
         repository.add_message(
             conversation.id,
-            MessageRole.USER,
+            ChatRole.USER,
             "Hello Samantha",
         )
 
         repository.add_message(
             conversation.id,
-            MessageRole.ASSISTANT,
+            ChatRole.ASSISTANT,
             "Hello human!",
         )
 

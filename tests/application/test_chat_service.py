@@ -6,7 +6,6 @@ import pytest
 from chat_buddy.application.chat_service import ChatService
 from chat_buddy.application.schemas import ChatRequest
 from chat_buddy.domain.chat import ChatMessage, ChatRole
-from chat_buddy.infrastructure.db.models import MessageRole
 
 
 def test_chat_returns_llm_response() -> None:
@@ -73,9 +72,9 @@ def test_chat_persists_user_and_assistant_messages() -> None:
     first_call = repository.add_message.call_args_list[0]
     second_call = repository.add_message.call_args_list[1]
 
-    assert first_call.kwargs["role"] == MessageRole.USER
+    assert first_call.kwargs["role"] == ChatRole.USER
 
-    assert second_call.kwargs["role"] == MessageRole.ASSISTANT
+    assert second_call.kwargs["role"] == ChatRole.ASSISTANT
 
 
 def test_chat_uses_conversation_id_for_persistence() -> None:
@@ -186,7 +185,7 @@ def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
 
     first_call = repository.add_message.call_args_list[0]
 
-    assert first_call.kwargs["role"] == MessageRole.USER
+    assert first_call.kwargs["role"] == ChatRole.USER
 
 
 def test_chat_passes_history_to_context_builder() -> None:
@@ -199,7 +198,7 @@ def test_chat_passes_history_to_context_builder() -> None:
 
     repository.get_messages.return_value = [
         Mock(
-            role=MessageRole.USER,
+            role=ChatRole.USER,
             content="Hello",
         ),
     ]
@@ -241,7 +240,7 @@ def test_chat_passes_context_to_gateway() -> None:
     repository = Mock()
     repository.get_messages.return_value = [
         Mock(
-            role=MessageRole.USER,
+            role=ChatRole.USER,
             content="Hello",
         ),
     ]

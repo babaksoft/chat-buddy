@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from uuid import UUID
 
@@ -7,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from chat_buddy.domain.chat import ChatRole
 from chat_buddy.infrastructure.db.models import (
     Conversation,
     Message,
-    MessageRole,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,7 +121,7 @@ class ConversationRepository:
     def add_message(
         self,
         conversation_id: UUID | None,
-        role: MessageRole,
+        role: ChatRole,
         content: str,
     ) -> Message:
         """

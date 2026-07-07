@@ -10,9 +10,6 @@ from chat_buddy.domain.chat import (
     ChatRole,
 )
 from chat_buddy.domain.context import ContextBuilder
-from chat_buddy.infrastructure.db.models import (
-    MessageRole,
-)
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
 )
@@ -81,7 +78,7 @@ class ChatService:
 
         self._repository.add_message(
             conversation_id=conversation_id,
-            role=MessageRole.USER,
+            role=ChatRole.USER,
             content=request.message,
         )
 
@@ -91,7 +88,7 @@ class ChatService:
 
         self._repository.add_message(
             conversation_id=conversation_id,
-            role=MessageRole.ASSISTANT,
+            role=ChatRole.ASSISTANT,
             content=response,
         )
 

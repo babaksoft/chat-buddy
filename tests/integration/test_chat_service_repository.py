@@ -6,8 +6,7 @@ from chat_buddy.application.chat_service import (
     ChatRequest,
     ChatService,
 )
-from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.infrastructure.db.models import MessageRole
+from chat_buddy.domain.chat import ChatMessage, ChatRole
 from chat_buddy.infrastructure.db.repositories import ConversationRepository
 from chat_buddy.infrastructure.llm.base import LLMGateway
 
@@ -54,10 +53,10 @@ def test_chat_persists_messages(
 
     assert len(messages) == 2
 
-    assert messages[0].role == MessageRole.USER
+    assert messages[0].role == ChatRole.USER
     assert messages[0].content == "Hello"
 
-    assert messages[1].role == MessageRole.ASSISTANT
+    assert messages[1].role == ChatRole.ASSISTANT
 
     assert messages[1].content == "Hello from Samantha."
 
