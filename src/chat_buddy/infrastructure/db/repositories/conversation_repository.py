@@ -18,6 +18,13 @@ class ConversationRepository:
     """Provides persistence operations for conversations."""
 
     def __init__(self, session: Session) -> None:
+        """
+        Initialize the repository.
+
+        Args:
+            session: SQLAlchemy session.
+        """
+
         self._session = session
 
     def create_conversation(
