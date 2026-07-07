@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from chat_buddy.application.config import ContextBuilderConfig
 from chat_buddy.application.context_builder import (
     DefaultContextBuilder,
 )
@@ -70,37 +71,95 @@ def test_build_context_returns_messages_when_within_limit() -> None:
 
     counter = Mock()
     counter.count_tokens.return_value = 100
+    config = ContextBuilderConfig(
+        model_context_window=1_000,
+        prompt_overhead_tokens=50,
+    )
 
     builder = DefaultContextBuilder(
         token_counter=counter,
-        model_context_window=1_000,
-        prompt_overhead_tokens=50,
+        config=config,
     )
 
     assert builder.build_context(messages) is messages
 
 
-def test_build_context_raises_when_limit_exceeded() -> None:
+def test_build_context_summarizes_when_threshold_exceeded() -> None:
     """
-    Verify that the default context builder raises domain-specific
-    error when context is too large.
+    Verify that the oldest half of the conversation
+    is summarized once the threshold is exceeded.
     """
 
-    messages = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello!",
-        )
+    token_counter = Mock()
+    token_counter.count_tokens.side_effect = [
+        900,
+        300,
     ]
 
-    counter = Mock()
-    counter.count_tokens.return_value = 980
+    summarizer = Mock()
+    summarizer.summarize.return_value = "Summary"
 
     builder = DefaultContextBuilder(
-        token_counter=counter,
-        model_context_window=1_000,
-        prompt_overhead_tokens=50,
+        token_counter=token_counter,
+        summarizer=summarizer,
+        config=ContextBuilderConfig(
+            model_context_window=1_000,
+            prompt_overhead_tokens=50,
+            summary_trigger_ratio=0.8,
+        ),
     )
+
+    messages = [
+        ChatMessage(ChatRole.USER, "A"),
+        ChatMessage(ChatRole.ASSISTANT, "B"),
+        ChatMessage(ChatRole.USER, "C"),
+        ChatMessage(ChatRole.ASSISTANT, "D"),
+        ChatMessage(ChatRole.USER, "E"),
+        ChatMessage(ChatRole.ASSISTANT, "F"),
+    ]
+
+    context = builder.build_context(messages)
+
+    summarizer.summarize.assert_called_once_with(
+        messages[:3],
+    )
+
+    assert context[0].role == ChatRole.SYSTEM
+    assert "Summary" in context[0].content
+
+    assert context[1:] == messages[3:]
+
+
+def test_build_context_raises_when_summary_still_too_large() -> None:
+    """
+    Verify that an exception is raised when the
+    summarized context still exceeds the model
+    context window.
+    """
+
+    token_counter = Mock()
+    token_counter.count_tokens.side_effect = [
+        900,
+        980,
+    ]
+
+    summarizer = Mock()
+    summarizer.summarize.return_value = "Summary"
+
+    builder = DefaultContextBuilder(
+        token_counter=token_counter,
+        summarizer=summarizer,
+        config=ContextBuilderConfig(
+            model_context_window=1_000,
+            prompt_overhead_tokens=50,
+            summary_trigger_ratio=0.8,
+        ),
+    )
+
+    messages = [
+        ChatMessage(ChatRole.USER, "Hello"),
+        ChatMessage(ChatRole.ASSISTANT, "Hi"),
+    ]
 
     with pytest.raises(
         ContextWindowExceededError,

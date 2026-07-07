@@ -16,3 +16,4 @@ OLLAMA_ENDPOINT_URL = "http://localhost:11434"
 MODEL_NAME = "samantha-mistral:7b"
 MODEL_CONTEXT_WINDOW = 32_768
 PROMPT_OVERHEAD_TOKENS = 64  # Reserved for Ollama system prompt and formatting tokens
+SUMMARY_TRIGGER_RATIO = 0.85
