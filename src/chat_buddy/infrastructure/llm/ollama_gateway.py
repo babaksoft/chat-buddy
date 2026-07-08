@@ -4,7 +4,7 @@ from ollama import Client
 
 from chat_buddy.domain.chat import ChatMessage
 from chat_buddy.infrastructure.config import settings
-from chat_buddy.prompts.chat_templates import SUMMARIZE_PROMPT
+from chat_buddy.prompts.summary import SUMMARIZE_PROMPT
 
 logger = logging.getLogger(__name__)
 
