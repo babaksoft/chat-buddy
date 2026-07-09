@@ -15,6 +15,14 @@ class ConversationService:
         self,
         repository: ConversationRepository,
     ) -> None:
+        """
+        Initialize the conversation service.
+
+        Args:
+            repository:
+                Conversation repository.
+        """
+
         self._repository = repository
 
     def list_conversations(

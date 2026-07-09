@@ -30,8 +30,10 @@ class DefaultContextBuilder:
         Args:
             token_counter:
                 Token counter.
+
             summarizer:
                 Conversation Summarizer.
+
             config:
                 Language model configuration.
         """
