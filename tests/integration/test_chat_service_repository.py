@@ -45,6 +45,7 @@ def test_chat_persists_messages(
         repository=repository,
         llm_gateway=FakeGateway(),
         context_builder=Mock(),
+        memory_service=Mock(),
     )
 
     service.chat(
@@ -81,6 +82,7 @@ def test_chat_returns_response(
         repository=repository,
         llm_gateway=FakeGateway(),
         context_builder=Mock(),
+        memory_service=Mock(),
     )
 
     response = service.chat(
@@ -106,6 +108,7 @@ def test_chat_supports_multiple_turns(
         repository=repository,
         llm_gateway=FakeGateway(),
         context_builder=Mock(),
+        memory_service=Mock(),
     )
 
     service.chat(

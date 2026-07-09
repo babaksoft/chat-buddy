@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 
+from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.application.schemas import (
     ChatRequest,
     ChatResponse,
@@ -13,6 +14,7 @@ from chat_buddy.domain.context import ContextBuilder
 from chat_buddy.domain.llm_gateway import (
     LLMGateway,
 )
+from chat_buddy.infrastructure.config import settings
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
 )
@@ -31,6 +33,7 @@ class ChatService:
         repository: ConversationRepository,
         context_builder: ContextBuilder,
         llm_gateway: LLMGateway,
+        memory_service: MemoryService,
     ) -> None:
         """
         Initialize the service.
@@ -44,18 +47,24 @@ class ChatService:
 
             llm_gateway:
                 Language model gateway.
+
+            memory_service:
+                Persistent memory service.
         """
 
         self._repository = repository
         self._context_builder = context_builder
         self._llm_gateway = llm_gateway
+        self._memory_service = memory_service
 
     def chat(
         self,
         request: ChatRequest,
     ) -> ChatResponse:
         """
-        Process a chat request. Create new conversation if necessary.
+        Process a chat request.
+
+        Create new conversation if necessary.
 
         Args:
             request:
@@ -92,6 +101,8 @@ class ChatService:
             content=response,
         )
 
+        self._extract_memories(messages)
+
         logger.info(
             "Generated response for conversation %s.",
             conversation_id,
@@ -124,3 +135,50 @@ class ChatService:
             )
             for message in messages
         ]
+
+    def _should_extract_memories(
+        self,
+        messages: list[ChatMessage],
+    ) -> bool:
+        """
+        Determine whether memories should be extracted.
+
+        Args:
+            messages:
+                Conversation history.
+
+        Returns:
+            True if memory extraction should be performed.
+        """
+
+        user_turns = sum(1 for message in messages if message.role is ChatRole.USER)
+
+        return user_turns > 0 and user_turns % settings.MEMORY_EXTRACTION_INTERVAL == 0
+
+    def _extract_memories(
+        self,
+        messages: list[ChatMessage],
+    ) -> None:
+        """
+        Extract and persist long-term memories.
+
+        Args:
+            messages:
+                Conversation history.
+        """
+
+        if not self._should_extract_memories(messages):
+            return
+
+        memories = self._llm_gateway.extract_memories(messages)
+        for memory in memories:
+            self._memory_service.save_memory(
+                key=memory.key,
+                value=memory.value,
+            )
+
+        logger.info(
+            "Memory extraction completed: extracted=%d persisted=%d",
+            len(memories),
+            len(memories),
+        )

@@ -9,9 +9,13 @@ import streamlit as st
 from chat_buddy.application.chat_service import ChatService
 from chat_buddy.application.context_builder import DefaultContextBuilder
 from chat_buddy.application.conversation_service import ConversationService
+from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.application.schemas import ChatRequest
 from chat_buddy.infrastructure.config.logging import configure_logging
-from chat_buddy.infrastructure.db.repositories import ConversationRepository
+from chat_buddy.infrastructure.db.repositories import (
+    ConversationRepository,
+    MemoryRepository,
+)
 from chat_buddy.infrastructure.db.session import SessionLocal
 from chat_buddy.infrastructure.llm.ollama_gateway import OllamaGateway
 from chat_buddy.infrastructure.tokenization.mistral_token_counter import (
@@ -30,18 +34,25 @@ def build_services() -> tuple[ChatService, ConversationService]:
     """
 
     session = SessionLocal()
-    repository = ConversationRepository(
+    conversation_repository = ConversationRepository(
+        session=session,
+    )
+    memory_repository = MemoryRepository(
         session=session,
     )
 
     gateway = OllamaGateway()
-
+    memory_service = MemoryService(
+        repository=memory_repository,
+    )
     chat_service = ChatService(
-        repository=repository,
+        repository=conversation_repository,
         llm_gateway=gateway,
         context_builder=DefaultContextBuilder(token_counter=MistralTokenCounter()),
+        memory_service=memory_service,
     )
-    conversation_service = ConversationService(repository=repository)
+
+    conversation_service = ConversationService(repository=conversation_repository)
 
     return chat_service, conversation_service
 
