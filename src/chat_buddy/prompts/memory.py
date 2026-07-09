@@ -1,15 +1,31 @@
-EXTRACT_MEMORY_PROMPT = """Extract only long-term facts about the user.
+EXTRACT_MEMORY_PROMPT = """Extract long-term facts about the user.
 
-Return JSON.
+Return ONLY valid JSON.
 
-Ignore temporary information.
+The JSON must be an array of objects.
 
-Ignore assistant messages.
+Each object must have exactly these fields:
 
-Examples:
+- key
+- value
 
-name
-occupation
-location
-dominant_mood
-conversation_tone"""
+Example:
+
+[
+  {
+    "key": "favorite_language",
+    "value": "Python"
+  },
+  {
+    "key": "preferred_editor",
+    "value": "VS Code"
+  }
+]
+
+Rules:
+
+- Ignore temporary information.
+- Ignore assistant messages.
+- Do not explain your answer.
+- Do not wrap the JSON in markdown.
+- Return [] if no memories should be stored."""

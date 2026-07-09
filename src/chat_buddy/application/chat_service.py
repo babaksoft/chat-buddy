@@ -10,11 +10,11 @@ from chat_buddy.domain.chat import (
     ChatRole,
 )
 from chat_buddy.domain.context import ContextBuilder
+from chat_buddy.domain.llm_gateway import (
+    LLMGateway,
+)
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
-)
-from chat_buddy.infrastructure.llm.base import (
-    LLMGateway,
 )
 
 logger = logging.getLogger(__name__)

@@ -1,5 +1,5 @@
 from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.infrastructure.llm.base import LLMGateway
+from chat_buddy.domain.llm_gateway import LLMGateway
 from chat_buddy.infrastructure.llm.ollama_gateway import OllamaGateway
 
 

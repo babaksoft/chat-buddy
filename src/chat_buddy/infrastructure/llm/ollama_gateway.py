@@ -1,9 +1,12 @@
+import json
 import logging
 
 from ollama import Client
 
 from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.domain.extracted_memory import ExtractedMemory
 from chat_buddy.infrastructure.config import settings
+from chat_buddy.prompts.memory import EXTRACT_MEMORY_PROMPT
 from chat_buddy.prompts.summary import SUMMARIZE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -53,34 +56,22 @@ class OllamaGateway:
             self._model_name,
         )
 
-        response = self._client.chat(
-            model=self._model_name,
+        response = self._chat(
             messages=[
                 {
                     "role": message.role.value,
                     "content": message.content,
                 }
                 for message in messages
-            ],
+            ]
         )
 
-        prompt_tokens = int(response["prompt_eval_count"])
-        completion_tokens = int(response["eval_count"])
-        logger.info(
-            "LLM token usage: model=%s prompt=%d completion=%d total=%d",
-            self._model_name,
-            prompt_tokens,
-            completion_tokens,
-            prompt_tokens + completion_tokens,
-        )
-
-        content: str = str(response["message"]["content"])
         logger.debug(
             "Generated response (%d characters).",
-            len(content),
+            len(response),
         )
 
-        return content
+        return response
 
     def summarize(
         self,
@@ -106,8 +97,7 @@ class OllamaGateway:
             f"{message.role.value}: {message.content}" for message in messages
         )
 
-        response = self._client.chat(
-            model=self._model_name,
+        response = self._chat(
             messages=[
                 {
                     "role": "system",
@@ -120,11 +110,106 @@ class OllamaGateway:
             ],
         )
 
-        content: str = str(response["message"]["content"])
-
         logger.info(
             "Generated conversation summary (%d characters).",
-            len(content),
+            len(response),
         )
 
-        return content
+        return response
+
+    def extract_memories(
+        self,
+        messages: list[ChatMessage],
+    ) -> list[ExtractedMemory]:
+        """
+        Extract long-term user memories from a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Extracted memories.
+        """
+
+        logger.debug(
+            "Extracting memories using model '%s'.",
+            self._model_name,
+        )
+
+        conversation = "\n".join(
+            f"{message.role.value}: {message.content}"
+            for message in messages
+            if message.role.value != "assistant"
+        )
+
+        response = self._chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": EXTRACT_MEMORY_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": conversation,
+                },
+            ],
+        )
+
+        try:
+            payload = json.loads(response)
+
+            memories = [
+                ExtractedMemory(
+                    key=item["key"],
+                    value=item["value"],
+                )
+                for item in payload
+            ]
+
+        except (
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+        ):
+            logger.warning(
+                "Failed to parse extracted memories.",
+            )
+            return []
+
+        logger.info(
+            "Memory extraction completed: extracted=%d",
+            len(memories),
+        )
+
+        return memories
+
+    def _chat(self, messages: list[dict[str, str]]) -> str:
+        """
+        Generates a chat completion using the LLM.
+
+        Args:
+            messages:
+                Context that will be sent to LLM.
+
+        Returns:
+            LLM response as plain text.
+        """
+
+        response = self._client.chat(
+            model=self._model_name,
+            messages=messages,
+        )
+
+        prompt_tokens = int(response["prompt_eval_count"])
+        completion_tokens = int(response["eval_count"])
+
+        logger.info(
+            "LLM token usage: model=%s prompt=%d completion=%d total=%d",
+            self._model_name,
+            prompt_tokens,
+            completion_tokens,
+            prompt_tokens + completion_tokens,
+        )
+
+        return str(response["message"]["content"])

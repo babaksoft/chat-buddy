@@ -7,8 +7,9 @@ from chat_buddy.application.chat_service import (
     ChatService,
 )
 from chat_buddy.domain.chat import ChatMessage, ChatRole
+from chat_buddy.domain.extracted_memory import ExtractedMemory
+from chat_buddy.domain.llm_gateway import LLMGateway
 from chat_buddy.infrastructure.db.repositories import ConversationRepository
-from chat_buddy.infrastructure.llm.base import LLMGateway
 
 
 class FakeGateway(LLMGateway):
@@ -23,6 +24,12 @@ class FakeGateway(LLMGateway):
         messages: list[ChatMessage],
     ) -> str:
         return "Conversation summary."
+
+    def extract_memories(
+        self,
+        messages: list[ChatMessage],
+    ) -> list[ExtractedMemory]:
+        return []
 
 
 def test_chat_persists_messages(

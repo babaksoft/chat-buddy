@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.domain.extracted_memory import ExtractedMemory
 
 
 class LLMGateway(Protocol):
@@ -36,4 +37,19 @@ class LLMGateway(Protocol):
 
         Returns:
             Conversation summary.
+        """
+
+    def extract_memories(
+        self,
+        messages: list[ChatMessage],
+    ) -> list[ExtractedMemory]:
+        """
+        Extract long-term user memories from a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Extracted memories.
         """
