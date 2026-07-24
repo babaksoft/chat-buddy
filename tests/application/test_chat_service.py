@@ -5,7 +5,7 @@ import pytest
 
 from chat_buddy.application.chat_service import ChatService
 from chat_buddy.application.schemas import ChatRequest
-from chat_buddy.domain.chat import ChatMessage, ChatRole
+from chat_buddy.domain import ChatMessage, ChatRole
 
 
 def test_chat_returns_llm_response() -> None:

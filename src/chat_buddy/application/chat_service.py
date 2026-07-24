@@ -6,12 +6,10 @@ from chat_buddy.application.schemas import (
     ChatRequest,
     ChatResponse,
 )
-from chat_buddy.domain.chat import (
+from chat_buddy.domain import (
     ChatMessage,
     ChatRole,
-)
-from chat_buddy.domain.context import ContextBuilder
-from chat_buddy.domain.llm_gateway import (
+    ContextBuilder,
     LLMGateway,
 )
 from chat_buddy.infrastructure.config import settings

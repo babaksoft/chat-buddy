@@ -4,6 +4,8 @@ from chat_buddy.domain.chat import ChatMessage
 
 
 class ContextBuilder(Protocol):
+    """Abstraction for adjusting conversation context."""
+
     def build_context(
         self,
         messages: list[ChatMessage],

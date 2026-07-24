@@ -4,7 +4,7 @@ from chat_buddy.domain.chat import (
     ChatMessage,
     ChatRole,
 )
-from chat_buddy.infrastructure.tokenization.mistral_token_counter import (
+from chat_buddy.infrastructure.tokenization import (
     MistralTokenCounter,
 )
 

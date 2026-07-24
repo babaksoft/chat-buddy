@@ -6,11 +6,9 @@ from chat_buddy.application.config import ContextBuilderConfig
 from chat_buddy.application.context_builder import (
     DefaultContextBuilder,
 )
-from chat_buddy.domain.chat import (
+from chat_buddy.domain import (
     ChatMessage,
     ChatRole,
-)
-from chat_buddy.domain.exceptions import (
     ContextWindowExceededError,
 )
 

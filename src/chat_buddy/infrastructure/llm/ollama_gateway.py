@@ -3,11 +3,12 @@ import logging
 
 from ollama import Client
 
-from chat_buddy.domain.chat import ChatMessage
-from chat_buddy.domain.extracted_memory import ExtractedMemory
+from chat_buddy.domain import ChatMessage, ExtractedMemory
 from chat_buddy.infrastructure.config import settings
-from chat_buddy.prompts.memory import EXTRACT_MEMORY_PROMPT
-from chat_buddy.prompts.summary import SUMMARIZE_PROMPT
+from chat_buddy.prompts import (
+    EXTRACT_MEMORY_PROMPT,
+    SUMMARIZE_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class OllamaGateway:
 
     def __init__(
         self,
-        model_name: str = settings.MODEL_NAME,
-        host: str = settings.OLLAMA_ENDPOINT_URL,
+        model_name: str | None = None,
+        host: str | None = None,
     ) -> None:
         """
         Initialize the Ollama gateway.
@@ -33,8 +34,9 @@ class OllamaGateway:
                 Ollama server endpoint.
         """
 
-        self._model_name = model_name
-        self._client = Client(host=host)
+        ollama_host = host or settings.OLLAMA_ENDPOINT_URL
+        self._model_name = model_name or settings.MODEL_NAME
+        self._client = Client(host=ollama_host)
 
     def generate(
         self,
@@ -190,7 +192,7 @@ class OllamaGateway:
 
         Args:
             messages:
-                Context that will be sent to LLM.
+                Context that will be sent to the LLM.
 
         Returns:
             LLM response as plain text.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from logging.handlers import RotatingFileHandler
 
-from chat_buddy.infrastructure.config.settings import LOG_DIR, LOG_FILE, LOG_LEVEL
+from chat_buddy.infrastructure.config import settings
 
 
 def configure_logging() -> None:
@@ -13,13 +13,13 @@ def configure_logging() -> None:
     Call once during application startup.
     """
 
-    LOG_DIR.mkdir(exist_ok=True)
+    settings.LOG_DIR.mkdir(exist_ok=True)
     root_logger = logging.getLogger()
 
     if root_logger.handlers:
         return
 
-    root_logger.setLevel(LOG_LEVEL)
+    root_logger.setLevel(settings.LOG_LEVEL)
 
     # Console handler
     console_handler = logging.StreamHandler()
@@ -30,13 +30,13 @@ def configure_logging() -> None:
 
     # File handler
     file_handler = RotatingFileHandler(
-        filename=LOG_FILE,
+        filename=settings.LOG_FILE,
         maxBytes=5 * 1024 * 1024,  # 5 MB
         backupCount=5,
         encoding="utf-8",
     )
 
-    file_handler.setLevel(LOG_LEVEL)
+    file_handler.setLevel(settings.LOG_LEVEL)
     file_handler.setFormatter(
         logging.Formatter(
             "[%(asctime)s] "

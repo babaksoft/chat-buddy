@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.infrastructure.db.base import Base
+from chat_buddy.infrastructure.db import Base
 
 
 @pytest.fixture

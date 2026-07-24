@@ -6,9 +6,12 @@ from chat_buddy.application.chat_service import (
     ChatRequest,
     ChatService,
 )
-from chat_buddy.domain.chat import ChatMessage, ChatRole
-from chat_buddy.domain.extracted_memory import ExtractedMemory
-from chat_buddy.domain.llm_gateway import LLMGateway
+from chat_buddy.domain import (
+    ChatMessage,
+    ChatRole,
+    ExtractedMemory,
+    LLMGateway,
+)
 from chat_buddy.infrastructure.db.repositories import ConversationRepository
 
 

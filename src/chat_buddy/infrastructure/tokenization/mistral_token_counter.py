@@ -1,6 +1,6 @@
 from transformers import AutoTokenizer
 
-from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.domain import ChatMessage
 
 
 class MistralTokenCounter:
