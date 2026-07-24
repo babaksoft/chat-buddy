@@ -52,7 +52,8 @@ Ollama + PostgreSQL
 - [x] Application Services
 - [x] Ollama Integration
 - [x] Streamlit Chat UI
-- [ ] Context Management
+- [x] Context Management
+- [x] Memory Retrieval
 - [ ] Evaluation Framework
 - [ ] Monitoring Dashboard
 

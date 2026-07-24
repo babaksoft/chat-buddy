@@ -8,6 +8,13 @@ from chat_buddy.application.schemas import ChatRequest
 from chat_buddy.domain import ChatMessage, ChatRole
 
 
+def _pass_through_memory_service() -> Mock:
+    memory_service = Mock()
+    memory_service.inject_memories.side_effect = lambda messages: messages
+
+    return memory_service
+
+
 def test_chat_returns_llm_response() -> None:
     """
     Verify that the service returns the generated
@@ -21,7 +28,7 @@ def test_chat_returns_llm_response() -> None:
     gateway.generate.return_value = "Hello from Samantha."
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -53,7 +60,7 @@ def test_chat_persists_user_and_assistant_messages() -> None:
     gateway.generate.return_value = "Hello from Samantha."
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -88,7 +95,7 @@ def test_chat_uses_conversation_id_for_persistence() -> None:
     gateway.generate.return_value = "Hi"
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -120,7 +127,7 @@ def test_chat_persists_assistant_response_content() -> None:
     gateway.generate.return_value = "Response"
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -149,7 +156,7 @@ def test_chat_propagates_gateway_errors() -> None:
     gateway.generate.side_effect = RuntimeError("Ollama unavailable")
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -175,7 +182,7 @@ def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
     gateway.generate.side_effect = RuntimeError()
 
     context_builder = Mock()
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -220,7 +227,7 @@ def test_chat_passes_history_to_context_builder() -> None:
     gateway = Mock()
     gateway.generate.return_value = "Hi"
 
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -272,7 +279,7 @@ def test_chat_passes_context_to_gateway() -> None:
     gateway = Mock()
     gateway.generate.return_value = "Hi"
 
-    memory_service = Mock()
+    memory_service = _pass_through_memory_service()
 
     service = ChatService(
         repository=repository,
@@ -290,3 +297,57 @@ def test_chat_passes_context_to_gateway() -> None:
 
     context_builder.build_context.assert_called_once()
     gateway.generate.assert_called_once_with(context)
+
+
+def test_chat_injects_memories_before_context_builder() -> None:
+    """
+    Verify that memory injection runs before context
+    building.
+    """
+
+    repository = Mock()
+    repository.get_messages.return_value = [
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Hello",
+        ),
+    ]
+
+    messages_with_memories = [
+        ChatMessage(
+            role=ChatRole.SYSTEM,
+            content="Known facts about the user:\n\n- favorite_language: Python",
+        ),
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Hello",
+        ),
+    ]
+
+    memory_service = Mock()
+    memory_service.inject_memories.return_value = messages_with_memories
+
+    context_builder = Mock()
+    context_builder.build_context.return_value = messages_with_memories
+
+    gateway = Mock()
+    gateway.generate.return_value = "Hi"
+
+    service = ChatService(
+        repository=repository,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+        memory_service=memory_service,
+    )
+
+    request = ChatRequest(
+        conversation_id=uuid4(),
+        message="Hello",
+    )
+
+    service.chat(request)
+
+    memory_service.inject_memories.assert_called_once()
+    context_builder.build_context.assert_called_once_with(
+        messages_with_memories,
+    )

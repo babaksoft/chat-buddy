@@ -30,7 +30,6 @@ def session() -> Generator[Session, None, None]:
     session_factory = sessionmaker(
         bind=engine,
         autoflush=False,
-        autocommit=False,
     )
 
     with session_factory() as session:

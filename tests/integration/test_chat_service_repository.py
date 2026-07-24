@@ -6,13 +6,18 @@ from chat_buddy.application.chat_service import (
     ChatRequest,
     ChatService,
 )
+from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
     LLMGateway,
 )
-from chat_buddy.infrastructure.db.repositories import ConversationRepository
+from chat_buddy.infrastructure.db.repositories import (
+    ConversationRepository,
+    MemoryRepository,
+)
+from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
 
 
 class FakeGateway(LLMGateway):
@@ -35,20 +40,46 @@ class FakeGateway(LLMGateway):
         return []
 
 
+class RecordingGateway(FakeGateway):
+    def __init__(self) -> None:
+        self.last_messages: list[ChatMessage] = []
+
+    def generate(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        self.last_messages = messages
+
+        return super().generate(messages)
+
+
+def _passthrough_context_builder() -> Mock:
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda messages: messages
+
+    return context_builder
+
+
+def _passthrough_memory_service() -> Mock:
+    memory_service = Mock()
+    memory_service.inject_memories.side_effect = lambda messages: messages
+
+    return memory_service
+
+
 def test_chat_persists_messages(
     session: Session,
 ) -> None:
-    repository = ConversationRepository(
-        session,
-    )
+    """Verify message and response are both persisted."""
 
+    repository = ConversationRepository(session)
     conversation = repository.create_conversation()
 
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
-        context_builder=Mock(),
-        memory_service=Mock(),
+        context_builder=_passthrough_context_builder(),
+        memory_service=_passthrough_memory_service(),
     )
 
     service.chat(
@@ -58,9 +89,7 @@ def test_chat_persists_messages(
         )
     )
 
-    messages = repository.get_messages(
-        conversation.id,
-    )
+    messages = repository.get_messages(conversation.id)
 
     assert len(messages) == 2
 
@@ -68,24 +97,22 @@ def test_chat_persists_messages(
     assert messages[0].content == "Hello"
 
     assert messages[1].role == ChatRole.ASSISTANT
-
     assert messages[1].content == "Hello from Samantha."
 
 
 def test_chat_returns_response(
     session: Session,
 ) -> None:
-    repository = ConversationRepository(
-        session,
-    )
+    """Verify LLM response is returned by chat service."""
 
+    repository = ConversationRepository(session)
     conversation = repository.create_conversation()
 
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
-        context_builder=Mock(),
-        memory_service=Mock(),
+        context_builder=_passthrough_context_builder(),
+        memory_service=_passthrough_memory_service(),
     )
 
     response = service.chat(
@@ -101,17 +128,16 @@ def test_chat_returns_response(
 def test_chat_supports_multiple_turns(
     session: Session,
 ) -> None:
-    repository = ConversationRepository(
-        session,
-    )
+    """Verify chat service persists multiple-turn conversations."""
 
+    repository = ConversationRepository(session)
     conversation = repository.create_conversation()
 
     service = ChatService(
         repository=repository,
         llm_gateway=FakeGateway(),
-        context_builder=Mock(),
-        memory_service=Mock(),
+        context_builder=_passthrough_context_builder(),
+        memory_service=_passthrough_memory_service(),
     )
 
     service.chat(
@@ -128,8 +154,49 @@ def test_chat_supports_multiple_turns(
         )
     )
 
-    messages = repository.get_messages(
-        conversation.id,
-    )
+    messages = repository.get_messages(conversation.id)
 
     assert len(messages) == 4
+
+
+def test_chat_injects_persisted_memories_into_llm_context(
+    session: Session,
+) -> None:
+    """Verify persisted memories reach the language model."""
+
+    memory_repository = MemoryRepository(session)
+    memory_service = MemoryService(memory_repository)
+    memory_repository.save_memory(
+        key="favorite_language",
+        value="Python",
+    )
+
+    conversation_repository = ConversationRepository(session)
+    conversation = conversation_repository.create_conversation()
+    gateway = RecordingGateway()
+
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda messages: messages
+
+    service = ChatService(
+        repository=conversation_repository,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+        memory_service=memory_service,
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation.id,
+            message="Hello",
+        )
+    )
+
+    assert len(gateway.last_messages) == 2
+
+    assert gateway.last_messages[0].role == ChatRole.SYSTEM
+    assert MEMORY_CONTEXT_HEADER in gateway.last_messages[0].content
+    assert "- favorite_language: Python" in gateway.last_messages[0].content
+
+    assert gateway.last_messages[1].role == ChatRole.USER
+    assert gateway.last_messages[1].content == "Hello"

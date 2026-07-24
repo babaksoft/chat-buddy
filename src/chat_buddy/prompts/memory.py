@@ -29,3 +29,5 @@ Rules:
 - Do not explain your answer.
 - Do not wrap the JSON in markdown.
 - Return [] if no memories should be stored."""
+
+MEMORY_CONTEXT_HEADER = "Known facts about the user:"

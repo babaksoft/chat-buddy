@@ -90,6 +90,7 @@ class ChatService:
         )
 
         messages = self.get_messages(conversation_id)
+        messages = self._memory_service.inject_memories(messages)
         context = self._context_builder.build_context(messages)
         response = self._llm_gateway.generate(context)
 
