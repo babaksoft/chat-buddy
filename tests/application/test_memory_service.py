@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy.orm import Session
 
-from chat_buddy.application.memory_service import MemoryService
+from chat_buddy.application.service import MemoryService
 from chat_buddy.domain import ChatMessage, ChatRole
 from chat_buddy.infrastructure.db.repositories import MemoryRepository
 from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER

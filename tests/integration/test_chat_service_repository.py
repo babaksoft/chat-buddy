@@ -2,14 +2,12 @@ from unittest.mock import Mock
 
 from sqlalchemy.orm import Session
 
-from chat_buddy.application.chat_service import (
-    ChatRequest,
+from chat_buddy.application.schemas import ChatRequest
+from chat_buddy.application.service import (
     ChatService,
-)
-from chat_buddy.application.conversation_service import (
     ConversationService,
+    MemoryService,
 )
-from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.domain import (
     ChatMessage,
     ChatRole,

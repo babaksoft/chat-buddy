@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from chat_buddy.application.chat_service import ChatService
 from chat_buddy.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.application.service import ChatService
 from chat_buddy.domain import ChatMessage, ChatRole
 
 

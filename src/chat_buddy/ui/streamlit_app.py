@@ -6,11 +6,13 @@ from uuid import UUID
 
 import streamlit as st
 
-from chat_buddy.application.chat_service import ChatService
 from chat_buddy.application.context_builder import DefaultContextBuilder
-from chat_buddy.application.conversation_service import ConversationService
-from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.application.schemas import ChatRequest
+from chat_buddy.application.service import (
+    ChatService,
+    ConversationService,
+    MemoryService,
+)
 from chat_buddy.infrastructure.config.logging import configure_logging
 from chat_buddy.infrastructure.db import SessionLocal
 from chat_buddy.infrastructure.db.repositories import (

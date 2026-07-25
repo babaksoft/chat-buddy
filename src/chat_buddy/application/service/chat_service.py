@@ -1,10 +1,14 @@
 import logging
 
-from chat_buddy.application.conversation_service import ConversationService
-from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.application.schemas import (
     ChatRequest,
     ChatResponse,
+)
+from chat_buddy.application.service.conversation_service import (
+    ConversationService,
+)
+from chat_buddy.application.service.memory_service import (
+    MemoryService,
 )
 from chat_buddy.domain import (
     ChatRole,
