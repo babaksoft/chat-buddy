@@ -42,7 +42,10 @@ def service(
         Configured memory service.
     """
 
-    return MemoryService(repository=repository)
+    return MemoryService(
+        repository=repository,
+        llm_gateway=Mock(),
+    )
 
 
 def test_inject_memories_returns_original_messages_when_empty(

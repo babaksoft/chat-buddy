@@ -1,5 +1,5 @@
 from chat_buddy.domain import ChatMessage, LLMGateway
-from chat_buddy.infrastructure.llm.ollama_gateway import OllamaGateway
+from chat_buddy.infrastructure.llm import OllamaGateway
 
 
 class LLMSummarizer:

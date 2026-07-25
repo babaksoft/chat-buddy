@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from chat_buddy.application.chat_service import ChatService
-from chat_buddy.application.schemas import ChatRequest
+from chat_buddy.application.schemas import ChatRequest, ConversationEntry
 from chat_buddy.domain import ChatMessage, ChatRole
 
 
@@ -21,8 +21,8 @@ def test_chat_returns_llm_response() -> None:
     model response.
     """
 
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from Samantha."
@@ -31,10 +31,10 @@ def test_chat_returns_llm_response() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -53,8 +53,8 @@ def test_chat_persists_user_and_assistant_messages() -> None:
     are persisted.
     """
 
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from Samantha."
@@ -63,10 +63,10 @@ def test_chat_persists_user_and_assistant_messages() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     conversation_id = uuid4()
@@ -78,18 +78,24 @@ def test_chat_persists_user_and_assistant_messages() -> None:
 
     service.chat(request)
 
-    assert repository.add_message.call_count == 2
+    assert conversation_service.add_message.call_count == 2
 
-    first_call = repository.add_message.call_args_list[0]
-    second_call = repository.add_message.call_args_list[1]
+    first_call = conversation_service.add_message.call_args_list[0]
+    second_call = conversation_service.add_message.call_args_list[1]
 
     assert first_call.kwargs["role"] == ChatRole.USER
     assert second_call.kwargs["role"] == ChatRole.ASSISTANT
 
 
 def test_chat_uses_conversation_id_for_persistence() -> None:
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title="Conversation",
+    )
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hi"
@@ -98,13 +104,11 @@ def test_chat_uses_conversation_id_for_persistence() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
-
-    conversation_id = uuid4()
 
     request = ChatRequest(
         conversation_id=conversation_id,
@@ -113,15 +117,15 @@ def test_chat_uses_conversation_id_for_persistence() -> None:
 
     service.chat(request)
 
-    calls = repository.add_message.call_args_list
+    calls = conversation_service.add_message.call_args_list
 
     assert calls[0].kwargs["conversation_id"] == conversation_id
     assert calls[1].kwargs["conversation_id"] == conversation_id
 
 
 def test_chat_persists_assistant_response_content() -> None:
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Response"
@@ -130,10 +134,10 @@ def test_chat_persists_assistant_response_content() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -143,14 +147,14 @@ def test_chat_persists_assistant_response_content() -> None:
 
     service.chat(request)
 
-    second_call = repository.add_message.call_args_list[1]
+    second_call = conversation_service.add_message.call_args_list[1]
 
     assert second_call.kwargs["content"] == "Response"
 
 
 def test_chat_propagates_gateway_errors() -> None:
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.side_effect = RuntimeError("Ollama unavailable")
@@ -159,10 +163,10 @@ def test_chat_propagates_gateway_errors() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -175,8 +179,8 @@ def test_chat_propagates_gateway_errors() -> None:
 
 
 def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
-    repository = Mock()
-    repository.get_messages.return_value = []
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
 
     gateway = Mock()
     gateway.generate.side_effect = RuntimeError()
@@ -185,10 +189,10 @@ def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -199,9 +203,9 @@ def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
     with pytest.raises(RuntimeError):
         service.chat(request)
 
-    assert repository.add_message.call_count == 1
+    assert conversation_service.add_message.call_count == 1
 
-    first_call = repository.add_message.call_args_list[0]
+    first_call = conversation_service.add_message.call_args_list[0]
 
     assert first_call.kwargs["role"] == ChatRole.USER
 
@@ -212,10 +216,9 @@ def test_chat_passes_history_to_context_builder() -> None:
     the context builder.
     """
 
-    repository = Mock()
-
-    repository.get_messages.return_value = [
-        Mock(
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
             role=ChatRole.USER,
             content="Hello",
         ),
@@ -230,10 +233,10 @@ def test_chat_passes_history_to_context_builder() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -258,9 +261,9 @@ def test_chat_passes_context_to_gateway() -> None:
     builder is passed to the language model gateway.
     """
 
-    repository = Mock()
-    repository.get_messages.return_value = [
-        Mock(
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
             role=ChatRole.USER,
             content="Hello",
         ),
@@ -282,10 +285,10 @@ def test_chat_passes_context_to_gateway() -> None:
     memory_service = _pass_through_memory_service()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(
@@ -305,8 +308,8 @@ def test_chat_injects_memories_before_context_builder() -> None:
     building.
     """
 
-    repository = Mock()
-    repository.get_messages.return_value = [
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = [
         ChatMessage(
             role=ChatRole.USER,
             content="Hello",
@@ -334,10 +337,10 @@ def test_chat_injects_memories_before_context_builder() -> None:
     gateway.generate.return_value = "Hi"
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     request = ChatRequest(

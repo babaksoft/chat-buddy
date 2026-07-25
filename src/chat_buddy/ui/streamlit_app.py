@@ -33,25 +33,26 @@ def build_services() -> tuple[ChatService, ConversationService]:
     """
 
     session = SessionLocal()
-    conversation_repository = ConversationRepository(
-        session=session,
-    )
-    memory_repository = MemoryRepository(
-        session=session,
-    )
+    conversation_repository = ConversationRepository(session)
+    memory_repository = MemoryRepository(session)
 
     gateway = OllamaGateway()
     memory_service = MemoryService(
         repository=memory_repository,
-    )
-    chat_service = ChatService(
-        repository=conversation_repository,
         llm_gateway=gateway,
-        context_builder=DefaultContextBuilder(token_counter=MistralTokenCounter()),
-        memory_service=memory_service,
+    )
+    conversation_service = ConversationService(
+        repository=conversation_repository,
     )
 
-    conversation_service = ConversationService(repository=conversation_repository)
+    chat_service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=DefaultContextBuilder(
+            token_counter=MistralTokenCounter(),
+        ),
+    )
 
     return chat_service, conversation_service
 
@@ -69,14 +70,14 @@ def render_sidebar(conversation_service: ConversationService) -> None:
         st.header("Conversations")
 
         if st.button("+ New Chat"):
-            conversation = conversation_service.new_conversation()
+            conversation = conversation_service.create_conversation()
 
             st.session_state.conversation_id = conversation.id
             st.session_state.selected_conversation = conversation
 
             st.rerun()
 
-        conversations = conversation_service.list_conversations()
+        conversations = conversation_service.get_conversations()
         if conversations:
             selected = st.radio(
                 "Existing conversations",
@@ -94,7 +95,7 @@ def render_sidebar(conversation_service: ConversationService) -> None:
 
 
 def render_conversation(
-    service: ChatService,
+    service: ConversationService,
     conversation_id: UUID,
 ) -> None:
     """
@@ -139,7 +140,7 @@ def main() -> None:
     conversation_id = st.session_state.conversation_id
     if conversation_id is not None:
         render_conversation(
-            service=chat_service,
+            service=conversation_service,
             conversation_id=conversation_id,
         )
 

@@ -23,7 +23,7 @@ class ChatResponse:
 
 
 @dataclass(slots=True, frozen=True)
-class ConversationSummary:
+class ConversationEntry:
     """
     Summary information for a conversation.
     """

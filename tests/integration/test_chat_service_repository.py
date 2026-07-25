@@ -6,6 +6,9 @@ from chat_buddy.application.chat_service import (
     ChatRequest,
     ChatService,
 )
+from chat_buddy.application.conversation_service import (
+    ConversationService,
+)
 from chat_buddy.application.memory_service import MemoryService
 from chat_buddy.domain import (
     ChatMessage,
@@ -72,14 +75,18 @@ def test_chat_persists_messages(
 ) -> None:
     """Verify message and response are both persisted."""
 
-    repository = ConversationRepository(session)
-    conversation = repository.create_conversation()
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
         llm_gateway=FakeGateway(),
         context_builder=_passthrough_context_builder(),
-        memory_service=_passthrough_memory_service(),
     )
 
     service.chat(
@@ -89,7 +96,7 @@ def test_chat_persists_messages(
         )
     )
 
-    messages = repository.get_messages(conversation.id)
+    messages = conversation_service.get_messages(conversation.id)
 
     assert len(messages) == 2
 
@@ -105,14 +112,18 @@ def test_chat_returns_response(
 ) -> None:
     """Verify LLM response is returned by chat service."""
 
-    repository = ConversationRepository(session)
-    conversation = repository.create_conversation()
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
         llm_gateway=FakeGateway(),
         context_builder=_passthrough_context_builder(),
-        memory_service=_passthrough_memory_service(),
     )
 
     response = service.chat(
@@ -130,14 +141,18 @@ def test_chat_supports_multiple_turns(
 ) -> None:
     """Verify chat service persists multiple-turn conversations."""
 
-    repository = ConversationRepository(session)
-    conversation = repository.create_conversation()
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
 
     service = ChatService(
-        repository=repository,
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
         llm_gateway=FakeGateway(),
         context_builder=_passthrough_context_builder(),
-        memory_service=_passthrough_memory_service(),
     )
 
     service.chat(
@@ -154,7 +169,7 @@ def test_chat_supports_multiple_turns(
         )
     )
 
-    messages = repository.get_messages(conversation.id)
+    messages = conversation_service.get_messages(conversation.id)
 
     assert len(messages) == 4
 
@@ -171,18 +186,22 @@ def test_chat_injects_persisted_memories_into_llm_context(
         value="Python",
     )
 
-    conversation_repository = ConversationRepository(session)
-    conversation = conversation_repository.create_conversation()
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
     gateway = RecordingGateway()
 
     context_builder = Mock()
     context_builder.build_context.side_effect = lambda messages: messages
 
     service = ChatService(
-        repository=conversation_repository,
+        conversation_service=conversation_service,
+        memory_service=memory_service,
         llm_gateway=gateway,
         context_builder=context_builder,
-        memory_service=memory_service,
     )
 
     service.chat(
