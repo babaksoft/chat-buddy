@@ -16,7 +16,7 @@ from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
 logger = logging.getLogger(__name__)
 
 
-class MemoryService:v
+class MemoryService:
     """Provides application services for persistent memories."""
 
     def __init__(
