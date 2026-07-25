@@ -156,12 +156,24 @@ class DefaultContextBuilder:
             followed by the remaining recent messages.
         """
 
-        split_index = max(1, len(messages) // 2)
-        old_messages = messages[:split_index]
-        recent_messages = messages[split_index:]
+        system_messages = [
+            message for message in messages if message.role == ChatRole.SYSTEM
+        ]
+        dialogue = [message for message in messages if message.role != ChatRole.SYSTEM]
+
+        if not dialogue:
+            return messages
+
+        split_index = max(1, len(dialogue) // 2)
+        old_messages = dialogue[:split_index]
+        recent_messages = dialogue[split_index:]
 
         logger.info(
-            "Summarizing conversation: summary_messages=%d recent_messages=%d",
+            (
+                "Summarizing conversation: system_messages=%d "
+                "summary_messages=%d recent_messages=%d"
+            ),
+            len(system_messages),
             len(old_messages),
             len(recent_messages),
         )
@@ -169,6 +181,7 @@ class DefaultContextBuilder:
         summary = self._summarizer.summarize(old_messages)
 
         return [
+            *system_messages,
             ChatMessage(
                 role=ChatRole.SYSTEM,
                 content=f"Conversation summary:\n\n{summary}",
