@@ -160,7 +160,7 @@ class ChatService:
             title = self._build_fallback_title(user_message)
 
         try:
-            updated = self._conversation_service.update_conversation_title(
+            updated = self._conversation_service.rename_conversation(
                 conversation_id=conversation_id,
                 title=title,
             )
@@ -235,13 +235,13 @@ class ChatService:
                 Given text.
 
         Returns:
-            Original text if it has 60 characters or less,
+            Original text if it has 50 characters or less,
             otherwise clipped text ending with ellipsis.
         """
 
         clipped = text
-        if len(clipped) > 60:
-            clipped = clipped[:57].rstrip()
+        if len(clipped) > 50:
+            clipped = clipped[:47].rstrip()
             clipped = f"{clipped}..."
 
         return clipped

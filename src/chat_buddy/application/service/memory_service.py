@@ -99,7 +99,7 @@ class MemoryService:
             A list of all stored memories.
         """
 
-        persisted_memories = self._repository.list_memories()
+        persisted_memories = self._repository.get_memories()
 
         return [
             ExtractedMemory(key=memory.key, value=memory.value)

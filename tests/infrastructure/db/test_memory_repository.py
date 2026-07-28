@@ -50,7 +50,7 @@ def test_save_memory_updates_existing_memory(repository: MemoryRepository) -> No
 
     assert updated.value == "C#"
 
-    memories = repository.list_memories()
+    memories = repository.get_memories()
     assert len(memories) == 1
 
 
@@ -82,7 +82,7 @@ def test_list_memories_returns_all_memories(repository: MemoryRepository) -> Non
     repository.save_memory("b", "2")
     repository.save_memory("a", "1")
 
-    memories = repository.list_memories()
+    memories = repository.get_memories()
 
     assert len(memories) == 2
     assert [m.key for m in memories] == [

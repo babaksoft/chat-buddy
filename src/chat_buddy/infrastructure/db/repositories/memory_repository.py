@@ -73,7 +73,7 @@ class MemoryRepository:
 
         return self._session.scalar(statement)
 
-    def list_memories(self) -> list[Memory]:
+    def get_memories(self) -> list[Memory]:
         """
         Return all memories.
 

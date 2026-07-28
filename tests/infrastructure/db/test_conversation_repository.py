@@ -189,7 +189,7 @@ def test_update_conversation_title(
 
     conversation = repository.create_conversation()
 
-    updated = repository.update_conversation_title(
+    updated = repository.rename_conversation(
         conversation.id,
         "Launch Planning",
     )

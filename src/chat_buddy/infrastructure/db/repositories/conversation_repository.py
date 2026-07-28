@@ -125,13 +125,13 @@ class ConversationRepository:
 
         return conversations
 
-    def update_conversation_title(
+    def rename_conversation(
         self,
         conversation_id: UUID,
         title: str,
     ) -> bool:
         """
-        Update a conversation title.
+        Rename a conversation.
 
         Args:
             conversation_id:
@@ -141,7 +141,7 @@ class ConversationRepository:
                 New conversation title.
 
         Returns:
-            True if the conversation was found and updated,
+            True if the conversation was found and renamed,
             otherwise False.
 
         Raises:
@@ -157,7 +157,7 @@ class ConversationRepository:
 
             if conversation is None:
                 logger.warning(
-                    "Conversation %s not found for title update.",
+                    "Conversation %s not found for rename.",
                     conversation_id,
                 )
 
@@ -168,7 +168,7 @@ class ConversationRepository:
             self._session.refresh(conversation)
 
             logger.info(
-                "Updated conversation %s title.",
+                "Renamed conversation %s.",
                 conversation_id,
             )
 
@@ -178,7 +178,7 @@ class ConversationRepository:
             self._session.rollback()
 
             logger.exception(
-                "Failed to update conversation %s title.",
+                "Failed to rename conversation %s.",
                 conversation_id,
             )
 

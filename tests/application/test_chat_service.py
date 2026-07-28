@@ -402,7 +402,7 @@ def test_chat_sets_title_on_first_exchange() -> None:
     )
 
     gateway.generate_title.assert_called_once()
-    conversation_service.update_conversation_title.assert_called_once_with(
+    conversation_service.rename_conversation.assert_called_once_with(
         conversation_id=conversation_id,
         title="Launch planning",
     )
@@ -446,7 +446,7 @@ def test_chat_falls_back_when_title_generation_is_blank() -> None:
         )
     )
 
-    conversation_service.update_conversation_title.assert_called_once_with(
+    conversation_service.rename_conversation.assert_called_once_with(
         conversation_id=conversation_id,
         title="Need a launch plan",
     )
@@ -488,5 +488,5 @@ def test_chat_does_not_retitle_existing_conversations() -> None:
         )
     )
 
-    conversation_service.update_conversation_title.assert_not_called()
+    conversation_service.rename_conversation.assert_not_called()
     gateway.generate_title.assert_not_called()
