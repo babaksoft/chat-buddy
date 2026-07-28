@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 from uuid import UUID
 
 from chat_buddy.application.schemas import (
@@ -42,7 +42,7 @@ class ConversationService:
             most recently updated first.
         """
 
-        conversations = self._repository.list_conversations()
+        conversations = self._repository.get_conversations()
 
         return [
             ConversationEntry(
@@ -66,6 +66,30 @@ class ConversationService:
         return ConversationEntry(
             id=conversation.id,
             title=conversation.title,
+        )
+
+    def update_conversation_title(
+        self,
+        conversation_id: UUID,
+        title: str,
+    ) -> bool:
+        """
+        Update the title of an existing conversation.
+
+        Args:
+            conversation_id:
+                Unique conversation identifier.
+
+            title:
+                New conversation title.
+
+        Returns:
+            True if the conversation was updated, otherwise False.
+        """
+
+        return self._repository.update_conversation_title(
+            conversation_id=conversation_id,
+            title=title,
         )
 
     def get_or_create_conversation(

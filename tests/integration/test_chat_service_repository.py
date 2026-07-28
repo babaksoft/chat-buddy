@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+﻿from unittest.mock import Mock
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,12 @@ class FakeGateway(LLMGateway):
     ) -> str:
         return "Conversation summary."
 
+    def generate_title(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        return "Conversation title."
+
     def extract_memories(
         self,
         messages: list[ChatMessage],
@@ -52,6 +58,25 @@ class RecordingGateway(FakeGateway):
         self.last_messages = messages
 
         return super().generate(messages)
+
+
+class TitleGateway(FakeGateway):
+    def __init__(self, title: str) -> None:
+        self._title = title
+
+    def generate_title(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        return self._title
+
+
+class BlankTitleGateway(FakeGateway):
+    def generate_title(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        return "   "
 
 
 def _passthrough_context_builder() -> Mock:
@@ -217,3 +242,67 @@ def test_chat_injects_persisted_memories_into_llm_context(
 
     assert gateway.last_messages[1].role == ChatRole.USER
     assert gateway.last_messages[1].content == "Hello"
+
+
+def test_chat_auto_titles_first_exchange(
+    session: Session,
+) -> None:
+    """Verify the first exchange persists a generated title."""
+
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
+        llm_gateway=TitleGateway("Launch planning"),
+        context_builder=_passthrough_context_builder(),
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation.id,
+            message="Plan the launch",
+        )
+    )
+
+    persisted = conversation_service.get_or_create_conversation(conversation.id)
+
+    assert persisted is not None
+    assert persisted.title == "Launch planning"
+
+
+def test_chat_falls_back_to_first_message_title(
+    session: Session,
+) -> None:
+    """Verify blank title output falls back to the first user message."""
+
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
+        llm_gateway=BlankTitleGateway(),
+        context_builder=_passthrough_context_builder(),
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation.id,
+            message="Need a launch plan",
+        )
+    )
+
+    persisted = conversation_service.get_or_create_conversation(conversation.id)
+
+    assert persisted is not None
+    assert persisted.title == "Need a launch plan"

@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 
 from ollama import Client
@@ -7,6 +7,7 @@ from chat_buddy.domain import ChatMessage, ExtractedMemory
 from chat_buddy.infrastructure.config import settings
 from chat_buddy.prompts import (
     EXTRACT_MEMORY_PROMPT,
+    GENERATE_TITLE_PROMPT,
     SUMMARIZE_PROMPT,
 )
 
@@ -114,6 +115,50 @@ class OllamaGateway:
 
         logger.info(
             "Generated conversation summary (%d characters).",
+            len(response),
+        )
+
+        return response
+
+    def generate_title(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        """
+        Generate a short title for a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Generated title text.
+        """
+
+        logger.debug(
+            "Generating conversation title using model '%s'.",
+            self._model_name,
+        )
+
+        conversation = "\n".join(
+            f"{message.role.value}: {message.content}" for message in messages
+        )
+
+        response = self._chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": GENERATE_TITLE_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": conversation,
+                },
+            ],
+        )
+
+        logger.info(
+            "Generated conversation title (%d characters).",
             len(response),
         )
 

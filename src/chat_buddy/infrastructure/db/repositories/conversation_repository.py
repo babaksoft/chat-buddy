@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 from uuid import UUID
 
 from sqlalchemy import select
@@ -98,7 +98,7 @@ class ConversationRepository:
 
         return conversation
 
-    def list_conversations(
+    def get_conversations(
         self,
     ) -> list[Conversation]:
         """
@@ -124,6 +124,65 @@ class ConversationRepository:
         )
 
         return conversations
+
+    def update_conversation_title(
+        self,
+        conversation_id: UUID,
+        title: str,
+    ) -> bool:
+        """
+        Update a conversation title.
+
+        Args:
+            conversation_id:
+                Unique conversation identifier.
+
+            title:
+                New conversation title.
+
+        Returns:
+            True if the conversation was found and updated,
+            otherwise False.
+
+        Raises:
+            SQLAlchemyError:
+                If title persistence fails.
+        """
+
+        try:
+            conversation = self._session.get(
+                Conversation,
+                conversation_id,
+            )
+
+            if conversation is None:
+                logger.warning(
+                    "Conversation %s not found for title update.",
+                    conversation_id,
+                )
+
+                return False
+
+            conversation.title = title
+            self._session.commit()
+            self._session.refresh(conversation)
+
+            logger.info(
+                "Updated conversation %s title.",
+                conversation_id,
+            )
+
+            return True
+
+        except SQLAlchemyError:
+            self._session.rollback()
+
+            logger.exception(
+                "Failed to update conversation %s title.",
+                conversation_id,
+            )
+
+            raise
 
     def add_message(
         self,

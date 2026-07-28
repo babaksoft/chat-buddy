@@ -15,6 +15,13 @@ def _pass_through_memory_service() -> Mock:
     return memory_service
 
 
+def _pass_through_context_builder() -> Mock:
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda messages: messages
+
+    return context_builder
+
+
 def test_chat_returns_llm_response() -> None:
     """
     Verify that the service returns the generated
@@ -354,3 +361,132 @@ def test_chat_injects_memories_before_context_builder() -> None:
     context_builder.build_context.assert_called_once_with(
         messages_with_memories,
     )
+
+
+def test_chat_sets_title_on_first_exchange() -> None:
+    """
+    Verify that the first exchange generates and persists a title.
+    """
+
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title=None,
+    )
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Plan the launch",
+        ),
+    ]
+    conversation_service.update_conversation_title.return_value = True
+
+    gateway = Mock()
+    gateway.generate.return_value = "Hi"
+    gateway.generate_title.return_value = '"Launch planning"\n'
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_pass_through_memory_service(),
+        llm_gateway=gateway,
+        context_builder=_pass_through_context_builder(),
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation_id,
+            message="Plan the launch",
+        )
+    )
+
+    gateway.generate_title.assert_called_once()
+    conversation_service.update_conversation_title.assert_called_once_with(
+        conversation_id=conversation_id,
+        title="Launch planning",
+    )
+
+
+def test_chat_falls_back_when_title_generation_is_blank() -> None:
+    """
+    Verify that blank title output falls back to the first user message.
+    """
+
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title=None,
+    )
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Need a launch plan",
+        ),
+    ]
+    conversation_service.update_conversation_title.return_value = True
+
+    gateway = Mock()
+    gateway.generate.return_value = "Hi"
+    gateway.generate_title.return_value = "   "
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_pass_through_memory_service(),
+        llm_gateway=gateway,
+        context_builder=_pass_through_context_builder(),
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation_id,
+            message="Need a launch plan",
+        )
+    )
+
+    conversation_service.update_conversation_title.assert_called_once_with(
+        conversation_id=conversation_id,
+        title="Need a launch plan",
+    )
+
+
+def test_chat_does_not_retitle_existing_conversations() -> None:
+    """
+    Verify that conversations with an existing title are not retitled.
+    """
+
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title="Existing title",
+    )
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Hello",
+        ),
+    ]
+
+    gateway = Mock()
+    gateway.generate.return_value = "Hi"
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_pass_through_memory_service(),
+        llm_gateway=gateway,
+        context_builder=_pass_through_context_builder(),
+    )
+
+    service.chat(
+        ChatRequest(
+            conversation_id=conversation_id,
+            message="Hello",
+        )
+    )
+
+    conversation_service.update_conversation_title.assert_not_called()
+    gateway.generate_title.assert_not_called()

@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 from sqlalchemy.orm import Session
 
 from chat_buddy.domain import ChatRole
@@ -72,7 +72,7 @@ def test_list_conversations(
         title="Second",
     )
 
-    conversations = repository.list_conversations()
+    conversations = repository.get_conversations()
 
     assert len(conversations) == 2
 
@@ -178,3 +178,25 @@ def test_delete_conversation_removes_messages(
     )
 
     assert messages == []
+
+
+def test_update_conversation_title(
+    repository: ConversationRepository,
+) -> None:
+    """
+    Verify conversation title updates are persisted.
+    """
+
+    conversation = repository.create_conversation()
+
+    updated = repository.update_conversation_title(
+        conversation.id,
+        "Launch Planning",
+    )
+
+    assert updated is True
+
+    retrieved = repository.get_conversation(conversation.id)
+
+    assert retrieved is not None
+    assert retrieved.title == "Launch Planning"

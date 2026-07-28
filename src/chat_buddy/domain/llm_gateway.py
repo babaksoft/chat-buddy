@@ -1,4 +1,4 @@
-from typing import Protocol
+﻿from typing import Protocol
 
 from chat_buddy.domain.chat import ChatMessage
 from chat_buddy.domain.extracted_memory import ExtractedMemory
@@ -37,6 +37,21 @@ class LLMGateway(Protocol):
 
         Returns:
             Conversation summary.
+        """
+
+    def generate_title(
+        self,
+        messages: list[ChatMessage],
+    ) -> str:
+        """
+        Generate a short title for a conversation.
+
+        Args:
+            messages:
+                Conversation messages.
+
+        Returns:
+            Conversation title.
         """
 
     def extract_memories(
