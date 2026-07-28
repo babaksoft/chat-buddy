@@ -65,29 +65,13 @@ class DefaultContextBuilder:
                 even after summarization.
         """
 
-        context_tokens = self._token_counter.count_tokens(messages)
-        total_tokens = context_tokens + self._config.prompt_overhead_tokens
-        utilization = total_tokens / self._config.model_context_window * 100
+        total_tokens = self._get_token_count(messages)
         summary_threshold = (
             self._config.model_context_window * self._config.summary_trigger_ratio
         )
 
         if total_tokens <= summary_threshold:
-            logger.info(
-                (
-                    "Context prepared: "
-                    "messages=%d "
-                    "context_tokens=%d "
-                    "overhead_tokens=%d "
-                    "estimated_total_tokens=%d "
-                    "utilization=%.1f%%"
-                ),
-                len(messages),
-                context_tokens,
-                self._config.prompt_overhead_tokens,
-                total_tokens,
-                utilization,
-            )
+            self._log_context("Context prepared", messages)
 
             return messages
 
@@ -102,9 +86,7 @@ class DefaultContextBuilder:
         )
 
         rebuilt_context = self._summarize_context(messages)
-        context_tokens = self._token_counter.count_tokens(rebuilt_context)
-        total_tokens = context_tokens + self._config.prompt_overhead_tokens
-        utilization = total_tokens / self._config.model_context_window * 100
+        total_tokens = self._get_token_count(rebuilt_context)
 
         if total_tokens > self._config.model_context_window:
             logger.warning(
@@ -122,23 +104,57 @@ class DefaultContextBuilder:
                 "Conversation exceeds available context window after summarization."
             )
 
+        self._log_context("Context summarized", rebuilt_context)
+
+        return rebuilt_context
+
+    def _log_context(self, message: str, context: list[ChatMessage]) -> None:
+        """
+        Calculate and log current context utilization.
+
+        Args:
+            message:
+                Message thet describes current operation.
+
+            context:
+                Current conversation context.
+        """
+
+        context_tokens = self._token_counter.count_tokens(context)
+        total_tokens = context_tokens + self._config.prompt_overhead_tokens
+        utilization = total_tokens / self._config.model_context_window * 100
+
         logger.info(
             (
-                "Context summarized: "
+                f"{message}: "
                 "messages=%d "
                 "context_tokens=%d "
                 "overhead_tokens=%d "
                 "estimated_total_tokens=%d "
                 "utilization=%.1f%%"
             ),
-            len(rebuilt_context),
+            len(context),
             context_tokens,
             self._config.prompt_overhead_tokens,
             total_tokens,
             utilization,
         )
 
-        return rebuilt_context
+    def _get_token_count(self, context: list[ChatMessage]) -> int:
+        """
+        Count tokens in a conversation.
+
+        Args:
+            context:
+                Current conversation context.
+
+        Returns:
+            Estimated token count.
+        """
+
+        context_tokens = self._token_counter.count_tokens(context)
+
+        return context_tokens + self._config.prompt_overhead_tokens
 
     def _summarize_context(
         self,

@@ -91,6 +91,8 @@ def test_build_context_summarizes_when_threshold_exceeded() -> None:
     token_counter = Mock()
     token_counter.count_tokens.side_effect = [
         900,
+        900,
+        300,
         300,
     ]
 
