@@ -68,13 +68,13 @@ class ConversationService:
             title=conversation.title,
         )
 
-    def update_conversation_title(
+    def rename_conversation(
         self,
         conversation_id: UUID,
         title: str,
     ) -> bool:
         """
-        Update the title of an existing conversation.
+        Renames an existing conversation.
 
         Args:
             conversation_id:
@@ -84,12 +84,18 @@ class ConversationService:
                 New conversation title.
 
         Returns:
-            True if the conversation was updated, otherwise False.
+            True if the conversation was renamed, otherwise False.
         """
 
-        return self._repository.update_conversation_title(
+        cleaned = title.strip()
+        if not cleaned:
+            raise ValueError("Title cannot include only whitespace characters.")
+
+        cleaned = self._auto_ellipsis(" ".join(cleaned.split()))
+
+        return self._repository.rename_conversation(
             conversation_id=conversation_id,
-            title=title,
+            title=cleaned,
         )
 
     def get_or_create_conversation(
@@ -166,3 +172,23 @@ class ConversationService:
             )
             for message in messages
         ]
+
+    def _auto_ellipsis(self, text: str) -> str:
+        """
+        Clip given text and append ellipsis, if necessary
+
+        Args:
+            text:
+                Given text.
+
+        Returns:
+            Original text if it has 50 characters or less,
+            otherwise clipped text ending with ellipsis.
+        """
+
+        clipped = text
+        if len(clipped) > 50:
+            clipped = clipped[:47].rstrip()
+            clipped = f"{clipped}..."
+
+        return clipped
