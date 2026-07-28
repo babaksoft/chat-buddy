@@ -35,8 +35,9 @@ class OllamaGateway:
                 Ollama server endpoint.
         """
 
+        self._utility_model = settings.UTILITY_MODEL
+        self._chat_model = model_name or settings.CHAT_MODEL
         ollama_host = host or settings.OLLAMA_ENDPOINT_URL
-        self._model_name = model_name or settings.MODEL_NAME
         self._client = Client(host=ollama_host)
 
     def generate(
@@ -56,7 +57,7 @@ class OllamaGateway:
 
         logger.debug(
             "Generating response using model '%s'.",
-            self._model_name,
+            self._chat_model,
         )
 
         response = self._chat(
@@ -66,7 +67,8 @@ class OllamaGateway:
                     "content": message.content,
                 }
                 for message in messages
-            ]
+            ],
+            model_name=self._chat_model,
         )
 
         logger.debug(
@@ -93,7 +95,7 @@ class OllamaGateway:
 
         logger.debug(
             "Generating conversation summary using model '%s'.",
-            self._model_name,
+            self._utility_model,
         )
 
         conversation = "\n".join(
@@ -111,6 +113,7 @@ class OllamaGateway:
                     "content": conversation,
                 },
             ],
+            model_name=self._utility_model,
         )
 
         logger.info(
@@ -137,7 +140,7 @@ class OllamaGateway:
 
         logger.debug(
             "Generating conversation title using model '%s'.",
-            self._model_name,
+            self._utility_model,
         )
 
         conversation = "\n".join(
@@ -155,6 +158,7 @@ class OllamaGateway:
                     "content": conversation,
                 },
             ],
+            model_name=self._utility_model,
         )
 
         logger.info(
@@ -181,7 +185,7 @@ class OllamaGateway:
 
         logger.debug(
             "Extracting memories using model '%s'.",
-            self._model_name,
+            self._utility_model,
         )
 
         conversation = "\n".join(
@@ -201,6 +205,7 @@ class OllamaGateway:
                     "content": conversation,
                 },
             ],
+            model_name=self._utility_model,
         )
 
         try:
@@ -231,20 +236,27 @@ class OllamaGateway:
 
         return memories
 
-    def _chat(self, messages: list[dict[str, str]]) -> str:
+    def _chat(
+        self,
+        messages: list[dict[str, str]],
+        model_name: str,
+    ) -> str:
         """
-        Generates a chat completion using the LLM.
+        Generates a chat completion using given LLM model.
 
         Args:
             messages:
                 Context that will be sent to the LLM.
+
+            model_name:
+                LLM model to use for chat completion.
 
         Returns:
             LLM response as plain text.
         """
 
         response = self._client.chat(
-            model=self._model_name,
+            model=model_name,
             messages=messages,
         )
 
@@ -253,7 +265,7 @@ class OllamaGateway:
 
         logger.info(
             "LLM token usage: model=%s prompt=%d completion=%d total=%d",
-            self._model_name,
+            model_name,
             prompt_tokens,
             completion_tokens,
             prompt_tokens + completion_tokens,
