@@ -221,14 +221,19 @@ def main() -> None:
     )
 
     if prompt:
-        response = chat_service.chat(
-            ChatRequest(
-                conversation_id=conversation_id,
-                message=prompt,
-            )
-        )
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        st.session_state.conversation_id = response.conversation_id
+        with st.chat_message("assistant"):
+            new_conversation_id, response_generator = chat_service.stream_chat(
+                ChatRequest(
+                    conversation_id=conversation_id,
+                    message=prompt,
+                )
+            )
+            st.write_stream(response_generator)
+
+        st.session_state.conversation_id = new_conversation_id
 
         st.rerun()
 

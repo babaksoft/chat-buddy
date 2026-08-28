@@ -1,5 +1,6 @@
 ﻿import json
 import logging
+from collections.abc import Iterator
 
 from ollama import Client
 
@@ -77,6 +78,56 @@ class OllamaGateway:
         )
 
         return response
+
+    def generate_stream(
+        self,
+        messages: list[ChatMessage],
+    ) -> Iterator[str]:
+        """
+        Generate a streaming response using Ollama.
+
+        Args:
+            messages:
+                Current conversation history, including the last user message.
+
+        Yields:
+            Response chunks as they are generated.
+        """
+
+        logger.debug(
+            "Generating streaming response using model '%s'.",
+            self._chat_model,
+        )
+
+        formatted_messages = [
+            {
+                "role": message.role.value,
+                "content": message.content,
+            }
+            for message in messages
+        ]
+
+        response_stream = self._client.chat(
+            model=self._chat_model,
+            messages=formatted_messages,
+            stream=True,
+        )
+
+        total_chunks = 0
+        total_chars = 0
+
+        for chunk in response_stream:
+            content = chunk["message"]["content"]
+            if content:
+                total_chunks += 1
+                total_chars += len(content)
+                yield content
+
+        logger.debug(
+            "Completed streaming response: chunks=%d chars=%d",
+            total_chunks,
+            total_chars,
+        )
 
     def summarize(
         self,

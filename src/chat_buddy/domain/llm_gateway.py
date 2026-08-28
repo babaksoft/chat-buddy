@@ -1,4 +1,5 @@
-﻿from typing import Protocol
+﻿from collections.abc import Iterator
+from typing import Protocol
 
 from chat_buddy.domain.chat import ChatMessage
 from chat_buddy.domain.extracted_memory import ExtractedMemory
@@ -22,6 +23,21 @@ class LLMGateway(Protocol):
 
         Returns:
             Assistant response.
+        """
+
+    def generate_stream(
+        self,
+        messages: list[ChatMessage],
+    ) -> Iterator[str]:
+        """
+        Generate an assistant response with streaming.
+
+        Args:
+            messages:
+                Conversation context.
+
+        Yields:
+            Response chunks as they are generated.
         """
 
     def summarize(

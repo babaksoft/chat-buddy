@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from uuid import UUID
 
 from chat_buddy.application.schemas import (
@@ -112,6 +113,82 @@ class ChatService:
             conversation_id=conversation_id,
             response=response,
         )
+
+    def stream_chat(
+        self,
+        request: ChatRequest,
+    ) -> tuple[UUID, Generator[str, None, None]]:
+        """
+        Process a chat request with streaming response.
+
+        Create new conversation if necessary.
+        Yields response chunks as they are generated.
+        Persists complete response after streaming completes.
+
+        Args:
+            request:
+                User chat request.
+
+        Returns:
+            Tuple of (conversation_id, response_generator).
+        """
+
+        conversation = self._conversation_service.get_or_create_conversation(
+            conversation_id=request.conversation_id,
+        )
+        conversation_id = conversation.id
+
+        logger.info(
+            "Processing streaming message for conversation %s.",
+            conversation_id,
+        )
+
+        self._conversation_service.add_message(
+            conversation_id=conversation_id,
+            role=ChatRole.USER,
+            content=request.message,
+        )
+
+        messages = self._conversation_service.get_messages(conversation_id)
+        is_first_exchange = len(messages) == 1
+        messages = self._memory_service.inject_memories(messages)
+        context = self._context_builder.build_context(messages)
+
+        def _generate() -> Generator[str, None, None]:
+            accumulated_response = ""
+
+            try:
+                for chunk in self._llm_gateway.generate_stream(context):
+                    accumulated_response += chunk
+                    yield chunk
+            except Exception:
+                logger.exception(
+                    "Error during streaming for conversation %s.",
+                    conversation_id,
+                )
+                raise
+
+            self._conversation_service.add_message(
+                conversation_id=conversation_id,
+                role=ChatRole.ASSISTANT,
+                content=accumulated_response,
+            )
+
+            self._memory_service.extract_memories(messages)
+
+            if is_first_exchange and not conversation.title:
+                self._title_conversation(
+                    conversation_id=conversation_id,
+                    user_message=request.message,
+                    assistant_message=accumulated_response,
+                )
+
+            logger.info(
+                "Completed streaming response for conversation %s.",
+                conversation_id,
+            )
+
+        return conversation_id, _generate()
 
     def _title_conversation(
         self,

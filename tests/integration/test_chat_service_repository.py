@@ -1,4 +1,5 @@
-﻿from unittest.mock import Mock
+﻿from collections.abc import Iterator
+from unittest.mock import Mock
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,14 @@ class FakeGateway(LLMGateway):
         messages: list[ChatMessage],
     ) -> str:
         return "Hello from Samantha."
+
+    def generate_stream(
+        self,
+        messages: list[ChatMessage],
+    ) -> Iterator[str]:
+        yield "Hello "
+        yield "from "
+        yield "Samantha."
 
     def summarize(
         self,
@@ -306,3 +315,75 @@ def test_chat_falls_back_to_first_message_title(
 
     assert persisted is not None
     assert persisted.title == "Need a launch plan"
+
+
+def test_chat_stream_persists_messages(
+    session: Session,
+) -> None:
+    """Verify streaming persists complete message."""
+
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
+        llm_gateway=FakeGateway(),
+        context_builder=_passthrough_context_builder(),
+    )
+
+    conversation_id, generator = service.stream_chat(
+        ChatRequest(
+            conversation_id=conversation.id,
+            message="Hello",
+        )
+    )
+
+    chunks = list(generator)
+
+    assert chunks == ["Hello ", "from ", "Samantha."]
+
+    messages = conversation_service.get_messages(conversation_id)
+    assert len(messages) == 2
+    assert messages[0].role == ChatRole.USER
+    assert messages[0].content == "Hello"
+    assert messages[1].role == ChatRole.ASSISTANT
+    assert messages[1].content == "Hello from Samantha."
+
+
+def test_chat_stream_auto_titles_first_exchange(
+    session: Session,
+) -> None:
+    """Verify streaming generates title after first exchange."""
+
+    conversation_service = ConversationService(
+        repository=ConversationRepository(
+            session=session,
+        ),
+    )
+    conversation = conversation_service.create_conversation()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=_passthrough_memory_service(),
+        llm_gateway=FakeGateway(),
+        context_builder=_passthrough_context_builder(),
+    )
+
+    conversation_id, generator = service.stream_chat(
+        ChatRequest(
+            conversation_id=conversation.id,
+            message="Plan the launch",
+        )
+    )
+
+    list(generator)
+
+    persisted = conversation_service.get_or_create_conversation(conversation.id)
+
+    assert persisted is not None
+    assert persisted.title == "Conversation title."

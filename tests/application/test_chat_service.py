@@ -490,3 +490,200 @@ def test_chat_does_not_retitle_existing_conversations() -> None:
 
     conversation_service.rename_conversation.assert_not_called()
     gateway.generate_title.assert_not_called()
+
+
+def test_stream_chat_yields_chunks() -> None:
+    """
+    Verify that chat_stream yields chunks from gateway.
+    """
+
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
+
+    gateway = Mock()
+    gateway.generate_stream.return_value = iter(["Hello ", "there"])
+
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda m: m
+
+    memory_service = _pass_through_memory_service()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+    )
+
+    request = ChatRequest(
+        conversation_id=uuid4(),
+        message="Hello",
+    )
+
+    conversation_id, generator = service.stream_chat(request)
+
+    chunks = list(generator)
+
+    assert chunks == ["Hello ", "there"]
+
+
+def test_stream_chat_persists_complete_response() -> None:
+    """
+    Verify that complete response is persisted after streaming.
+    """
+
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
+
+    gateway = Mock()
+    gateway.generate_stream.return_value = iter(["Hello ", "from ", "Samantha."])
+
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda m: m
+
+    memory_service = _pass_through_memory_service()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+    )
+
+    request = ChatRequest(
+        conversation_id=uuid4(),
+        message="Hello",
+    )
+
+    conversation_id, generator = service.stream_chat(request)
+    list(generator)
+
+    calls = conversation_service.add_message.call_args_list
+    assistant_call = calls[1]
+
+    assert assistant_call.kwargs["role"] == ChatRole.ASSISTANT
+    assert assistant_call.kwargs["content"] == "Hello from Samantha."
+
+
+def test_stream_chat_does_not_persist_on_error() -> None:
+    """
+    Verify that partial responses are not saved on streaming error.
+    """
+
+    conversation_service = Mock()
+    conversation_service.get_messages.return_value = []
+
+    def failing_generator():
+        yield "Hello "
+        raise RuntimeError("Streaming failed")
+
+    gateway = Mock()
+    gateway.generate_stream.return_value = failing_generator()
+
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda m: m
+
+    memory_service = _pass_through_memory_service()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+    )
+
+    request = ChatRequest(
+        conversation_id=uuid4(),
+        message="Hello",
+    )
+
+    conversation_id, generator = service.stream_chat(request)
+
+    with pytest.raises(RuntimeError):
+        list(generator)
+
+    assert conversation_service.add_message.call_count == 1
+    assert conversation_service.add_message.call_args.kwargs["role"] == ChatRole.USER
+
+
+def test_stream_chat_generates_title_on_first_exchange() -> None:
+    """
+    Verify that first exchange generates title after streaming.
+    """
+
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title=None,
+    )
+    conversation_service.get_messages.return_value = [
+        ChatMessage(
+            role=ChatRole.USER,
+            content="Hello",
+        ),
+    ]
+
+    gateway = Mock()
+    gateway.generate_stream.return_value = iter(["Hi there"])
+    gateway.generate_title.return_value = "Greeting"
+
+    context_builder = _pass_through_context_builder()
+    memory_service = _pass_through_memory_service()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+    )
+
+    request = ChatRequest(
+        conversation_id=conversation_id,
+        message="Hello",
+    )
+
+    returned_id, generator = service.stream_chat(request)
+    list(generator)
+
+    gateway.generate_title.assert_called_once()
+    conversation_service.rename_conversation.assert_called_once()
+
+
+def test_stream_chat_returns_conversation_id() -> None:
+    """
+    Verify that chat_stream returns the conversation ID.
+    """
+
+    conversation_id = uuid4()
+
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
+        id=conversation_id,
+        title=None,
+    )
+    conversation_service.get_messages.return_value = []
+
+    gateway = Mock()
+    gateway.generate_stream.return_value = iter(["Hi"])
+
+    context_builder = _pass_through_context_builder()
+    memory_service = _pass_through_memory_service()
+
+    service = ChatService(
+        conversation_service=conversation_service,
+        memory_service=memory_service,
+        llm_gateway=gateway,
+        context_builder=context_builder,
+    )
+
+    request = ChatRequest(
+        conversation_id=conversation_id,
+        message="Hello",
+    )
+
+    returned_id, generator = service.stream_chat(request)
+    list(generator)
+
+    assert returned_id == conversation_id
