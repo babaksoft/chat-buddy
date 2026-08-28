@@ -152,9 +152,10 @@ def render_conversation_row(
     current_id = st.session_state.get("conversation_id")
     is_selected = current_id == conversation.id
 
+    title = conversation.title or "New Conversation"
     col_title, col_rename, col_delete = st.columns([8, 1, 1])
     with col_title:
-        label = f"👉 {conversation.title}" if is_selected else conversation.title
+        label = f"👉 {title}" if is_selected else title
 
         if st.button(
             label,
