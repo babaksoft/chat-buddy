@@ -98,6 +98,25 @@ class ConversationService:
             title=cleaned,
         )
 
+    def delete_conversation(
+        self,
+        conversation_id: UUID,
+    ) -> bool:
+        """
+        Delete a conversation and all associated messages.
+
+        Args:
+            conversation_id:
+                Unique conversation identifier.
+
+        Returns:
+            True if the conversation was deleted, otherwise False.
+        """
+
+        return self._repository.delete_conversation(
+            conversation_id=conversation_id,
+        )
+
     def get_or_create_conversation(
         self, conversation_id: UUID | None
     ) -> ConversationEntry:

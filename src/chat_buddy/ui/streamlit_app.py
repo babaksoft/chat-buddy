@@ -98,14 +98,54 @@ def render_conversation_editor(
             st.rerun()
 
 
+def render_delete_confirm(
+    conversation_service: ConversationService,
+    conversation: ConversationEntry,
+) -> None:
+    title = conversation.title or f"Conversation {str(conversation.id)[:8]}"
+
+    col_prompt, col_confirm, col_cancel = st.columns([8, 1, 1])
+
+    with col_prompt:
+        st.caption(f"Delete '{title}'?")
+
+    with col_confirm:
+        if st.button("✔", key=f"confirm_delete_{conversation.id}"):
+            deleted = conversation_service.delete_conversation(
+                conversation_id=conversation.id,
+            )
+
+            if not deleted:
+                st.toast("Conversation not found.")
+            elif st.session_state.get("conversation_id") == conversation.id:
+                st.session_state.conversation_id = None
+
+            st.session_state.confirming_delete_conversation_id = None
+            st.session_state.editing_conversation_id = None
+            st.rerun()
+
+    with col_cancel:
+        if st.button("✖", key=f"cancel_delete_{conversation.id}"):
+            st.session_state.confirming_delete_conversation_id = None
+            st.rerun()
+
+
 def render_conversation_row(
     conversation_service: ConversationService,
     conversation: ConversationEntry,
 ) -> None:
     editing_id = st.session_state.get("editing_conversation_id")
+    confirming_delete_id = st.session_state.get("confirming_delete_conversation_id")
 
     if editing_id == conversation.id:
         render_conversation_editor(
+            conversation_service=conversation_service,
+            conversation=conversation,
+        )
+        return
+
+    if confirming_delete_id == conversation.id:
+        render_delete_confirm(
             conversation_service=conversation_service,
             conversation=conversation,
         )
@@ -133,10 +173,14 @@ def render_conversation_row(
     with col_rename:
         if st.button("✏️", key=f"rename_{conversation.id}", help="Rename conversation"):
             st.session_state.editing_conversation_id = conversation.id
+            st.session_state.confirming_delete_conversation_id = None
             st.rerun()
 
     with col_delete:
-        st.empty()
+        if st.button("🗑️", key=f"delete_{conversation.id}", help="Delete conversation"):
+            st.session_state.confirming_delete_conversation_id = conversation.id
+            st.session_state.editing_conversation_id = None
+            st.rerun()
 
 
 def render_sidebar(conversation_service: ConversationService) -> None:
@@ -148,6 +192,7 @@ def render_sidebar(conversation_service: ConversationService) -> None:
 
             st.session_state.conversation_id = conversation.id
             st.session_state.editing_conversation_id = None
+            st.session_state.confirming_delete_conversation_id = None
 
             st.rerun()
 
