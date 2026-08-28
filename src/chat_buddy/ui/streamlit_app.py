@@ -175,7 +175,7 @@ def render_conversation(
 
     Args:
         service:
-            Chat service.
+            Conversation service.
 
         conversation_id:
             Conversation identifier.
