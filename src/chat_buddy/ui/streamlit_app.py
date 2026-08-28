@@ -102,12 +102,10 @@ def render_delete_confirm(
     conversation_service: ConversationService,
     conversation: ConversationEntry,
 ) -> None:
-    title = conversation.title or f"Conversation {str(conversation.id)[:8]}"
-
     col_prompt, col_confirm, col_cancel = st.columns([8, 1, 1])
 
     with col_prompt:
-        st.caption(f"Delete '{title}'?")
+        st.caption(f"Delete '{conversation.title}'?")
 
     with col_confirm:
         if st.button("✔", key=f"confirm_delete_{conversation.id}"):
@@ -154,12 +152,9 @@ def render_conversation_row(
     current_id = st.session_state.get("conversation_id")
     is_selected = current_id == conversation.id
 
-    title = conversation.title or f"Conversation {str(conversation.id)[:8]}"
-
     col_title, col_rename, col_delete = st.columns([8, 1, 1])
-
     with col_title:
-        label = f"👉 {title}" if is_selected else title
+        label = f"👉 {conversation.title}" if is_selected else conversation.title
 
         if st.button(
             label,
@@ -188,9 +183,7 @@ def render_sidebar(conversation_service: ConversationService) -> None:
         st.header("Conversations")
 
         if st.button("+ New Chat", width="stretch"):
-            conversation = conversation_service.create_conversation()
-
-            st.session_state.conversation_id = conversation.id
+            st.session_state.conversation_id = None
             st.session_state.editing_conversation_id = None
             st.session_state.confirming_delete_conversation_id = None
 
