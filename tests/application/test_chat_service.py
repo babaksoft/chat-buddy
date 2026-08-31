@@ -520,7 +520,7 @@ def test_stream_chat_yields_chunks() -> None:
         message="Hello",
     )
 
-    conversation_id, generator = service.stream_chat(request)
+    _, generator = service.stream_chat(request)
 
     chunks = list(generator)
 
@@ -555,7 +555,7 @@ def test_stream_chat_persists_complete_response() -> None:
         message="Hello",
     )
 
-    conversation_id, generator = service.stream_chat(request)
+    _, generator = service.stream_chat(request)
     list(generator)
 
     calls = conversation_service.add_message.call_args_list
@@ -597,7 +597,7 @@ def test_stream_chat_does_not_persist_on_error() -> None:
         message="Hello",
     )
 
-    conversation_id, generator = service.stream_chat(request)
+    _, generator = service.stream_chat(request)
 
     with pytest.raises(RuntimeError):
         list(generator)
@@ -644,7 +644,7 @@ def test_stream_chat_generates_title_on_first_exchange() -> None:
         message="Hello",
     )
 
-    returned_id, generator = service.stream_chat(request)
+    _, generator = service.stream_chat(request)
     list(generator)
 
     gateway.generate_title.assert_called_once()

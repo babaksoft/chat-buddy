@@ -157,14 +157,16 @@ def render_conversation_row(
     with col_title:
         label = f"👉 {title}" if is_selected else title
 
-        if st.button(
-            label,
-            key=f"select_{conversation.id}",
-            width="stretch",
+        if (
+            st.button(
+                label,
+                key=f"select_{conversation.id}",
+                width="stretch",
+            )
+            and not is_selected
         ):
-            if not is_selected:
-                st.session_state.conversation_id = conversation.id
-                st.rerun()
+            st.session_state.conversation_id = conversation.id
+            st.rerun()
 
     with col_rename:
         if st.button("✏️", key=f"rename_{conversation.id}", help="Rename conversation"):

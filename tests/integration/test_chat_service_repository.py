@@ -374,7 +374,7 @@ def test_chat_stream_auto_titles_first_exchange(
         context_builder=_passthrough_context_builder(),
     )
 
-    conversation_id, generator = service.stream_chat(
+    _, generator = service.stream_chat(
         ChatRequest(
             conversation_id=conversation.id,
             message="Plan the launch",

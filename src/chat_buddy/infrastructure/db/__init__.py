@@ -7,6 +7,6 @@ from chat_buddy.infrastructure.db.session import SessionLocal, engine
 
 __all__ = [
     "Base",
-    "engine",
     "SessionLocal",
+    "engine",
 ]
