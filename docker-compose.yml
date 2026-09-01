@@ -1,7 +1,7 @@
 services:
 
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: chat_buddy_postgres
 
     environment:
