@@ -15,7 +15,7 @@ echo "Running mypy..."
 mypy src tests
 
 echo "Running tests..."
-pytest -m "not integration" -v
+pytest -v
 
 echo
 echo "All tools and tests are passing."
