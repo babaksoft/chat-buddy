@@ -3,19 +3,19 @@
 set -euo pipefail
 
 echo "Running Black..."
-black --check src tests
+uv run black --check src tests
 
 echo "Running isort..."
-isort --check-only src tests
+uv run isort --check-only src tests
 
 echo "Running Ruff..."
-ruff check src tests
+uv run ruff check src tests
 
 echo "Running mypy..."
-mypy src tests
+uv run mypy src tests
 
 echo "Running tests..."
-pytest -v
+uv run pytest -v
 
 echo
 echo "All tools and tests are passing."
