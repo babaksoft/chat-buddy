@@ -57,6 +57,25 @@ Ollama + PostgreSQL
 - [ ] Evaluation Framework
 - [ ] Monitoring Dashboard
 
+## Application Areas
+
+Use the sidebar to switch between two areas:
+
+- **Chat** opens by default and provides the existing conversation history,
+  streaming replies, renaming, and deletion. Switching areas preserves the selected
+  conversation for the current browser session.
+- **Characters** is a landing-page scaffold for future character profiles and
+  conversations. Persona creation and character chat are not implemented yet.
+  This area does not connect to PostgreSQL or Ollama.
+
+Start the application with the existing command:
+
+```bash
+streamlit run src/chat_buddy/ui/streamlit_app.py
+```
+
+The Characters landing page is also available at `/characters`.
+
 ## Running Tests
 
 pytest
