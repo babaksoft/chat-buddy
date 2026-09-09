@@ -1021,6 +1021,8 @@ build = [
     { name = "build" },
     { name = "hatchling" },
 ]
+
+[package.dev-dependencies]
 dev = [
     { name = "black" },
     { name = "isort" },
@@ -1033,29 +1035,33 @@ dev = [
 requires-dist = [
     { name = "alembic" },
     { name = "arize-phoenix" },
-    { name = "black", marker = "extra == 'dev'" },
     { name = "boto3" },
     { name = "build", marker = "extra == 'build'" },
     { name = "hatchling", marker = "extra == 'build'" },
-    { name = "isort", marker = "extra == 'dev'" },
     { name = "jupyterlab" },
     { name = "llama-index-core" },
     { name = "llama-index-llms-ollama" },
-    { name = "mypy", marker = "extra == 'dev'" },
     { name = "notebook" },
     { name = "ollama" },
     { name = "openinference-instrumentation-llama-index" },
     { name = "prometheus-client" },
     { name = "psycopg2-binary" },
-    { name = "pytest", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
     { name = "requests" },
-    { name = "ruff", marker = "extra == 'dev'" },
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "streamlit" },
 ]
-provides-extras = ["build", "dev"]
+provides-extras = ["build"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", specifier = ">=26.5.1" },
+    { name = "isort", specifier = ">=9.0.1" },
+    { name = "mypy", specifier = ">=2.3.1" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff", specifier = ">=0.16.6" },
+]
 
 [[package]]
 name = "click"

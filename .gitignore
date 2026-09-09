@@ -3,7 +3,7 @@
 __pycache__/
 .mypy_cache/
 .pytest_cache/
-.ruff_cache
+.ruff_cache/
 .idea/
 .vscode/
 
@@ -11,5 +11,6 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 
-# Application logs
+# Common ignored items
 **/logs/
+.env

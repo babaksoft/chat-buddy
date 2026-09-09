@@ -51,14 +51,6 @@ build = [
     "hatchling"
 ]
 
-dev = [
-    "black",
-    "isort",
-    "mypy",
-    "ruff",
-    "pytest",
-]
-
 [tool.black]
 target-version = ["py312"]
 
@@ -84,3 +76,12 @@ sources = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/chat_buddy"]
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "isort>=9.0.1",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.6",
+]
