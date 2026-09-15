@@ -10,7 +10,7 @@ from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.chat.domain import ChatRole
-from chat_buddy.chat.infrastructure.db.base import ChatBase
+from chat_buddy.chat.infrastructure.db.base import CHAT_SCHEMA, ChatBase
 
 if TYPE_CHECKING:
     from chat_buddy.chat.infrastructure.db.models.conversation import Conversation
@@ -27,7 +27,7 @@ class Message(ChatBase):
     )
 
     conversation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("conversations.id"),
+        ForeignKey(f"{CHAT_SCHEMA}.conversations.id"),
         nullable=False,
     )
 
@@ -35,6 +35,7 @@ class Message(ChatBase):
         SqlEnum(
             ChatRole,
             name="messagerole",
+            inherit_schema=True,
             values_callable=lambda obj: [item.value for item in obj],
         ),
         nullable=False,

@@ -76,6 +76,24 @@ streamlit run src/chat_buddy/ui/streamlit_app.py
 
 The Characters landing page is also available at `/characters`.
 
+## Database setup
+
+Chat persistence now has an independent migration history in the PostgreSQL
+`chat` schema. Stage 1 does not migrate data from the legacy public-schema
+tables, so existing development databases must be recreated before applying
+the Chat baseline. The reset below deletes all data in the local Compose
+database volume:
+
+```bash
+docker-compose down --volumes
+docker-compose up -d
+uv run alembic -c alembic-chat.ini upgrade head
+```
+
+Run future Chat revisions and upgrades with `alembic-chat.ini`; the default
+`alembic.ini` and files in `alembic/versions/` remain the unchanged legacy
+history during the Stage 1 transition.
+
 ## Running Tests
 
 pytest

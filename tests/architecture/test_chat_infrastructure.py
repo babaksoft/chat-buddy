@@ -138,16 +138,19 @@ def test_legacy_database_paths_reexport_canonical_objects(
     assert getattr(legacy, legacy_name) is getattr(canonical, canonical_name)
 
 
-def test_chat_metadata_remains_in_the_default_schema() -> None:
-    from chat_buddy.chat.infrastructure.db import ChatBase
+def test_chat_metadata_uses_the_chat_schema() -> None:
+    from chat_buddy.chat.infrastructure.db import CHAT_SCHEMA, ChatBase
     from chat_buddy.chat.infrastructure.db.models import Message
 
     assert set(ChatBase.metadata.tables) == {
-        "conversations",
-        "memories",
-        "messages",
+        "chat.conversations",
+        "chat.memories",
+        "chat.messages",
     }
-    assert all(table.schema is None for table in ChatBase.metadata.tables.values())
+    assert all(
+        table.schema == CHAT_SCHEMA for table in ChatBase.metadata.tables.values()
+    )
     assert {key.target_fullname for key in Message.__table__.foreign_keys} == {
-        "conversations.id"
+        "chat.conversations.id"
     }
+    assert getattr(Message.__table__.c.role.type, "schema", None) == CHAT_SCHEMA
