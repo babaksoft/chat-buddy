@@ -16,11 +16,11 @@ from chat_buddy.chat.domain import (
     ExtractedMemory,
     LLMGateway,
 )
-from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
-from chat_buddy.infrastructure.db.repositories import (
+from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
     MemoryRepository,
 )
+from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
 
 
 class FakeGateway(LLMGateway):

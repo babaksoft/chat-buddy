@@ -1,6 +1,6 @@
-from chat_buddy.infrastructure.db.models.conversation import Conversation
-from chat_buddy.infrastructure.db.models.memory import Memory
-from chat_buddy.infrastructure.db.models.message import Message
+"""Compatibility exports for Chat persistence models."""
+
+from chat_buddy.chat.infrastructure.db.models import Conversation, Memory, Message
 
 __all__ = [
     "Conversation",

@@ -5,9 +5,9 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Import ORM models so Alembic can discover them via Base.metadata.
-import chat_buddy.infrastructure.db.models  # noqa: F401
-from chat_buddy.infrastructure.db.base import Base
+# Import ORM models so Alembic can discover them via ChatBase.metadata.
+import chat_buddy.chat.infrastructure.db.models  # noqa: F401
+from chat_buddy.chat.infrastructure.db.base import ChatBase
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_PATH = PROJECT_ROOT / "src"
@@ -26,7 +26,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = Base.metadata
+target_metadata = ChatBase.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

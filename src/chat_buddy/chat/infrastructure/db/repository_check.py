@@ -1,8 +1,8 @@
 from chat_buddy.chat.domain import ChatRole
-from chat_buddy.infrastructure.db.repositories import (
+from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
 )
-from chat_buddy.infrastructure.db.session import SessionLocal
+from chat_buddy.chat.infrastructure.db.session import ChatSessionLocal
 from chat_buddy.shared.config.logging import configure_logging
 
 
@@ -19,7 +19,7 @@ def run_smoke_test() -> None:
     5. Verify cleanup.
     """
 
-    with SessionLocal() as session:
+    with ChatSessionLocal() as session:
         repository = ConversationRepository(session)
 
         conversation = repository.create_conversation(

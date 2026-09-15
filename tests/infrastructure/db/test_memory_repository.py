@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from chat_buddy.infrastructure.db.repositories import MemoryRepository
+from chat_buddy.chat.infrastructure.db.repositories import MemoryRepository
 
 
 @pytest.fixture

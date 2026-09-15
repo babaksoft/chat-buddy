@@ -1,8 +1,8 @@
 ﻿import pytest
 from sqlalchemy.orm import Session
 
-from chat_buddy.domain import ChatRole
-from chat_buddy.infrastructure.db.repositories import (
+from chat_buddy.chat.domain import ChatRole
+from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
 )
 

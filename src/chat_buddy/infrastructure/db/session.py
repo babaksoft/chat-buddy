@@ -1,14 +1,11 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+"""Compatibility exports for Chat database session wiring."""
 
-from chat_buddy.chat.infrastructure.config import settings
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=False,
+from chat_buddy.chat.infrastructure.db.session import (
+    ChatSessionLocal,
+    chat_engine,
 )
 
-SessionLocal = sessionmaker(
-    bind=engine,
-    autoflush=False,
-)
+SessionLocal = ChatSessionLocal
+engine = chat_engine
+
+__all__ = ["SessionLocal", "engine"]

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.infrastructure.db import Base
+from chat_buddy.chat.infrastructure.db import ChatBase
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def session() -> Generator[Session, None, None]:
         "sqlite:///:memory:",
     )
 
-    Base.metadata.create_all(engine)
+    ChatBase.metadata.create_all(engine)
 
     session_factory = sessionmaker(
         bind=engine,

@@ -14,13 +14,13 @@ from chat_buddy.chat.application.service import (
     MemoryService,
 )
 from chat_buddy.chat.infrastructure.config import settings
-from chat_buddy.chat.infrastructure.llm import OllamaGateway
-from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
-from chat_buddy.infrastructure.db import SessionLocal
-from chat_buddy.infrastructure.db.repositories import (
+from chat_buddy.chat.infrastructure.db import ChatSessionLocal
+from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
     MemoryRepository,
 )
+from chat_buddy.chat.infrastructure.llm import OllamaGateway
+from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
 from chat_buddy.shared.config.logging import configure_logging
 from chat_buddy.ui.pages import chat
 
@@ -36,7 +36,7 @@ def build_services() -> tuple[ChatService, ConversationService]:
         Configured instances of chat and conversation services.
     """
 
-    session = SessionLocal()
+    session = ChatSessionLocal()
     conversation_repository = ConversationRepository(session)
     memory_repository = MemoryRepository(session)
 

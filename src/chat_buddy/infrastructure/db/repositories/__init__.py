@@ -1,7 +1,7 @@
-from chat_buddy.infrastructure.db.repositories.conversation_repository import (
+"""Compatibility exports for Chat persistence repositories."""
+
+from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
-)
-from chat_buddy.infrastructure.db.repositories.memory_repository import (
     MemoryRepository,
 )
 

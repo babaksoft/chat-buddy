@@ -1,5 +1,7 @@
-from sqlalchemy.orm import DeclarativeBase
+"""Compatibility exports for the Chat declarative base."""
 
+from chat_buddy.chat.infrastructure.db.base import ChatBase
 
-class Base(DeclarativeBase):
-    pass
+Base = ChatBase
+
+__all__ = ["Base"]

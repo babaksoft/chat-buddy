@@ -1,9 +1,14 @@
-"""
-Application's persistence layer.
-"""
+"""Compatibility exports for the relocated Chat persistence layer."""
 
-from chat_buddy.infrastructure.db.base import Base
-from chat_buddy.infrastructure.db.session import SessionLocal, engine
+from chat_buddy.chat.infrastructure.db import (
+    ChatBase,
+    ChatSessionLocal,
+    chat_engine,
+)
+
+Base = ChatBase
+SessionLocal = ChatSessionLocal
+engine = chat_engine
 
 __all__ = [
     "Base",
