@@ -4,13 +4,16 @@ Streamlit application shell and service composition for Chat Buddy.
 
 import streamlit as st
 
+from chat_buddy.application.config import ContextBuilderConfig, MemoryConfig
 from chat_buddy.application.context_builder import DefaultContextBuilder
+from chat_buddy.application.llm_summarizer import LLMSummarizer
 from chat_buddy.application.service import (
     ChatService,
     ConversationService,
     MemoryService,
 )
 from chat_buddy.characters.ui import render as render_characters
+from chat_buddy.infrastructure.config import settings
 from chat_buddy.infrastructure.config.logging import configure_logging
 from chat_buddy.infrastructure.db import SessionLocal
 from chat_buddy.infrastructure.db.repositories import (
@@ -41,6 +44,9 @@ def build_services() -> tuple[ChatService, ConversationService]:
     memory_service = MemoryService(
         repository=memory_repository,
         llm_gateway=gateway,
+        config=MemoryConfig(
+            extraction_interval=settings.MEMORY_EXTRACTION_INTERVAL,
+        ),
     )
     conversation_service = ConversationService(
         repository=conversation_repository,
@@ -52,6 +58,12 @@ def build_services() -> tuple[ChatService, ConversationService]:
         llm_gateway=gateway,
         context_builder=DefaultContextBuilder(
             token_counter=MistralTokenCounter(),
+            summarizer=LLMSummarizer(gateway=gateway),
+            config=ContextBuilderConfig(
+                model_context_window=settings.MODEL_CONTEXT_WINDOW,
+                prompt_overhead_tokens=settings.PROMPT_OVERHEAD_TOKENS,
+                summary_trigger_ratio=settings.SUMMARY_TRIGGER_RATIO,
+            ),
         ),
     )
 

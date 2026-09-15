@@ -52,7 +52,7 @@ def _resolve_from_import(
 
 def _imports(path: Path) -> set[str]:
     module_name = _module_name(path)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
     imported_modules: set[str] = set()
 
     for node in ast.walk(tree):
@@ -115,6 +115,19 @@ def _boundary_violations() -> list[str]:
 
 def test_product_areas_do_not_import_each_other() -> None:
     assert _boundary_violations() == []
+
+
+def test_legacy_application_does_not_import_infrastructure() -> None:
+    application_root = PACKAGE_ROOT / "application"
+    violations = [
+        f"{_module_name(path)} imports {imported_module}"
+        for path in sorted(application_root.rglob("*.py"))
+        for imported_module in sorted(_imports(path))
+        if imported_module == "chat_buddy.infrastructure"
+        or imported_module.startswith("chat_buddy.infrastructure.")
+    ]
+
+    assert violations == []
 
 
 @pytest.mark.parametrize("legacy_prefix", sorted(LEGACY_IMPORT_WHITELIST))

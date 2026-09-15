@@ -1,16 +1,12 @@
 import logging
 
 from chat_buddy.application.config import ContextBuilderConfig
-from chat_buddy.application.llm_summarizer import LLMSummarizer
 from chat_buddy.domain import (
     ChatMessage,
     ChatRole,
     ContextWindowExceededError,
     Summarizer,
     TokenCounter,
-)
-from chat_buddy.infrastructure.tokenization.mistral_token_counter import (
-    MistralTokenCounter,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,9 +19,9 @@ class DefaultContextBuilder:
 
     def __init__(
         self,
-        token_counter: TokenCounter | None = None,
-        summarizer: Summarizer | None = None,
-        config: ContextBuilderConfig | None = None,
+        token_counter: TokenCounter,
+        summarizer: Summarizer,
+        config: ContextBuilderConfig,
     ) -> None:
         """
         Initialize the context builder.
@@ -41,9 +37,9 @@ class DefaultContextBuilder:
                 Language model configuration.
         """
 
-        self._token_counter = token_counter or MistralTokenCounter()
-        self._summarizer = summarizer or LLMSummarizer()
-        self._config = config or ContextBuilderConfig()
+        self._token_counter = token_counter
+        self._summarizer = summarizer
+        self._config = config
 
     def build_context(
         self,

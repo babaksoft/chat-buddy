@@ -1,50 +1,52 @@
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy.orm import Session
 
+from chat_buddy.application.config import MemoryConfig
 from chat_buddy.application.service import MemoryService
-from chat_buddy.domain import ChatMessage, ChatRole
-from chat_buddy.infrastructure.db.repositories import MemoryRepository
+from chat_buddy.domain import ChatMessage, ChatRole, MemoryRecord
 from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
 
 
+class FakeMemoryRepository:
+    """In-memory implementation of the memory repository contract."""
+
+    def __init__(self) -> None:
+        self._memories: dict[str, MemoryRecord] = {}
+
+    def save_memory(self, key: str, value: str) -> MemoryRecord:
+        memory = MemoryRecord(
+            id=len(self._memories) + 1,
+            key=key,
+            value=value,
+        )
+        self._memories[key] = memory
+        return memory
+
+    def get_memory(self, key: str) -> MemoryRecord | None:
+        return self._memories.get(key)
+
+    def get_memories(self) -> list[MemoryRecord]:
+        return [self._memories[key] for key in sorted(self._memories)]
+
+    def delete_memory(self, key: str) -> bool:
+        return self._memories.pop(key, None) is not None
+
+
 @pytest.fixture
-def repository(
-    session: Session,
-) -> MemoryRepository:
-    """
-    Create a repository instance for testing.
-
-    Args:
-        session:
-            Test database session.
-
-    Returns:
-        Repository connected to the test database.
-    """
-
-    return MemoryRepository(session)
-
-
-@pytest.fixture
-def service(
-    repository: MemoryRepository,
-) -> MemoryService:
+def service() -> MemoryService:
     """
     Create a memory service instance for testing.
 
     Args:
-        repository:
-            Memory repository.
-
     Returns:
         Configured memory service.
     """
 
     return MemoryService(
-        repository=repository,
+        repository=FakeMemoryRepository(),
         llm_gateway=Mock(),
+        config=MemoryConfig(extraction_interval=10),
     )
 
 

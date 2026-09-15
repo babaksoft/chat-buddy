@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import logging
 
+from chat_buddy.application.config import MemoryConfig
 from chat_buddy.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
     LLMGateway,
+    MemoryRepository,
 )
-from chat_buddy.infrastructure.config import settings
-from chat_buddy.infrastructure.db.repositories import MemoryRepository
-from chat_buddy.infrastructure.llm import OllamaGateway
 from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,8 @@ class MemoryService:
     def __init__(
         self,
         repository: MemoryRepository,
-        llm_gateway: LLMGateway | None = None,
+        llm_gateway: LLMGateway,
+        config: MemoryConfig,
     ) -> None:
         """
         Initialize the memory service.
@@ -33,10 +33,14 @@ class MemoryService:
 
             llm_gateway:
                 LLM Gateway used for memory extraction.
+
+            config:
+                Persistent memory configuration.
         """
 
         self._repository = repository
-        self._llm_gateway = llm_gateway or OllamaGateway()
+        self._llm_gateway = llm_gateway
+        self._config = config
 
     def save_memory(
         self,
@@ -216,4 +220,4 @@ class MemoryService:
 
         user_turns = sum(1 for message in messages if message.role is ChatRole.USER)
 
-        return user_turns > 0 and user_turns % settings.MEMORY_EXTRACTION_INTERVAL == 0
+        return user_turns > 0 and user_turns % self._config.extraction_interval == 0

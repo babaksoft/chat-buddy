@@ -1,5 +1,4 @@
 from chat_buddy.domain import ChatMessage, LLMGateway
-from chat_buddy.infrastructure.llm import OllamaGateway
 
 
 class LLMSummarizer:
@@ -9,7 +8,7 @@ class LLMSummarizer:
 
     def __init__(
         self,
-        gateway: LLMGateway | None = None,
+        gateway: LLMGateway,
     ) -> None:
         """
         Initialize the summarizer.
@@ -19,7 +18,7 @@ class LLMSummarizer:
                 Language model gateway.
         """
 
-        self._gateway = gateway or OllamaGateway()
+        self._gateway = gateway
 
     def summarize(
         self,

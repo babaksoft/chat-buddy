@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 from sqlalchemy.orm import Session
 
+from chat_buddy.application.config import MemoryConfig
 from chat_buddy.application.schemas import ChatRequest
 from chat_buddy.application.service import (
     ChatService,
@@ -212,7 +213,11 @@ def test_chat_injects_persisted_memories_into_llm_context(
     """Verify persisted memories reach the language model."""
 
     memory_repository = MemoryRepository(session)
-    memory_service = MemoryService(memory_repository)
+    memory_service = MemoryService(
+        repository=memory_repository,
+        llm_gateway=FakeGateway(),
+        config=MemoryConfig(extraction_interval=10),
+    )
     memory_repository.save_memory(
         key="favorite_language",
         value="Python",

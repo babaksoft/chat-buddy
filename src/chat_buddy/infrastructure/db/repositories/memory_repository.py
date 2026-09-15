@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from chat_buddy.domain import MemoryRecord
 from chat_buddy.infrastructure.db.models import Memory
 
 
@@ -23,7 +24,7 @@ class MemoryRepository:
         self,
         key: str,
         value: str,
-    ) -> Memory:
+    ) -> MemoryRecord:
         """
         Create or update a memory.
 
@@ -38,7 +39,7 @@ class MemoryRepository:
             The persisted memory.
         """
 
-        memory = self.get_memory(key)
+        memory = self._get_memory_model(key)
 
         if memory is None:
             memory = Memory(
@@ -52,12 +53,12 @@ class MemoryRepository:
         self._session.commit()
         self._session.refresh(memory)
 
-        return memory
+        return self._to_record(memory)
 
     def get_memory(
         self,
         key: str,
-    ) -> Memory | None:
+    ) -> MemoryRecord | None:
         """
         Retrieve a memory by key.
 
@@ -69,11 +70,14 @@ class MemoryRepository:
             The matching memory if found; otherwise ``None``.
         """
 
-        statement = select(Memory).where(Memory.key == key)
+        memory = self._get_memory_model(key)
 
-        return self._session.scalar(statement)
+        if memory is None:
+            return None
 
-    def get_memories(self) -> list[Memory]:
+        return self._to_record(memory)
+
+    def get_memories(self) -> list[MemoryRecord]:
         """
         Return all memories.
 
@@ -83,7 +87,7 @@ class MemoryRepository:
 
         statement = select(Memory).order_by(Memory.key)
 
-        return list(self._session.scalars(statement))
+        return [self._to_record(item) for item in self._session.scalars(statement)]
 
     def delete_memory(
         self,
@@ -100,7 +104,7 @@ class MemoryRepository:
             ``True`` if a memory was deleted, otherwise ``False``.
         """
 
-        memory = self.get_memory(key)
+        memory = self._get_memory_model(key)
 
         if memory is None:
             return False
@@ -109,3 +113,20 @@ class MemoryRepository:
         self._session.commit()
 
         return True
+
+    def _get_memory_model(self, key: str) -> Memory | None:
+        """Retrieve the persistence model used for adapter operations."""
+
+        statement = select(Memory).where(Memory.key == key)
+
+        return self._session.scalar(statement)
+
+    @staticmethod
+    def _to_record(memory: Memory) -> MemoryRecord:
+        """Translate a persistence model into a domain record."""
+
+        return MemoryRecord(
+            id=memory.id,
+            key=memory.key,
+            value=memory.value,
+        )

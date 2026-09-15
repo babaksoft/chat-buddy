@@ -13,6 +13,14 @@ from chat_buddy.domain import (
 )
 
 
+def _config() -> ContextBuilderConfig:
+    return ContextBuilderConfig(
+        model_context_window=32_768,
+        prompt_overhead_tokens=64,
+        summary_trigger_ratio=0.85,
+    )
+
+
 def test_build_context_returns_original_messages() -> None:
     """
     Verify that the default context builder returns
@@ -21,7 +29,11 @@ def test_build_context_returns_original_messages() -> None:
 
     token_counter = Mock()
     token_counter.count_tokens.return_value = 10
-    builder = DefaultContextBuilder(token_counter=token_counter)
+    builder = DefaultContextBuilder(
+        token_counter=token_counter,
+        summarizer=Mock(),
+        config=_config(),
+    )
 
     messages = [
         ChatMessage(
@@ -47,7 +59,11 @@ def test_build_context_returns_empty_list() -> None:
 
     token_counter = Mock()
     token_counter.count_tokens.return_value = 10
-    builder = DefaultContextBuilder(token_counter=token_counter)
+    builder = DefaultContextBuilder(
+        token_counter=token_counter,
+        summarizer=Mock(),
+        config=_config(),
+    )
 
     context = builder.build_context([])
 
@@ -72,10 +88,12 @@ def test_build_context_returns_messages_when_within_limit() -> None:
     config = ContextBuilderConfig(
         model_context_window=1_000,
         prompt_overhead_tokens=50,
+        summary_trigger_ratio=0.85,
     )
 
     builder = DefaultContextBuilder(
         token_counter=counter,
+        summarizer=Mock(),
         config=config,
     )
 

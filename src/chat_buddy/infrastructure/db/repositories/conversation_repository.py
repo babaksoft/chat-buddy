@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from chat_buddy.domain import ChatRole
+from chat_buddy.domain import ChatRole, ConversationRecord, MessageRecord
 from chat_buddy.infrastructure.db.models import (
     Conversation,
     Message,
@@ -30,7 +30,7 @@ class ConversationRepository:
     def create_conversation(
         self,
         title: str | None = None,
-    ) -> Conversation:
+    ) -> ConversationRecord:
         """
         Create and persist a new conversation.
 
@@ -60,7 +60,7 @@ class ConversationRepository:
                 conversation.id,
             )
 
-            return conversation
+            return self._to_conversation_record(conversation)
 
         except SQLAlchemyError:
             self._session.rollback()
@@ -72,7 +72,7 @@ class ConversationRepository:
     def get_conversation(
         self,
         conversation_id: UUID,
-    ) -> Conversation | None:
+    ) -> ConversationRecord | None:
         """
         Retrieve a conversation by identifier.
 
@@ -96,11 +96,14 @@ class ConversationRepository:
             conversation is not None,
         )
 
-        return conversation
+        if conversation is None:
+            return None
+
+        return self._to_conversation_record(conversation)
 
     def get_conversations(
         self,
-    ) -> list[Conversation]:
+    ) -> list[ConversationRecord]:
         """
         Retrieve all conversations.
 
@@ -123,7 +126,7 @@ class ConversationRepository:
             len(conversations),
         )
 
-        return conversations
+        return [self._to_conversation_record(item) for item in conversations]
 
     def rename_conversation(
         self,
@@ -186,10 +189,10 @@ class ConversationRepository:
 
     def add_message(
         self,
-        conversation_id: UUID | None,
+        conversation_id: UUID,
         role: ChatRole,
         content: str,
-    ) -> Message:
+    ) -> MessageRecord:
         """
         Add a message to an existing conversation.
 
@@ -228,7 +231,7 @@ class ConversationRepository:
                 conversation_id,
             )
 
-            return message
+            return self._to_message_record(message)
 
         except SQLAlchemyError:
             self._session.rollback()
@@ -243,7 +246,7 @@ class ConversationRepository:
     def get_messages(
         self,
         conversation_id: UUID,
-    ) -> list[Message]:
+    ) -> list[MessageRecord]:
         """
         Retrieve messages belonging to a conversation.
 
@@ -274,7 +277,27 @@ class ConversationRepository:
             conversation_id,
         )
 
-        return messages
+        return [self._to_message_record(item) for item in messages]
+
+    @staticmethod
+    def _to_conversation_record(conversation: Conversation) -> ConversationRecord:
+        """Translate a persistence model into a domain record."""
+
+        return ConversationRecord(
+            id=conversation.id,
+            title=conversation.title,
+        )
+
+    @staticmethod
+    def _to_message_record(message: Message) -> MessageRecord:
+        """Translate a persistence model into a domain record."""
+
+        return MessageRecord(
+            id=message.id,
+            conversation_id=message.conversation_id,
+            role=message.role,
+            content=message.content,
+        )
 
     def delete_conversation(
         self,

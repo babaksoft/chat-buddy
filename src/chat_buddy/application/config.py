@@ -1,10 +1,17 @@
 from dataclasses import dataclass
 
-from chat_buddy.infrastructure.config import settings
-
 
 @dataclass(slots=True, frozen=True)
 class ContextBuilderConfig:
-    model_context_window: int = settings.MODEL_CONTEXT_WINDOW
-    prompt_overhead_tokens: int = settings.PROMPT_OVERHEAD_TOKENS
-    summary_trigger_ratio: float = settings.SUMMARY_TRIGGER_RATIO
+    """Configuration required to build model context."""
+
+    model_context_window: int
+    prompt_overhead_tokens: int
+    summary_trigger_ratio: float
+
+
+@dataclass(slots=True, frozen=True)
+class MemoryConfig:
+    """Configuration required by persistent memory services."""
+
+    extraction_interval: int
