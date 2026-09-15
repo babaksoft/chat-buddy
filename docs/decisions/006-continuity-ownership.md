@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
+- Scope: Characters area; terminology and ownership clarified by ADR 013
 
 ## Context
 

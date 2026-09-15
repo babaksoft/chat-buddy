@@ -1,14 +1,15 @@
 # Chat Buddy Execution Plan
 
-Status: Initial plan, living document  
-Last updated: 2026-09-09
+Status: Living plan
+
+Last updated: 2026-09-15
 
 ## How to use this plan
 
-This document tracks the current implementation sequence. Update it whenever
-scope, ordering, or acceptance criteria change. During implementation, load the
-current stage and only the directly relevant sections of `DESIGN.md`; do not load
-both documents wholesale unless a cross-cutting decision requires it.
+This document tracks the implementation sequence for two independent product
+areas hosted temporarily in one application. Update it whenever scope, ordering,
+or acceptance criteria change. During implementation, load the current stage and
+only the directly relevant sections of `DESIGN.md`.
 
 Each stage should be delivered as one or more cohesive changes with focused unit
 tests, integration coverage when service and repository boundaries are crossed,
@@ -16,198 +17,229 @@ and the repository quality checks passing.
 
 ## Target architecture
 
-The main domain aggregates are:
+The Streamlit shell routes between two area-first modules:
 
-- `Identity`: editable until first use, then frozen.
-- `Persona`: immutable authored definition.
-- `Continuity`: identity/persona relationship boundary and mode owner.
-- `Conversation`: Chat thread, Storyline scene, or Timeline day.
-- `Message`: immutable node in a selectable branch.
-- `Memory`: continuity-scoped knowledge with temporal and source provenance.
-- `RelationshipEvent`: append-only evidence, correction, or milestone.
-- `RelationshipState`: current relationship projection.
+```text
+src/chat_buddy/
+├── chat/
+│   ├── domain/
+│   ├── application/
+│   ├── infrastructure/
+│   ├── prompts/
+│   └── ui/
+├── characters/
+│   ├── domain/
+│   ├── application/
+│   ├── infrastructure/
+│   ├── prompts/
+│   └── ui/
+├── shared/
+└── ui/streamlit_app.py
+```
 
-Application services depend on repository `Protocol` interfaces declared in the
-domain layer. Infrastructure repositories implement those interfaces, and
-`ui/streamlit_app.py` remains the composition root.
+Each area declares its own domain models and `Protocol` interfaces. Application
+services depend inward on those protocols; infrastructure supplies database and
+LLM adapters. The shared package is limited to generic configuration, logging,
+and low-level provider utilities. Area-specific prompts, services, repositories,
+and persistence are never shared.
+
+PostgreSQL hosts independent `chat` and `characters` schemas. Each has its own
+SQLAlchemy metadata, migration history, and Alembic version table. The areas have
+no cross-schema foreign keys or queries and do not require compatible models or
+migrations.
 
 ## Stage 0 — Record the behavioral contract
 
-Create focused decision records for:
+**Status: Complete.**
 
-- Terminology and continuity ownership.
-- Identity freezing and persona immutability.
-- Mode-specific context and memory rules.
-- Branch and retry behavior.
-- Relationship intent, evolution, and explicit milestones.
-- Timeline timezone and closure semantics.
-- Migration of existing conversations and global memories.
+The initial identity, persona, continuity, context, branching, relationship, and
+Timeline decisions are recorded in ADRs 006–011. ADR 013 narrows those decisions
+to Characters and establishes the product-area boundary. ADR 014 replaces the
+Ollama-only provider decision. ADR 012 is superseded because the new schema
+baseline does not migrate legacy data.
 
-Add behavior scenarios covering isolation, temporal memory, established starting
-relationships, branching, and closed Timeline days.
+## Stage 1 — Scaffold the bounded areas
 
-**Complete when:** ambiguous rules are resolved before schema work and the
-decisions agree with `DESIGN.md`.
+- Create area-first Chat and Characters package trees with domain, application,
+  infrastructure, prompts, and UI boundaries.
+- Keep `ui/streamlit_app.py` as the thin composition root and initialize only the
+  selected area's services.
+- Move current conversation, context, summary, memory, Ollama, tokenization, and
+  Chat UI code behind Chat-owned interfaces without changing visible behavior.
+- Keep Characters as an independently routed scaffold that imports no Chat code.
+- Introduce independent SQLAlchemy bases, metadata, session/repository wiring,
+  and migration environments for the `chat` and `characters` schemas.
+- Store migration versions in `chat.alembic_version` and
+  `characters.alembic_version`.
+- Retain the existing migration files unchanged as legacy history. Establish new
+  clean baselines and document database recreation; do not map or preserve rows
+  from the pre-split schema.
+- Add architecture checks that reject imports between the two areas except for
+  composition by the application shell.
 
-## Stage 1 — Build domain and persistence foundations
+**Complete when:** both areas load independently, current Chat behavior works from
+its new module, fresh migrations create isolated schemas, and no area-specific
+model, service, prompt, or repository remains in shared code.
 
-- Add immutable domain models and enums for identities, personas, continuities,
-  modes, lifecycle states, and relationship starting state.
-- Add repository protocols to the domain layer.
-- Refactor application services so they do not import concrete infrastructure
-  repositories.
-- Add SQLAlchemy models and repositories for Identity, Persona, and Continuity.
-- Extend Conversation to belong to a Continuity and support mode-specific
-  metadata.
-- Enforce one active Chat and one active Timeline per identity/persona pair;
-  permit multiple named Storylines.
-- Lock an identity transactionally when its first continuity starts.
-- Generate and review an Alembic migration.
+## Stage 2 — Complete the Chat foundation
 
-Migration policy:
+- Define Chat-owned provider, conversation, message, summary, and memory domain
+  contracts.
+- Add a provider registry and persist the provider, model, and effective
+  generation configuration used for responses.
+- Retain Ollama as the first local adapter and preserve streaming behavior.
+- Keep provider-specific authentication and clients in infrastructure. Select and
+  record each cloud vendor in a focused ADR before adding its adapter.
+- Make failed or interrupted generations recoverable without treating a partial
+  response as a completed turn.
+- Keep the Chat UI focused on conversation selection, provider/model selection,
+  history, and message generation.
 
-- Preserve existing conversations under imported default identity/persona data.
-- Preserve old conversations as archived legacy Chat continuities.
-- Preserve global memories for review, but do not silently inject them into new
-  continuities.
-- Verify migration against populated PostgreSQL data before release.
+**Complete when:** conversations can be created, resumed, and streamed through a
+provider-neutral contract; Ollama remains functional; and a cloud adapter can be
+added without changing Chat application services.
 
-**Complete when:** lifecycle invariants are tested, existing data survives, and
-service dependencies point inward.
+## Stage 3 — Deliver automatic Chat context and memory
 
-## Stage 2 — Deliver Chat on the new model
+- Separate context eligibility, token budgeting, rolling summarization, and
+  memory extraction into Chat-owned services.
+- Keep rolling summaries scoped to their source conversation.
+- Replace the current unqualified key/value store with Chat-wide memories that
+  record source provenance and active, superseded, excluded, or deleted state.
+- Extract memory only after a complete user/assistant turn.
+- Add memory inspection, correction, exclusion, and hard-deletion workflows.
+- Assemble context from active Chat memories, the conversation summary, and
+  recent messages within the selected provider's token budget.
+- Add the first cloud-provider adapter after its provider ADR is accepted.
 
-- Add the start flow: identity, persona, Chat mode, relationship intent, optional
-  established state, then confirmation.
-- Lock the identity when the continuity begins.
-- Implement grouped Identity → Persona → Ongoing Chat navigation.
-- Build a mode-aware context assembler with this ordering:
+**Complete when:** long conversations remain coherent, active memory can be reused
+across Chat conversations, summaries never cross conversations, users control
+stored memory, and both a local and a cloud adapter pass the same contract tests.
 
-```text
-Persona → Identity → Relationship → Memories → Scene/style → Conversation
-```
+## Stage 4 — Build Characters foundations and Ongoing mode
 
-- Keep Chat free of extracted long-term memory.
-- Retain rolling conversation summaries as Chat-local context compression.
-- Add recoverable generation state so a streaming failure does not leave an
-  ambiguous half-turn.
+- Add immutable Characters domain models and enums for Identity, Persona,
+  Continuity, Ongoing mode, lifecycle state, and relationship starting state.
+- Add Characters-owned repository and LLM gateway protocols and infrastructure
+  implementations.
+- Add SQLAlchemy models and repositories only to the `characters` schema.
+- Enforce identity freezing, immutable persona cores, continuity isolation, and
+  at most one active Ongoing continuity per identity/persona pair.
+- Add the start flow: identity, persona, Ongoing mode, relationship intent,
+  optional established state, and confirmation.
+- Implement grouped Identity → Persona → Ongoing navigation.
+- Keep Ongoing free of extracted long-term memory; use only its rolling summary
+  for context compression.
+- Define a versioned Characters strategy interface for future persona and
+  relationship evolution experiments.
 
-**Complete when:** the new Chat has current feature parity, resumes correctly,
-has no memory leakage, and works end to end through Streamlit.
+**Complete when:** an identity and persona can start and resume an isolated
+Ongoing continuity, lifecycle invariants hold transactionally, and no Chat record
+or service participates in the workflow.
 
-## Stage 3 — Add retry and branching
+## Stage 5 — Add Characters retry and branching
 
 - Make messages immutable nodes with parent-message relationships.
-- Track the selected conversation leaf/path.
-- Implement persona-response alternatives for retry.
-- Enforce and display the retry limit in the service and UI.
-- Implement **Branch from here** without deleting the old path.
-- Include only the selected path in model context and downstream extraction.
-- Record response style/generation metadata with persona messages.
+- Track the selected conversation leaf and include only that path in context and
+  downstream derivation.
+- Implement persona-response alternatives with a visible limit of three retries
+  per persona turn.
+- Implement **Branch from here** without deleting the existing path.
+- Record response style, provider, model, strategy version, and generation
+  metadata with persona messages.
+- Apply mode rules: Ongoing branches in place; an older Storyline scene forks its
+  Storyline; a closed Timeline day requires a Timeline fork.
 
-Mode policy:
+**Complete when:** prior paths remain recoverable, unselected alternatives cannot
+affect current state, and branch selection is covered by repository and
+application tests.
 
-- Chat branches in place.
-- The latest Storyline scene branches in place; changing an older scene forks the
-  Storyline.
-- An open Timeline day branches in place; a closed day requires a Timeline fork.
-
-**Complete when:** old paths remain recoverable, retries cannot leak into current
-state, and branch selection is covered by repository and application tests.
-
-## Stage 4 — Add Storylines and scoped memory
+## Stage 6 — Add Storylines and continuity-scoped memory
 
 - Add named Storylines with chronologically ordered scenes.
-- Store scene setup separately from title and response style.
-- Lock scene order after interaction begins.
-- Replace global key/value memory with continuity-scoped, provenance-aware memory.
-- Track source message, selected branch, occurrence time, learned time, and
-  active/superseded/excluded/deleted state.
-- Extract memory only after a complete turn, using both sides of the exchange.
-- Add memory inspection, correction, exclusion, and hard deletion UI.
-- Enforce as-of memory queries so a scene cannot see future knowledge.
+- Store scene setup separately from title and response style and lock scene order
+  after interaction begins.
+- Add provenance-aware Characters memory scoped to a continuity and selected
+  branch.
+- Track source message, occurrence time, learned time, and active, superseded,
+  excluded, or deleted state.
+- Extract memory only after a complete turn and enforce as-of queries so a scene
+  cannot see future knowledge.
+- Add inspection, correction, exclusion, and hard-deletion UI.
 - Fork the Storyline when branching an older scene with dependent scenes.
 
-**Complete when:** Storylines are isolated, temporal memory rules hold, user
-corrections immediately affect context, and later raw transcripts are unnecessary.
+**Complete when:** Storylines and their memories are isolated, temporal rules
+hold, corrections immediately affect context, and no Characters memory is
+visible to Chat.
 
-## Stage 5 — Add relationship evolution
+## Stage 7 — Add relationship and persona evolution
 
-- Persist append-only Relationship Events and a current Relationship State
+- Persist append-only relationship events and a current relationship-state
   projection.
 - Support social status, romantic status, current dynamic, qualitative supporting
-  dimensions, boundaries, and milestones.
-- Implement relationship-intent constraints.
-- Have extraction produce structured proposals rather than direct state changes.
-- Validate proposals in an application service against domain transition rules.
+  dimensions, boundaries, and provenance-backed milestones.
+- Have versioned evolution strategies produce structured proposals rather than
+  direct state changes.
+- Validate every proposal against relationship intent and domain transition
+  rules before persistence.
 - Require explicit evidence for partnership, engagement, marriage, breakup, and
-  reconciliation.
-- Add conservative transition thresholds and hysteresis.
-- Add provenance and user correction UI; avoid numeric progress indicators.
-- Rebuild relationship state correctly when a branch or continuity is forked.
+  reconciliation; use conservative thresholds and hysteresis for gradual change.
+- Add provenance and correction UI and rebuild derived state correctly after a
+  branch or continuity fork.
+- Compare experimental strategies only within Characters and promote a strategy
+  only after its behavioral scenarios pass.
 
-**Complete when:** platonic boundaries hold, major milestones cannot arise from
-vague sentiment, and relationship state is explainable and branch-correct.
+**Complete when:** relationship state is explainable and branch-correct,
+boundaries and milestones hold, strategy versions are traceable, and evolution
+has no Chat dependency or effect.
 
-## Stage 6 — Add Timeline
+## Stage 8 — Add Timeline and response-style controls
 
-- Add one dated conversation per active local day.
-- Store UTC timestamps plus the resolved, immutable local date.
-- Add a domain Clock abstraction and IANA timezone policy.
-- Close days after their local boundary, including when the app was offline.
-- Reject messages, retries, and in-place branches for closed days.
-- Create no records for days without interaction.
+- Add one dated conversation per active local Timeline day.
+- Store UTC timestamps plus the resolved immutable local date and IANA timezone.
+- Close days after their local boundary, including after offline periods, and
+  reject messages, retries, and in-place branches for closed days.
+- Create no records for days without interaction and apply timezone changes only
+  to future boundaries.
 - Use current-day messages as short-term context and eligible prior memory and
   relationship state as long-term context.
-- Apply timezone changes only to future boundaries.
-- Support forking a Timeline from a closed historical point.
-
-**Complete when:** day closure, missing-day behavior, timezone changes, temporal
-memory, and fork rules are deterministic and tested, including DST boundaries.
-
-## Stage 7 — Add response-style controls and UX refinement
-
 - Add scene-description level, response length, narrative placement, dialogue
   formatting, and tone controls.
-- Apply style changes from the next persona response without affecting facts or
-  relationship state.
-- Record the effective style with every generated persona message.
-- Complete sidebar navigation with mode badges, active/archived state, recent
-  items, and search as needed.
-- Add branch, memory, and relationship inspectors.
-- Improve persona duplication, identity duplication, continuity archive, and
-  continuity fork flows.
+- Apply style changes from the next persona response and record the effective
+  style with every generated message.
 
-**Complete when:** presentation controls are predictable, navigation remains clear
-with substantial data, and destructive implications are never hidden.
+**Complete when:** closure, missing-day behavior, timezone changes, temporal
+memory, fork rules, and response styles are deterministic and tested, including
+DST boundaries.
 
-## Stage 8 — Harden and prepare for release
+## Stage 9 — Harden and prepare Characters extraction
 
-- Add PostgreSQL migration tests in addition to SQLite repository tests.
-- Test every domain invariant directly.
-- Add integration tests for service/repository workflows.
-- Add Streamlit interaction tests for creation, grouping, locking, branching, and
-  closed states.
-- Add prompt/context snapshot tests for every mode.
-- Test isolation among identities, personas, continuities, modes, and branches.
-- Add observability for generation, extraction, relationship validation, and
-  context assembly failures.
-- Verify export and deletion of identities, memories, and complete continuities.
-- Document required migration, PostgreSQL, and Ollama setup changes.
+- Add PostgreSQL tests for each schema and migration history.
+- Test each area's domain invariants, repositories, service workflows, context
+  snapshots, and Streamlit interactions independently.
+- Verify there are no imports, foreign keys, queries, identifiers, prompts, or
+  runtime initialization paths crossing between Chat and Characters.
+- Add observability for generation, summarization, extraction, relationship
+  validation, strategy execution, and context assembly failures.
+- Verify export and deletion within each area's independent ownership boundary.
+- Prove that Characters services, migrations, and tests run without initializing
+  Chat, then document the remaining deployment packaging work.
 
-**Complete when:** the full quality suite passes and failure, migration, recovery,
-privacy, and isolation behavior are release-ready.
+**Complete when:** the full quality suite passes, each area can be operated and
+tested independently, and separating Characters requires packaging and
+deployment work rather than domain or data redesign.
 
 ## Initial delivery milestone
 
-Implement Stages 0–2 first:
+Implement Stages 1–3 first:
 
-> A user can create a frozen identity, create an immutable persona, start one Chat
-> continuity with relationship intent, converse through the scoped context
-> pipeline, and resume it from the grouped sidebar.
+> Chat runs from its own bounded module and PostgreSQL schema, supports durable
+> conversations through provider-neutral local and cloud adapters, and manages
+> conversation summaries and user-controlled Chat-wide memory without any
+> Characters dependency.
 
-Implement branching immediately afterward. Memory and relationship evolution
-should not be built on a permanently linear message model.
+Begin Characters implementation only after the schema and import-isolation checks
+for this milestone pass.
 
 ## Validation baseline
 
@@ -222,5 +254,5 @@ pytest -v
 ```
 
 Use `scripts/check.sh` when it represents the same current CI checks. Add focused
-unit tests beside the affected layer and integration tests whenever a change
+unit tests beside the affected area and integration tests whenever a change
 crosses service and repository boundaries.

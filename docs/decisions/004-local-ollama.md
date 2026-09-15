@@ -1,7 +1,8 @@
 # ADR 004: Use a locally installed Ollama service
 
-- Status: Accepted
+- Status: Superseded by ADR 014
 - Date: 2026-09-09
+- Superseded: 2026-09-15
 
 ## Context
 
