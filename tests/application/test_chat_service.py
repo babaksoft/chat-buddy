@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from chat_buddy.application.schemas import ChatRequest, ConversationEntry
-from chat_buddy.application.service import ChatService
-from chat_buddy.domain import ChatMessage, ChatRole
+from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.service import ChatService
+from chat_buddy.chat.domain import ChatMessage, ChatRole
 
 
 def _pass_through_memory_service() -> Mock:

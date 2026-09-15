@@ -3,24 +3,24 @@ from unittest.mock import Mock
 
 from sqlalchemy.orm import Session
 
-from chat_buddy.application.config import MemoryConfig
-from chat_buddy.application.schemas import ChatRequest
-from chat_buddy.application.service import (
+from chat_buddy.chat.application.config import MemoryConfig
+from chat_buddy.chat.application.schemas import ChatRequest
+from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
     MemoryService,
 )
-from chat_buddy.domain import (
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
     LLMGateway,
 )
+from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
     MemoryRepository,
 )
-from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
 
 
 class FakeGateway(LLMGateway):

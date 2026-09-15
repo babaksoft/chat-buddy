@@ -1,17 +1,5 @@
-from dataclasses import dataclass
+"""Compatibility exports for the Chat application configuration."""
 
+from chat_buddy.chat.application.config import ContextBuilderConfig, MemoryConfig
 
-@dataclass(slots=True, frozen=True)
-class ContextBuilderConfig:
-    """Configuration required to build model context."""
-
-    model_context_window: int
-    prompt_overhead_tokens: int
-    summary_trigger_ratio: float
-
-
-@dataclass(slots=True, frozen=True)
-class MemoryConfig:
-    """Configuration required by persistent memory services."""
-
-    extraction_interval: int
+__all__ = ["ContextBuilderConfig", "MemoryConfig"]

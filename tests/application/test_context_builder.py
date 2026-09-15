@@ -2,11 +2,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from chat_buddy.application.config import ContextBuilderConfig
-from chat_buddy.application.context_builder import (
+from chat_buddy.chat.application.config import ContextBuilderConfig
+from chat_buddy.chat.application.context_builder import (
     DefaultContextBuilder,
 )
-from chat_buddy.domain import (
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ContextWindowExceededError,

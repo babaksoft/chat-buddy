@@ -1,9 +1,9 @@
 from unittest.mock import Mock
 
-from chat_buddy.application.llm_summarizer import (
+from chat_buddy.chat.application.llm_summarizer import (
     LLMSummarizer,
 )
-from chat_buddy.domain.chat import (
+from chat_buddy.chat.domain.chat import (
     ChatMessage,
     ChatRole,
 )
