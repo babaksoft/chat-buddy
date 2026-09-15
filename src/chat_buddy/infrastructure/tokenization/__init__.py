@@ -1,6 +1,4 @@
-from chat_buddy.infrastructure.tokenization.mistral_token_counter import (
-    MistralTokenCounter,
-)
+from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
 
 __all__ = [
     "MistralTokenCounter",

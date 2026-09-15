@@ -1,21 +1,28 @@
-import logging
-from pathlib import Path
+"""Compatibility re-exports for configuration moved into owned packages."""
 
-# Global settings
-PKG_ROOT = Path(__file__).resolve().parent.parent.parent
+from chat_buddy.chat.infrastructure.config.settings import (
+    CHAT_MODEL,
+    DATABASE_URL,
+    MEMORY_EXTRACTION_INTERVAL,
+    MODEL_CONTEXT_WINDOW,
+    OLLAMA_ENDPOINT_URL,
+    PROMPT_OVERHEAD_TOKENS,
+    SUMMARY_TRIGGER_RATIO,
+    UTILITY_MODEL,
+)
+from chat_buddy.shared.config.settings import LOG_DIR, LOG_FILE, LOG_LEVEL, PKG_ROOT
 
-LOG_DIR = PKG_ROOT / "logs"
-LOG_FILE = LOG_DIR / "chat_buddy.log"
-LOG_LEVEL = logging.DEBUG
-
-# Database settings
-DATABASE_URL = "postgresql+psycopg2://postgres:postgres@localhost:5432/chat_buddy"
-
-# LLM settings
-OLLAMA_ENDPOINT_URL = "http://172.31.80.1:11434"
-CHAT_MODEL = "gpt-oss:20b-cloud"
-UTILITY_MODEL = "gpt-oss:20b-cloud"
-MODEL_CONTEXT_WINDOW = 32_768
-PROMPT_OVERHEAD_TOKENS = 64  # Reserved for Ollama system prompt and formatting tokens
-SUMMARY_TRIGGER_RATIO = 0.85
-MEMORY_EXTRACTION_INTERVAL = 10
+__all__ = [
+    "CHAT_MODEL",
+    "DATABASE_URL",
+    "LOG_DIR",
+    "LOG_FILE",
+    "LOG_LEVEL",
+    "MEMORY_EXTRACTION_INTERVAL",
+    "MODEL_CONTEXT_WINDOW",
+    "OLLAMA_ENDPOINT_URL",
+    "PKG_ROOT",
+    "PROMPT_OVERHEAD_TOKENS",
+    "SUMMARY_TRIGGER_RATIO",
+    "UTILITY_MODEL",
+]

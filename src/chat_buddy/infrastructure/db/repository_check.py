@@ -1,9 +1,9 @@
 from chat_buddy.chat.domain import ChatRole
-from chat_buddy.infrastructure.config.logging import configure_logging
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
 )
 from chat_buddy.infrastructure.db.session import SessionLocal
+from chat_buddy.shared.config.logging import configure_logging
 
 
 def run_smoke_test() -> None:

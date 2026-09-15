@@ -1,10 +1,10 @@
 import pytest
 
-from chat_buddy.domain.chat import (
+from chat_buddy.chat.domain.chat import (
     ChatMessage,
     ChatRole,
 )
-from chat_buddy.infrastructure.tokenization import (
+from chat_buddy.chat.infrastructure.tokenization import (
     MistralTokenCounter,
 )
 

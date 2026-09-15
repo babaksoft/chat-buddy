@@ -4,24 +4,24 @@ Streamlit application shell and service composition for Chat Buddy.
 
 import streamlit as st
 
-from chat_buddy.application.config import ContextBuilderConfig, MemoryConfig
-from chat_buddy.application.context_builder import DefaultContextBuilder
-from chat_buddy.application.llm_summarizer import LLMSummarizer
-from chat_buddy.application.service import (
+from chat_buddy.characters.ui import render as render_characters
+from chat_buddy.chat.application.config import ContextBuilderConfig, MemoryConfig
+from chat_buddy.chat.application.context_builder import DefaultContextBuilder
+from chat_buddy.chat.application.llm_summarizer import LLMSummarizer
+from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
     MemoryService,
 )
-from chat_buddy.characters.ui import render as render_characters
-from chat_buddy.infrastructure.config import settings
-from chat_buddy.infrastructure.config.logging import configure_logging
+from chat_buddy.chat.infrastructure.config import settings
+from chat_buddy.chat.infrastructure.llm import OllamaGateway
+from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
 from chat_buddy.infrastructure.db import SessionLocal
 from chat_buddy.infrastructure.db.repositories import (
     ConversationRepository,
     MemoryRepository,
 )
-from chat_buddy.infrastructure.llm import OllamaGateway
-from chat_buddy.infrastructure.tokenization import MistralTokenCounter
+from chat_buddy.shared.config.logging import configure_logging
 from chat_buddy.ui.pages import chat
 
 configure_logging()

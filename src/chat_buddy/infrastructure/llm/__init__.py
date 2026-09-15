@@ -1,6 +1,4 @@
-from chat_buddy.infrastructure.llm.ollama_gateway import (
-    OllamaGateway,
-)
+from chat_buddy.chat.infrastructure.llm import OllamaGateway
 
 __all__ = [
     "OllamaGateway",

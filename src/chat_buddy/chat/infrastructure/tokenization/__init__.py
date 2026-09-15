@@ -1,5 +1,3 @@
-"""Compatibility re-export for the Chat-owned tokenizer adapter."""
-
 from chat_buddy.chat.infrastructure.tokenization.mistral_token_counter import (
     MistralTokenCounter,
 )
