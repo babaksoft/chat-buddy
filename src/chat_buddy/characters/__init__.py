@@ -1,0 +1,1 @@
+"""Characters product area."""

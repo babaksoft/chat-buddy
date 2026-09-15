@@ -10,6 +10,7 @@ from chat_buddy.application.service import (
     ConversationService,
     MemoryService,
 )
+from chat_buddy.characters.ui import render as render_characters
 from chat_buddy.infrastructure.config.logging import configure_logging
 from chat_buddy.infrastructure.db import SessionLocal
 from chat_buddy.infrastructure.db.repositories import (
@@ -18,7 +19,7 @@ from chat_buddy.infrastructure.db.repositories import (
 )
 from chat_buddy.infrastructure.llm import OllamaGateway
 from chat_buddy.infrastructure.tokenization import MistralTokenCounter
-from chat_buddy.ui.pages import characters, chat
+from chat_buddy.ui.pages import chat
 
 configure_logging()
 
@@ -72,7 +73,7 @@ def main() -> None:
         [
             st.Page(chat_page, title="Chat", icon="💬", default=True),
             st.Page(
-                characters.render,
+                render_characters,
                 title="Characters",
                 icon="👥",
                 url_path="characters",

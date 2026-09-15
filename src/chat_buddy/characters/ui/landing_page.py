@@ -4,7 +4,7 @@ import streamlit as st
 
 
 def render() -> None:
-    """Render the Characters scaffold without initializing chat services."""
+    """Render the Characters scaffold without initializing Chat services."""
 
     st.title("👥 Characters")
     st.write(
