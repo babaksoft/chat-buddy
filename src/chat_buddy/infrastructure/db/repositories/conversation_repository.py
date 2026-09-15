@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from chat_buddy.domain import ChatRole, ConversationRecord, MessageRecord
+from chat_buddy.chat.domain import ChatRole, ConversationRecord, MessageRecord
 from chat_buddy.infrastructure.db.models import (
     Conversation,
     Message,

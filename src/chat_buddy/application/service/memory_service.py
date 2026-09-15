@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 
 from chat_buddy.application.config import MemoryConfig
-from chat_buddy.domain import (
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
     LLMGateway,
     MemoryRepository,
 )
-from chat_buddy.prompts.memory import MEMORY_CONTEXT_HEADER
+from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
 
 logger = logging.getLogger(__name__)
 

@@ -1,22 +1,5 @@
-from typing import Protocol
+"""Compatibility export for the Chat context-builder contract."""
 
-from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.chat.domain.context_builder import ContextBuilder
 
-
-class ContextBuilder(Protocol):
-    """Abstraction for adjusting conversation context."""
-
-    def build_context(
-        self,
-        messages: list[ChatMessage],
-    ) -> list[ChatMessage]:
-        """
-        Build context from conversation history.
-
-        Args:
-            messages:
-                Current conversation history.
-
-        Returns:
-            Adjusted context from conversation history.
-        """
+__all__ = ["ContextBuilder"]

@@ -10,7 +10,7 @@ from chat_buddy.application.schemas import (
 )
 from chat_buddy.application.service.conversation_service import ConversationService
 from chat_buddy.application.service.memory_service import MemoryService
-from chat_buddy.domain import ChatMessage, ChatRole, ContextBuilder, LLMGateway
+from chat_buddy.chat.domain import ChatMessage, ChatRole, ContextBuilder, LLMGateway
 
 logger = logging.getLogger(__name__)
 

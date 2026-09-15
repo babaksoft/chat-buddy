@@ -1,18 +1,5 @@
-from dataclasses import dataclass
-from enum import Enum
+"""Compatibility exports for Chat message domain values."""
 
+from chat_buddy.chat.domain.chat import ChatMessage, ChatRole
 
-class ChatRole(str, Enum):
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-
-
-@dataclass(slots=True, frozen=True)
-class ChatMessage:
-    """
-    A message in an existing chat.
-    """
-
-    role: ChatRole
-    content: str
+__all__ = ["ChatMessage", "ChatRole"]

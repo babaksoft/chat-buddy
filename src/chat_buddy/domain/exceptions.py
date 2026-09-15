@@ -1,5 +1,5 @@
-class ContextWindowExceededError(Exception):
-    """
-    Raised when the conversation exceeds the
-    available model context window.
-    """
+"""Compatibility export for Chat domain exceptions."""
+
+from chat_buddy.chat.domain.exceptions import ContextWindowExceededError
+
+__all__ = ["ContextWindowExceededError"]

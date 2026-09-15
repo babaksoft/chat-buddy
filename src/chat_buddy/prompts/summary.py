@@ -1,9 +1,5 @@
-SUMMARIZE_PROMPT = """Summarize the following conversation.
+"""Compatibility export for the Chat summary prompt."""
 
-Preserve:
-- important facts
-- user preferences
-- decisions made
-- open questions
+from chat_buddy.chat.prompts.summary import SUMMARIZE_PROMPT
 
-Keep the summary concise."""
+__all__ = ["SUMMARIZE_PROMPT"]

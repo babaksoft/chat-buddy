@@ -1,7 +1,7 @@
 import logging
 
 from chat_buddy.application.config import ContextBuilderConfig
-from chat_buddy.domain import (
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ContextWindowExceededError,

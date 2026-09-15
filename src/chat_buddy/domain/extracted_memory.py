@@ -1,11 +1,5 @@
-from dataclasses import dataclass
+"""Compatibility export for extracted Chat memories."""
 
+from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
 
-@dataclass(slots=True, frozen=True)
-class ExtractedMemory:
-    """
-    A memory extracted from conversation messages.
-    """
-
-    key: str
-    value: str
+__all__ = ["ExtractedMemory"]

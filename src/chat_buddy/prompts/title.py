@@ -1,11 +1,5 @@
-﻿GENERATE_TITLE_PROMPT = """Generate a short title for this conversation.
+"""Compatibility export for the Chat title prompt."""
 
-Rules:
-- Keep it to 2-6 words.
-- Do not exceed 50 characters.
-- Be specific, natural, and punctuation-free.
-- No quotes, bullets, or Markdown.
-- Return only the title text, nothing else.
-- Capture the main topic of user's request.
+from chat_buddy.chat.prompts.title import GENERATE_TITLE_PROMPT
 
-Keep it concise and readable."""
+__all__ = ["GENERATE_TITLE_PROMPT"]

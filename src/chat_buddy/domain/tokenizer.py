@@ -1,35 +1,5 @@
-from dataclasses import dataclass
-from typing import Protocol
+"""Compatibility exports for Chat tokenization domain values."""
 
-from chat_buddy.domain.chat import ChatMessage
+from chat_buddy.chat.domain.tokenizer import TokenCounter, TokenUsage
 
-
-@dataclass(slots=True, frozen=True)
-class TokenUsage:
-    """
-    Token usage statistics for a model interaction.
-    """
-
-    prompt_tokens: int
-    completion_tokens: int
-
-
-class TokenCounter(Protocol):
-    """
-    Count tokens in chat messages.
-    """
-
-    def count_tokens(
-        self,
-        messages: list[ChatMessage],
-    ) -> int:
-        """
-        Count tokens in a message list.
-
-        Args:
-            messages:
-                Conversation messages.
-
-        Returns:
-            Total token count.
-        """
+__all__ = ["TokenCounter", "TokenUsage"]

@@ -4,13 +4,13 @@ from collections.abc import Iterator
 
 from ollama import Client
 
-from chat_buddy.domain import ChatMessage, ExtractedMemory
-from chat_buddy.infrastructure.config import settings
-from chat_buddy.prompts import (
+from chat_buddy.chat.domain import ChatMessage, ExtractedMemory
+from chat_buddy.chat.prompts import (
     EXTRACT_MEMORY_PROMPT,
     GENERATE_TITLE_PROMPT,
     SUMMARIZE_PROMPT,
 )
+from chat_buddy.infrastructure.config import settings
 
 logger = logging.getLogger(__name__)
 

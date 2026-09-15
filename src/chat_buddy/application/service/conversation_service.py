@@ -4,7 +4,7 @@ from uuid import UUID
 from chat_buddy.application.schemas import (
     ConversationEntry,
 )
-from chat_buddy.domain import ChatMessage, ChatRole, ConversationRepository
+from chat_buddy.chat.domain import ChatMessage, ChatRole, ConversationRepository
 
 logger = logging.getLogger(__name__)
 
