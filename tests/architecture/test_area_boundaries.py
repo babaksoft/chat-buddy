@@ -3,9 +3,8 @@
 import ast
 from pathlib import Path
 
-import pytest
-
 SOURCE_ROOT = Path(__file__).parents[2] / "src"
+PROJECT_ROOT = SOURCE_ROOT.parent
 PACKAGE_ROOT = SOURCE_ROOT / "chat_buddy"
 SHELL_MODULE = "chat_buddy.ui.streamlit_app"
 AREA_PREFIXES = {
@@ -14,16 +13,12 @@ AREA_PREFIXES = {
     "shared": "chat_buddy.shared",
 }
 
-# These packages contain the pre-split Chat implementation. They remain outside
-# strict area ownership until their dedicated Stage 1 move slices are complete.
-LEGACY_IMPORT_WHITELIST = frozenset(
-    {
-        "chat_buddy.application",
-        "chat_buddy.domain",
-        "chat_buddy.infrastructure",
-        "chat_buddy.prompts",
-        "chat_buddy.ui.pages.chat",
-    }
+REMOVED_TRANSITION_PATHS = (
+    PACKAGE_ROOT / "application",
+    PACKAGE_ROOT / "domain",
+    PACKAGE_ROOT / "infrastructure",
+    PACKAGE_ROOT / "prompts",
+    PACKAGE_ROOT / "ui" / "pages",
 )
 
 
@@ -81,20 +76,13 @@ def _area(module_name: str) -> str | None:
     return None
 
 
-def _is_legacy(module_name: str) -> bool:
-    return any(
-        module_name == prefix or module_name.startswith(f"{prefix}.")
-        for prefix in LEGACY_IMPORT_WHITELIST
-    )
-
-
 def _boundary_violations() -> list[str]:
     violations: list[str] = []
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
         source_module = _module_name(path)
         source_area = _area(source_module)
 
-        if source_module == SHELL_MODULE or _is_legacy(source_module):
+        if source_module == SHELL_MODULE:
             continue
 
         for imported_module in sorted(_imports(path)):
@@ -117,20 +105,20 @@ def test_product_areas_do_not_import_each_other() -> None:
     assert _boundary_violations() == []
 
 
-def test_legacy_application_does_not_import_infrastructure() -> None:
-    application_root = PACKAGE_ROOT / "application"
-    violations = [
-        f"{_module_name(path)} imports {imported_module}"
-        for path in sorted(application_root.rglob("*.py"))
-        for imported_module in sorted(_imports(path))
-        if imported_module == "chat_buddy.infrastructure"
-        or imported_module.startswith("chat_buddy.infrastructure.")
-    ]
-
-    assert violations == []
+def test_transition_packages_are_removed() -> None:
+    assert [path for path in REMOVED_TRANSITION_PATHS if any(path.rglob("*.py"))] == []
 
 
-@pytest.mark.parametrize("legacy_prefix", sorted(LEGACY_IMPORT_WHITELIST))
-def test_legacy_import_whitelist_names_existing_modules(legacy_prefix: str) -> None:
-    module_path = SOURCE_ROOT / Path(*legacy_prefix.split("."))
-    assert module_path.with_suffix(".py").exists() or module_path.is_dir()
+def test_only_area_specific_alembic_targets_are_active() -> None:
+    assert not (PROJECT_ROOT / "alembic.ini").exists()
+    assert not (PROJECT_ROOT / "alembic" / "env.py").exists()
+    assert not (PROJECT_ROOT / "alembic" / "script.py.mako").exists()
+    assert (PROJECT_ROOT / "alembic-chat.ini").is_file()
+    assert (PROJECT_ROOT / "alembic-characters.ini").is_file()
+    assert {
+        path.name for path in (PROJECT_ROOT / "alembic" / "versions").glob("*.py")
+    } == {
+        "00583eb3ed81_add_memories_table.py",
+        "8c080da941a4_create_conversations_and_messages_tables.py",
+        "b9fc65d514ec_add_system_role.py",
+    }

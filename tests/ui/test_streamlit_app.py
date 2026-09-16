@@ -6,10 +6,10 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
-from chat_buddy.application.schemas import ChatRequest, ConversationEntry
-from chat_buddy.application.service import ChatService, ConversationService
-from chat_buddy.domain import ChatMessage, ChatRole
-from chat_buddy.ui import streamlit_app
+from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.domain import ChatMessage, ChatRole
+from chat_buddy.chat.ui import page as chat_page
 
 
 def _render_app() -> None:
@@ -42,7 +42,7 @@ def services(conversation_id: UUID) -> Generator[Mock, None, None]:
         ChatMessage(role=ChatRole.ASSISTANT, content="Welcome back"),
     ]
     with patch.object(
-        streamlit_app, "build_services", return_value=(chat, conversations)
+        chat_page, "build_services", return_value=(chat, conversations)
     ) as factory:
         yield factory
 

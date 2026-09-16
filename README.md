@@ -93,9 +93,10 @@ uv run alembic -c alembic-characters.ini upgrade head
 ```
 
 Run future revisions and upgrades with the owning area's configuration:
-`alembic-chat.ini` for Chat and `alembic-characters.ini` for Characters. The
-default `alembic.ini` and files in `alembic/versions/` remain the unchanged
-legacy history during the Stage 1 transition.
+`alembic-chat.ini` for Chat and `alembic-characters.ini` for Characters. There
+is intentionally no default `alembic.ini`, so bare Alembic commands fail instead
+of targeting the wrong migration history. The unchanged files in
+`alembic/versions/` are retained only as a legacy reference.
 
 ## Running Tests
 

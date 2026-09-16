@@ -1,1 +1,5 @@
-Generic single-database configuration.
+The files in `versions/` are the retired pre-split migration history and remain
+unchanged for reference. This directory is not an active Alembic environment.
+
+Use `alembic-chat.ini` or `alembic-characters.ini` explicitly for every
+migration command.

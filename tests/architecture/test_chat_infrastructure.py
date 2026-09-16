@@ -1,10 +1,7 @@
 """Architecture checks for the canonical Chat infrastructure adapters."""
 
 import ast
-import importlib
 from pathlib import Path
-
-import pytest
 
 PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
 CHAT_INFRASTRUCTURE_ROOT = PACKAGE_ROOT / "chat" / "infrastructure"
@@ -40,102 +37,6 @@ def test_chat_adapters_depend_only_on_owned_or_shared_packages() -> None:
     ]
 
     assert violations == []
-
-
-@pytest.mark.parametrize(
-    ("legacy_module", "canonical_module", "export_name"),
-    [
-        (
-            "infrastructure.config.logging",
-            "shared.config.logging",
-            "configure_logging",
-        ),
-        (
-            "infrastructure.llm",
-            "chat.infrastructure.llm",
-            "OllamaGateway",
-        ),
-        (
-            "infrastructure.tokenization",
-            "chat.infrastructure.tokenization",
-            "MistralTokenCounter",
-        ),
-    ],
-)
-def test_legacy_paths_reexport_canonical_objects(
-    legacy_module: str,
-    canonical_module: str,
-    export_name: str,
-) -> None:
-    legacy = importlib.import_module(f"chat_buddy.{legacy_module}")
-    canonical = importlib.import_module(f"chat_buddy.{canonical_module}")
-
-    assert getattr(legacy, export_name) is getattr(canonical, export_name)
-
-
-@pytest.mark.parametrize(
-    ("legacy_module", "canonical_module", "legacy_name", "canonical_name"),
-    [
-        (
-            "infrastructure.db",
-            "chat.infrastructure.db",
-            "Base",
-            "ChatBase",
-        ),
-        (
-            "infrastructure.db",
-            "chat.infrastructure.db",
-            "SessionLocal",
-            "ChatSessionLocal",
-        ),
-        (
-            "infrastructure.db",
-            "chat.infrastructure.db",
-            "engine",
-            "chat_engine",
-        ),
-        (
-            "infrastructure.db.models",
-            "chat.infrastructure.db.models",
-            "Conversation",
-            "Conversation",
-        ),
-        (
-            "infrastructure.db.models",
-            "chat.infrastructure.db.models",
-            "Memory",
-            "Memory",
-        ),
-        (
-            "infrastructure.db.models",
-            "chat.infrastructure.db.models",
-            "Message",
-            "Message",
-        ),
-        (
-            "infrastructure.db.repositories",
-            "chat.infrastructure.db.repositories",
-            "ConversationRepository",
-            "ConversationRepository",
-        ),
-        (
-            "infrastructure.db.repositories",
-            "chat.infrastructure.db.repositories",
-            "MemoryRepository",
-            "MemoryRepository",
-        ),
-    ],
-)
-def test_legacy_database_paths_reexport_canonical_objects(
-    legacy_module: str,
-    canonical_module: str,
-    legacy_name: str,
-    canonical_name: str,
-) -> None:
-    legacy = importlib.import_module(f"chat_buddy.{legacy_module}")
-    canonical = importlib.import_module(f"chat_buddy.{canonical_module}")
-
-    assert getattr(legacy, legacy_name) is getattr(canonical, canonical_name)
 
 
 def test_chat_metadata_uses_the_chat_schema() -> None:

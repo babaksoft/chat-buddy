@@ -5,8 +5,9 @@ from uuid import UUID
 
 import streamlit as st
 
-from chat_buddy.application.schemas import ChatRequest, ConversationEntry
-from chat_buddy.application.service import ChatService, ConversationService
+from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.ui.composition import build_services
 
 
 def render_conversation_editor(
@@ -190,7 +191,9 @@ def render_conversation(
 
 
 def render(
-    service_factory: Callable[[], tuple[ChatService, ConversationService]],
+    service_factory: (
+        Callable[[], tuple[ChatService, ConversationService]] | None
+    ) = None,
 ) -> None:
     """Render Chat, creating its services only when this area is selected."""
 
@@ -198,6 +201,9 @@ def render(
 
     if "chat_conversation_id" not in st.session_state:
         st.session_state.chat_conversation_id = None
+
+    if service_factory is None:
+        service_factory = build_services
 
     chat_service, conversation_service = service_factory()
     render_sidebar(conversation_service=conversation_service)

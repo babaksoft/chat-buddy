@@ -1,10 +1,7 @@
 """Architecture checks for the canonical Chat application layer."""
 
 import ast
-import importlib
 from pathlib import Path
-
-import pytest
 
 PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
 APPLICATION_ROOT = PACKAGE_ROOT / "chat" / "application"
@@ -39,45 +36,3 @@ def test_chat_application_has_only_inward_chat_dependencies() -> None:
     ]
 
     assert violations == []
-
-
-@pytest.mark.parametrize(
-    ("legacy_module", "canonical_module", "export_name"),
-    [
-        ("application.config", "chat.application.config", "ContextBuilderConfig"),
-        ("application.config", "chat.application.config", "MemoryConfig"),
-        (
-            "application.context_builder",
-            "chat.application.context_builder",
-            "DefaultContextBuilder",
-        ),
-        (
-            "application.llm_summarizer",
-            "chat.application.llm_summarizer",
-            "LLMSummarizer",
-        ),
-        ("application.schemas", "chat.application.schemas", "ChatRequest"),
-        ("application.schemas", "chat.application.schemas", "ChatResponse"),
-        (
-            "application.schemas",
-            "chat.application.schemas",
-            "ConversationEntry",
-        ),
-        ("application.service", "chat.application.service", "ChatService"),
-        (
-            "application.service",
-            "chat.application.service",
-            "ConversationService",
-        ),
-        ("application.service", "chat.application.service", "MemoryService"),
-    ],
-)
-def test_legacy_paths_reexport_canonical_objects(
-    legacy_module: str,
-    canonical_module: str,
-    export_name: str,
-) -> None:
-    legacy = importlib.import_module(f"chat_buddy.{legacy_module}")
-    canonical = importlib.import_module(f"chat_buddy.{canonical_module}")
-
-    assert getattr(legacy, export_name) is getattr(canonical, export_name)
