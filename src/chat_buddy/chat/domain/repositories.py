@@ -39,7 +39,15 @@ class ConversationRepository(Protocol):
         self,
         title: str | None = None,
     ) -> ConversationRecord:
-        """Create and persist a conversation."""
+        """Create and persist a conversation.
+
+        Args:
+            title:
+                Optional conversation title.
+
+        Returns:
+            The persisted conversation.
+        """
 
         ...
 
@@ -47,12 +55,24 @@ class ConversationRepository(Protocol):
         self,
         conversation_id: UUID,
     ) -> ConversationRecord | None:
-        """Retrieve a conversation by identifier."""
+        """Retrieve a conversation by identifier.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to retrieve.
+
+        Returns:
+            The matching conversation, or ``None`` when it does not exist.
+        """
 
         ...
 
     def get_conversations(self) -> list[ConversationRecord]:
-        """Retrieve all conversations in repository order."""
+        """Retrieve all conversations in repository order.
+
+        Returns:
+            All persisted conversations in repository order.
+        """
 
         ...
 
@@ -61,12 +81,30 @@ class ConversationRepository(Protocol):
         conversation_id: UUID,
         title: str,
     ) -> bool:
-        """Rename a conversation when it exists."""
+        """Rename a conversation when it exists.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to rename.
+            title:
+                New conversation title.
+
+        Returns:
+            Whether the conversation was found and renamed.
+        """
 
         ...
 
     def delete_conversation(self, conversation_id: UUID) -> bool:
-        """Delete a conversation when it exists."""
+        """Delete a conversation when it exists.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to delete.
+
+        Returns:
+            Whether the conversation was found and deleted.
+        """
 
         ...
 
@@ -76,12 +114,32 @@ class ConversationRepository(Protocol):
         role: ChatRole,
         content: str,
     ) -> MessageRecord:
-        """Persist a message in a conversation."""
+        """Persist a message in a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation receiving the message.
+            role:
+                Role of the message author.
+            content:
+                Message text to persist.
+
+        Returns:
+            The persisted message.
+        """
 
         ...
 
     def get_messages(self, conversation_id: UUID) -> list[MessageRecord]:
-        """Retrieve a conversation's messages in repository order."""
+        """Retrieve a conversation's messages in repository order.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation whose messages to retrieve.
+
+        Returns:
+            The conversation's messages in repository order.
+        """
 
         ...
 
@@ -90,21 +148,51 @@ class MemoryRepository(Protocol):
     """Persistence operations required by memory services."""
 
     def save_memory(self, key: str, value: str) -> MemoryRecord:
-        """Create or update a memory."""
+        """Create or update a memory.
+
+        Args:
+            key:
+                Stable key identifying the memory.
+            value:
+                Memory value to persist.
+
+        Returns:
+            The created or updated memory.
+        """
 
         ...
 
     def get_memory(self, key: str) -> MemoryRecord | None:
-        """Retrieve a memory by key."""
+        """Retrieve a memory by key.
+
+        Args:
+            key:
+                Key of the memory to retrieve.
+
+        Returns:
+            The matching memory, or ``None`` when it does not exist.
+        """
 
         ...
 
     def get_memories(self) -> list[MemoryRecord]:
-        """Retrieve all memories in repository order."""
+        """Retrieve all memories in repository order.
+
+        Returns:
+            All persisted memories in repository order.
+        """
 
         ...
 
     def delete_memory(self, key: str) -> bool:
-        """Delete a memory when it exists."""
+        """Delete a memory when it exists.
+
+        Args:
+            key:
+                Key of the memory to delete.
+
+        Returns:
+            Whether the memory was found and deleted.
+        """
 
         ...

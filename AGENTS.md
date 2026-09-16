@@ -26,7 +26,7 @@ During the Stage 1 split, recreate the development database and apply both area 
 
 ## Style and Quality Checks
 
-Use four-space indentation, complete type hints on every function, and Google-style docstrings when they clarify behavior. Name modules and functions in `snake_case`, classes in `PascalCase`, and tests as `test_<behavior>.py` with `test_<expected_behavior>()` cases. Existing Chat model choices may remain unchanged; prefer frozen, slotted dataclasses for new immutable Chat domain values. In Characters, prefer Pydantic models for domain values and application schemas, configured as frozen when the value is immutable. Keep SQLAlchemy persistence models in the Characters infrastructure layer rather than using them as domain or application models.
+Use four-space indentation, complete type hints on every function, and Google-style docstrings when they clarify behavior. Use absolute package-level imports everywhere; do not use relative imports. Name modules and functions in `snake_case`, classes in `PascalCase`, and tests as `test_<behavior>.py` with `test_<expected_behavior>()` cases. Existing Chat model choices may remain unchanged; prefer frozen, slotted dataclasses for new immutable Chat domain values. In Characters, prefer Pydantic models for domain values and application schemas, configured as frozen when the value is immutable. Keep SQLAlchemy persistence models in the Characters infrastructure layer rather than using them as domain or application models.
 
 Before committing, run the same checks as CI:
 
