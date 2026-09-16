@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 
 ## How to use this plan
 
@@ -60,6 +60,8 @@ baseline does not migrate legacy data.
 
 ## Stage 1 — Scaffold the bounded areas
 
+**Status: Complete.**
+
 - Create area-first Chat and Characters package trees with domain, application,
   infrastructure, prompts, and UI boundaries.
 - Keep `ui/streamlit_app.py` as the thin composition root and initialize only the
@@ -83,24 +85,35 @@ model, service, prompt, or repository remains in shared code.
 
 ## Stage 2 — Complete the Chat foundation
 
-- Define Chat-owned provider, conversation, message, summary, and memory domain
-  contracts.
+- Accept the focused Chat provider-capability and generation-lifecycle ADRs before
+  implementation.
+- Define Chat-owned provider, model, conversation, message, and generation-attempt
+  domain contracts.
+- Separate response generation from title generation, summarization, and memory
+  extraction through capability-specific Chat-owned interfaces.
 - Add a provider registry and persist the provider, model, and effective
-  generation configuration used for responses.
+  generation configuration used for each response. Keep the current selection on
+  the conversation and an immutable effective snapshot on each generation
+  attempt.
 - Retain Ollama as the first local adapter and preserve streaming behavior.
 - Keep provider-specific authentication and clients in infrastructure. Select and
   record each cloud vendor in a focused ADR before adding its adapter.
-- Make failed or interrupted generations recoverable without treating a partial
-  response as a completed turn.
+- Track pending, streaming, completed, failed, and interrupted generation
+  attempts. Keep partial output outside completed history and allow an incomplete
+  attempt to be retried without duplicating its user message.
 - Keep the Chat UI focused on conversation selection, provider/model selection,
   history, and message generation.
 
 **Complete when:** conversations can be created, resumed, and streamed through a
-provider-neutral contract; Ollama remains functional; and a cloud adapter can be
-added without changing Chat application services.
+provider-neutral contract; Ollama remains functional; every completed response
+has immutable generation provenance; incomplete attempts are visibly recoverable;
+and a second test provider can be registered without changing Chat application
+services.
 
 ## Stage 3 — Deliver automatic Chat context and memory
 
+- Define the final Chat-owned summary and memory domain contracts, including
+  provenance and lifecycle state.
 - Separate context eligibility, token budgeting, rolling summarization, and
   memory extraction into Chat-owned services.
 - Keep rolling summaries scoped to their source conversation.
