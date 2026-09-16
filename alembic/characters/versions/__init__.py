@@ -1,0 +1,1 @@
+"""Characters schema migration revisions."""
