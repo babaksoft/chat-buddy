@@ -5,8 +5,8 @@ from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ContextWindowExceededError,
+    ModelDescriptor,
     Summarizer,
-    TokenCounter,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,6 @@ class DefaultContextBuilder:
 
     def __init__(
         self,
-        token_counter: TokenCounter,
         summarizer: Summarizer,
         config: ContextBuilderConfig,
     ) -> None:
@@ -27,23 +26,19 @@ class DefaultContextBuilder:
         Initialize the context builder.
 
         Args:
-            token_counter:
-                Token counter.
-
             summarizer:
                 Conversation Summarizer.
-
             config:
                 Language model configuration.
         """
 
-        self._token_counter = token_counter
         self._summarizer = summarizer
         self._config = config
 
     def build_context(
         self,
         messages: list[ChatMessage],
+        model: ModelDescriptor,
     ) -> list[ChatMessage]:
         """
         Build a context suitable for the language model.
@@ -51,6 +46,8 @@ class DefaultContextBuilder:
         Args:
             messages:
                 Current conversation history.
+            model:
+                Selected model capabilities used for context budgeting.
 
         Returns:
             Context to send to the language model.
@@ -61,13 +58,13 @@ class DefaultContextBuilder:
                 even after summarization.
         """
 
-        total_tokens = self._get_token_count(messages)
+        total_tokens = self._get_token_count(messages, model)
         summary_threshold = (
-            self._config.model_context_window * self._config.summary_trigger_ratio
+            model.context_window_tokens * self._config.summary_trigger_ratio
         )
 
         if total_tokens <= summary_threshold:
-            self._log_context("Context prepared", messages)
+            self._log_context("Context prepared", messages, model)
 
             return messages
 
@@ -82,9 +79,9 @@ class DefaultContextBuilder:
         )
 
         rebuilt_context = self._summarize_context(messages)
-        total_tokens = self._get_token_count(rebuilt_context)
+        total_tokens = self._get_token_count(rebuilt_context, model)
 
-        if total_tokens > self._config.model_context_window:
+        if total_tokens > model.context_window_tokens:
             logger.warning(
                 (
                     "Context window exceeded after "
@@ -93,32 +90,38 @@ class DefaultContextBuilder:
                     "limit=%d"
                 ),
                 total_tokens,
-                self._config.model_context_window,
+                model.context_window_tokens,
             )
 
             raise ContextWindowExceededError(
                 "Conversation exceeds available context window after summarization."
             )
 
-        self._log_context("Context summarized", rebuilt_context)
+        self._log_context("Context summarized", rebuilt_context, model)
 
         return rebuilt_context
 
-    def _log_context(self, message: str, context: list[ChatMessage]) -> None:
+    def _log_context(
+        self,
+        message: str,
+        context: list[ChatMessage],
+        model: ModelDescriptor,
+    ) -> None:
         """
         Calculate and log current context utilization.
 
         Args:
             message:
                 Message thet describes current operation.
-
             context:
                 Current conversation context.
+            model:
+                Selected model capabilities used for context budgeting.
         """
 
-        context_tokens = self._token_counter.count_tokens(context)
+        context_tokens = model.token_counter.count_tokens(context)
         total_tokens = context_tokens + self._config.prompt_overhead_tokens
-        utilization = total_tokens / self._config.model_context_window * 100
+        utilization = total_tokens / model.context_window_tokens * 100
 
         logger.info(
             (
@@ -136,19 +139,25 @@ class DefaultContextBuilder:
             utilization,
         )
 
-    def _get_token_count(self, context: list[ChatMessage]) -> int:
+    def _get_token_count(
+        self,
+        context: list[ChatMessage],
+        model: ModelDescriptor,
+    ) -> int:
         """
         Count tokens in a conversation.
 
         Args:
             context:
                 Current conversation context.
+            model:
+                Selected model capabilities used for token estimation.
 
         Returns:
             Estimated token count.
         """
 
-        context_tokens = self._token_counter.count_tokens(context)
+        context_tokens = model.token_counter.count_tokens(context)
 
         return context_tokens + self._config.prompt_overhead_tokens
 

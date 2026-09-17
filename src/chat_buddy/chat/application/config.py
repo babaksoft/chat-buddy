@@ -5,7 +5,6 @@ from dataclasses import dataclass
 class ContextBuilderConfig:
     """Configuration required to build model context."""
 
-    model_context_window: int
     prompt_overhead_tokens: int
     summary_trigger_ratio: float
 

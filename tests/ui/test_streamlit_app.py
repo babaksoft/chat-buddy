@@ -6,9 +6,9 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
-from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.schemas import ChatRequest
 from chat_buddy.chat.application.service import ChatService, ConversationService
-from chat_buddy.chat.domain import ChatMessage, ChatRole
+from chat_buddy.chat.domain import ChatMessage, ChatRole, ConversationRecord
 from chat_buddy.chat.ui import page as chat_page
 
 
@@ -35,7 +35,7 @@ def services(conversation_id: UUID) -> Generator[Mock, None, None]:
     chat = Mock(spec=ChatService)
     conversations = Mock(spec=ConversationService)
     conversations.get_conversations.return_value = [
-        ConversationEntry(id=conversation_id, title="Existing conversation")
+        ConversationRecord(id=conversation_id, title="Existing conversation")
     ]
     conversations.get_messages.return_value = [
         ChatMessage(role=ChatRole.USER, content="Hello"),
@@ -163,7 +163,7 @@ def test_rename_controls(
 
         def rename(conversation_id: UUID, title: str) -> bool:
             conversations.get_conversations.return_value = [
-                ConversationEntry(id=conversation_id, title=title)
+                ConversationRecord(id=conversation_id, title=title)
             ]
             return True
 

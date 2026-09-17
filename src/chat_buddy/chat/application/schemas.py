@@ -20,13 +20,3 @@ class ChatResponse:
 
     conversation_id: UUID
     response: str
-
-
-@dataclass(slots=True, frozen=True)
-class ConversationEntry:
-    """
-    Summary information for a conversation.
-    """
-
-    id: UUID
-    title: str | None

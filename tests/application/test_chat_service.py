@@ -1,689 +1,256 @@
+from datetime import UTC, datetime
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.schemas import ChatRequest
 from chat_buddy.chat.application.service import ChatService
-from chat_buddy.chat.domain import ChatMessage, ChatRole
+from chat_buddy.chat.domain import (
+    ChatMessage,
+    ChatRole,
+    ConversationRecord,
+    GenerationAttemptRecord,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    InvalidGenerationConfigurationError,
+    ModelDescriptor,
+    ModelId,
+    ProviderId,
+)
 
 
-def _pass_through_memory_service() -> Mock:
+def _model(*, supports_streaming: bool = True) -> ModelDescriptor:
+    """Create the selected model used by application tests.
+
+    Args:
+        supports_streaming:
+            Whether the model supports streaming responses.
+
+    Returns:
+        Immutable test model descriptor.
+    """
+
+    return ModelDescriptor(
+        provider_id=ProviderId("test-provider"),
+        id=ModelId("test-model"),
+        display_name="Test model",
+        context_window_tokens=4_096,
+        supports_streaming=supports_streaming,
+        supported_generation_parameters=frozenset(),
+        default_generation_configuration=GenerationConfiguration(),
+        token_counter=Mock(),
+    )
+
+
+def _attempt(conversation_id: UUID, model: ModelDescriptor) -> GenerationAttemptRecord:
+    """Create a pending attempt returned by the persistence test double.
+
+    Args:
+        conversation_id:
+            Conversation identifier for the attempt.
+        model:
+            Selected model descriptor.
+
+    Returns:
+        Pending generation attempt.
+    """
+
+    return GenerationAttemptRecord(
+        id=uuid4(),
+        conversation_id=conversation_id,
+        source_user_message_id=uuid4(),
+        provider_id=model.provider_id,
+        model_id=model.id,
+        effective_configuration=GenerationConfiguration(),
+        status=GenerationAttemptStatus.PENDING,
+        created_at=datetime.now(UTC),
+    )
+
+
+def _service(
+    *,
+    model: ModelDescriptor | None = None,
+    title: str | None = "Generated title",
+) -> tuple[ChatService, Mock, Mock, Mock, Mock, Mock]:
+    """Build a Chat service and its application-level test doubles.
+
+    Args:
+        model:
+            Optional selected model.
+        title:
+            Title-generator result.
+
+    Returns:
+        Service, conversation, gateway, registry, context, and memory doubles.
+    """
+
+    selected_model = model or _model()
+    conversation_id = uuid4()
+    conversation_service = Mock()
+    conversation_service.get_or_create_conversation.return_value = ConversationRecord(
+        id=conversation_id,
+        title=None,
+        provider_id=selected_model.provider_id,
+        model_id=selected_model.id,
+    )
+    conversation_service.start_generation_attempt.return_value = _attempt(
+        conversation_id,
+        selected_model,
+    )
+    conversation_service.get_messages.return_value = [
+        ChatMessage(ChatRole.USER, "Hello")
+    ]
+
+    gateway = Mock()
+    gateway.generate.return_value = "Hello from the model."
+    gateway.generate_stream.return_value = iter(["Hello ", "from the model."])
+    resolver = Mock()
+    resolver.resolve.return_value = gateway
+
+    effective = GenerationConfiguration(temperature=0.4)
+    registry = Mock()
+    registry.get_model.return_value = selected_model
+    registry.get_default_model.return_value = selected_model
+    registry.resolve_generation_configuration.return_value = effective
+
+    context_builder = Mock()
+    context_builder.build_context.side_effect = lambda messages, selected: messages
     memory_service = Mock()
     memory_service.inject_memories.side_effect = lambda messages: messages
-
-    return memory_service
-
-
-def _pass_through_context_builder() -> Mock:
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda messages: messages
-
-    return context_builder
-
-
-def test_chat_returns_llm_response() -> None:
-    """
-    Verify that the service returns the generated
-    model response.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hello from Samantha."
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
+    title_generator = Mock()
+    title_generator.generate_title.return_value = title
 
     service = ChatService(
         conversation_service=conversation_service,
         memory_service=memory_service,
-        llm_gateway=gateway,
         context_builder=context_builder,
+        provider_registry=registry,
+        response_gateway_resolver=resolver,
+        title_generator=title_generator,
+    )
+    return (
+        service,
+        conversation_service,
+        gateway,
+        registry,
+        context_builder,
+        memory_service,
     )
 
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
+
+def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None:
+    """Verify synchronous generation uses one validated lifecycle."""
+
+    service, conversations, gateway, registry, context_builder, _ = _service()
+
+    response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
+
+    model = registry.get_model.return_value
+    effective = registry.resolve_generation_configuration.return_value
+    conversations.start_generation_attempt.assert_called_once_with(
+        response.conversation_id,
+        "Hello",
+        model.provider_id,
+        model.id,
+        effective,
     )
-
-    response = service.chat(request)
-
-    assert response.response == "Hello from Samantha."
-
-
-def test_chat_persists_user_and_assistant_messages() -> None:
-    """
-    Verify that both user and assistant messages
-    are persisted.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hello from Samantha."
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    conversation_id = uuid4()
-
-    request = ChatRequest(
-        conversation_id=conversation_id,
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    assert conversation_service.add_message.call_count == 2
-
-    first_call = conversation_service.add_message.call_args_list[0]
-    second_call = conversation_service.add_message.call_args_list[1]
-
-    assert first_call.kwargs["role"] == ChatRole.USER
-    assert second_call.kwargs["role"] == ChatRole.ASSISTANT
-
-
-def test_chat_uses_conversation_id_for_persistence() -> None:
-    conversation_id = uuid4()
-
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
-        title="Conversation",
-    )
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=conversation_id,
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    calls = conversation_service.add_message.call_args_list
-
-    assert calls[0].kwargs["conversation_id"] == conversation_id
-    assert calls[1].kwargs["conversation_id"] == conversation_id
-
-
-def test_chat_persists_assistant_response_content() -> None:
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.return_value = "Response"
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    second_call = conversation_service.add_message.call_args_list[1]
-
-    assert second_call.kwargs["content"] == "Response"
-
-
-def test_chat_propagates_gateway_errors() -> None:
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.side_effect = RuntimeError("Ollama unavailable")
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    with pytest.raises(RuntimeError):
-        service.chat(request)
-
-
-def test_chat_does_not_persist_assistant_message_when_llm_fails() -> None:
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate.side_effect = RuntimeError()
-
-    context_builder = Mock()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    with pytest.raises(RuntimeError):
-        service.chat(request)
-
-    assert conversation_service.add_message.call_count == 1
-
-    first_call = conversation_service.add_message.call_args_list[0]
-
-    assert first_call.kwargs["role"] == ChatRole.USER
-
-
-def test_chat_passes_history_to_context_builder() -> None:
-    """
-    Verify that conversation history is passed to
-    the context builder.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
-
-    context_builder = Mock()
-    context_builder.build_context.return_value = []
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    context_builder.build_context.assert_called_once()
-
-    history = context_builder.build_context.call_args.args[0]
-
-    assert len(history) == 1
-    assert history[0].role == ChatRole.USER
-    assert history[0].content == "Hello"
-
-
-def test_chat_passes_context_to_gateway() -> None:
-    """
-    Verify that the context returned by the context
-    builder is passed to the language model gateway.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
-
-    context = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Adjusted context",
-        ),
-    ]
-
-    context_builder = Mock()
-    context_builder.build_context.return_value = context
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    context_builder.build_context.assert_called_once()
-    gateway.generate.assert_called_once_with(context)
-
-
-def test_chat_injects_memories_before_context_builder() -> None:
-    """
-    Verify that memory injection runs before context
-    building.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
-
-    messages_with_memories = [
-        ChatMessage(
-            role=ChatRole.SYSTEM,
-            content="Known facts about the user:\n\n- favorite_language: Python",
-        ),
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
-
-    memory_service = Mock()
-    memory_service.inject_memories.return_value = messages_with_memories
-
-    context_builder = Mock()
-    context_builder.build_context.return_value = messages_with_memories
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    service.chat(request)
-
-    memory_service.inject_memories.assert_called_once()
+    conversations.begin_generation_attempt.assert_called_once()
     context_builder.build_context.assert_called_once_with(
-        messages_with_memories,
+        conversations.get_messages.return_value,
+        model,
     )
+    gateway.generate.assert_called_once_with(
+        conversations.get_messages.return_value,
+        model.id,
+        effective,
+    )
+    conversations.complete_generation_attempt.assert_called_once()
+    assert response.response == "Hello from the model."
 
 
-def test_chat_sets_title_on_first_exchange() -> None:
-    """
-    Verify that the first exchange generates and persists a title.
-    """
+def test_stream_chat_uses_the_same_attempt_lifecycle() -> None:
+    """Verify streaming begins and completes the prepared attempt."""
 
-    conversation_id = uuid4()
+    service, conversations, gateway, registry, _, _ = _service()
 
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
+    _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
+    chunks = list(stream)
+
+    assert chunks == ["Hello ", "from the model."]
+    gateway.generate_stream.assert_called_once_with(
+        conversations.get_messages.return_value,
+        registry.get_model.return_value.id,
+        registry.resolve_generation_configuration.return_value,
+    )
+    conversations.begin_generation_attempt.assert_called_once()
+    completion = conversations.complete_generation_attempt.call_args
+    assert completion.args[1] == "Hello from the model."
+
+
+def test_new_conversation_persists_registry_default_before_attempt() -> None:
+    """Verify a new conversation adopts the registered default selection."""
+
+    service, conversations, _, registry, _, _ = _service()
+    model = registry.get_model.return_value
+    initial = conversations.get_or_create_conversation.return_value
+    initial = ConversationRecord(id=initial.id, title=None)
+    selected = ConversationRecord(
+        id=initial.id,
         title=None,
+        provider_id=model.provider_id,
+        model_id=model.id,
     )
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Plan the launch",
-        ),
-    ]
-    conversation_service.update_conversation_title.return_value = True
+    conversations.get_or_create_conversation.return_value = initial
+    conversations.update_generation_defaults.return_value = selected
 
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-    gateway.generate_title.return_value = '"Launch planning"\n'
+    service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_pass_through_memory_service(),
-        llm_gateway=gateway,
-        context_builder=_pass_through_context_builder(),
-    )
-
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation_id,
-            message="Plan the launch",
-        )
-    )
-
-    gateway.generate_title.assert_called_once()
-    conversation_service.rename_conversation.assert_called_once_with(
-        conversation_id=conversation_id,
-        title="Launch planning",
+    registry.get_default_model.assert_called_once_with()
+    conversations.update_generation_defaults.assert_called_once_with(
+        initial.id,
+        model.provider_id,
+        model.id,
+        GenerationConfiguration(),
     )
 
 
-def test_chat_falls_back_when_title_generation_is_blank() -> None:
-    """
-    Verify that blank title output falls back to the first user message.
-    """
+def test_streaming_capability_is_validated_before_attempt_is_started() -> None:
+    """Verify a non-streaming model is rejected before persisting a user turn."""
 
-    conversation_id = uuid4()
-
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
-        title=None,
-    )
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Need a launch plan",
-        ),
-    ]
-    conversation_service.update_conversation_title.return_value = True
-
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-    gateway.generate_title.return_value = "   "
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_pass_through_memory_service(),
-        llm_gateway=gateway,
-        context_builder=_pass_through_context_builder(),
+    service, conversations, _, _, _, _ = _service(
+        model=_model(supports_streaming=False)
     )
 
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation_id,
-            message="Need a launch plan",
-        )
-    )
+    with pytest.raises(InvalidGenerationConfigurationError):
+        service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    conversation_service.rename_conversation.assert_called_once_with(
-        conversation_id=conversation_id,
-        title="Need a launch plan",
-    )
+    conversations.start_generation_attempt.assert_not_called()
 
 
-def test_chat_does_not_retitle_existing_conversations() -> None:
-    """
-    Verify that conversations with an existing title are not retitled.
-    """
+def test_completed_turn_effects_run_after_atomic_completion() -> None:
+    """Verify title and memory effects cannot precede assistant-message commit."""
 
-    conversation_id = uuid4()
+    service, conversations, _, _, _, memory_service = _service()
+    calls = Mock()
+    calls.attach_mock(conversations.complete_generation_attempt, "complete")
+    calls.attach_mock(memory_service.extract_memories, "memory")
 
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
-        title="Existing title",
-    )
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
+    service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    gateway = Mock()
-    gateway.generate.return_value = "Hi"
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_pass_through_memory_service(),
-        llm_gateway=gateway,
-        context_builder=_pass_through_context_builder(),
-    )
-
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation_id,
-            message="Hello",
-        )
-    )
-
-    conversation_service.rename_conversation.assert_not_called()
-    gateway.generate_title.assert_not_called()
+    assert [call[0] for call in calls.mock_calls] == ["complete", "memory"]
+    conversations.rename_conversation.assert_called_once()
 
 
-def test_stream_chat_yields_chunks() -> None:
-    """
-    Verify that chat_stream yields chunks from gateway.
-    """
+def test_provider_error_does_not_complete_or_run_turn_effects() -> None:
+    """Verify unsuccessful synchronous generation remains outside completion."""
 
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
+    service, conversations, gateway, _, _, memory_service = _service()
+    gateway.generate.side_effect = RuntimeError("provider unavailable")
 
-    gateway = Mock()
-    gateway.generate_stream.return_value = iter(["Hello ", "there"])
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda m: m
-
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    _, generator = service.stream_chat(request)
-
-    chunks = list(generator)
-
-    assert chunks == ["Hello ", "there"]
-
-
-def test_stream_chat_persists_complete_response() -> None:
-    """
-    Verify that complete response is persisted after streaming.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate_stream.return_value = iter(["Hello ", "from ", "Samantha."])
-
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda m: m
-
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    _, generator = service.stream_chat(request)
-    list(generator)
-
-    calls = conversation_service.add_message.call_args_list
-    assistant_call = calls[1]
-
-    assert assistant_call.kwargs["role"] == ChatRole.ASSISTANT
-    assert assistant_call.kwargs["content"] == "Hello from Samantha."
-
-
-def test_stream_chat_does_not_persist_on_error() -> None:
-    """
-    Verify that partial responses are not saved on streaming error.
-    """
-
-    conversation_service = Mock()
-    conversation_service.get_messages.return_value = []
-
-    def failing_generator():
-        yield "Hello "
-        raise RuntimeError("Streaming failed")
-
-    gateway = Mock()
-    gateway.generate_stream.return_value = failing_generator()
-
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda m: m
-
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=uuid4(),
-        message="Hello",
-    )
-
-    _, generator = service.stream_chat(request)
-
-    with pytest.raises(RuntimeError):
-        list(generator)
-
-    assert conversation_service.add_message.call_count == 1
-    assert conversation_service.add_message.call_args.kwargs["role"] == ChatRole.USER
-
-
-def test_stream_chat_generates_title_on_first_exchange() -> None:
-    """
-    Verify that first exchange generates title after streaming.
-    """
-
-    conversation_id = uuid4()
-
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
-        title=None,
-    )
-    conversation_service.get_messages.return_value = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello",
-        ),
-    ]
-
-    gateway = Mock()
-    gateway.generate_stream.return_value = iter(["Hi there"])
-    gateway.generate_title.return_value = "Greeting"
-
-    context_builder = _pass_through_context_builder()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=conversation_id,
-        message="Hello",
-    )
-
-    _, generator = service.stream_chat(request)
-    list(generator)
-
-    gateway.generate_title.assert_called_once()
-    conversation_service.rename_conversation.assert_called_once()
-
-
-def test_stream_chat_returns_conversation_id() -> None:
-    """
-    Verify that chat_stream returns the conversation ID.
-    """
-
-    conversation_id = uuid4()
-
-    conversation_service = Mock()
-    conversation_service.get_or_create_conversation.return_value = ConversationEntry(
-        id=conversation_id,
-        title=None,
-    )
-    conversation_service.get_messages.return_value = []
-
-    gateway = Mock()
-    gateway.generate_stream.return_value = iter(["Hi"])
-
-    context_builder = _pass_through_context_builder()
-    memory_service = _pass_through_memory_service()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    request = ChatRequest(
-        conversation_id=conversation_id,
-        message="Hello",
-    )
-
-    returned_id, generator = service.stream_chat(request)
-    list(generator)
-
-    assert returned_id == conversation_id
+    conversations.complete_generation_attempt.assert_not_called()
+    memory_service.extract_memories.assert_not_called()
+    conversations.rename_conversation.assert_not_called()

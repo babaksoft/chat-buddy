@@ -1,10 +1,17 @@
 ﻿import logging
+from datetime import datetime
 from uuid import UUID
 
-from chat_buddy.chat.application.schemas import (
-    ConversationEntry,
+from chat_buddy.chat.domain import (
+    ChatMessage,
+    ChatRole,
+    ConversationRecord,
+    ConversationRepository,
+    GenerationAttemptRecord,
+    GenerationConfiguration,
+    ModelId,
+    ProviderId,
 )
-from chat_buddy.chat.domain import ChatMessage, ChatRole, ConversationRepository
 
 logger = logging.getLogger(__name__)
 
@@ -30,28 +37,20 @@ class ConversationService:
 
     def get_conversations(
         self,
-    ) -> list[ConversationEntry]:
+    ) -> list[ConversationRecord]:
         """
         Retrieve all conversations.
 
         Returns:
-            Conversation entries ordered by
+            Conversation records ordered by
             most recently updated first.
         """
 
-        conversations = self._repository.get_conversations()
-
-        return [
-            ConversationEntry(
-                id=conversation.id,
-                title=conversation.title,
-            )
-            for conversation in conversations
-        ]
+        return self._repository.get_conversations()
 
     def create_conversation(
         self,
-    ) -> ConversationEntry:
+    ) -> ConversationRecord:
         """
         Create a new conversation.
 
@@ -59,11 +58,7 @@ class ConversationService:
             Newly created conversation.
         """
 
-        conversation = self._repository.create_conversation()
-        return ConversationEntry(
-            id=conversation.id,
-            title=conversation.title,
-        )
+        return self._repository.create_conversation()
 
     def rename_conversation(
         self,
@@ -76,7 +71,6 @@ class ConversationService:
         Args:
             conversation_id:
                 Unique conversation identifier.
-
             title:
                 New conversation title.
 
@@ -116,12 +110,16 @@ class ConversationService:
 
     def get_or_create_conversation(
         self, conversation_id: UUID | None
-    ) -> ConversationEntry:
+    ) -> ConversationRecord:
         """
         Retrieves a conversation by identifier.
 
         Creates a new conversation if no conversation
         with given identifier exists.
+
+        Args:
+            conversation_id:
+                Optional conversation identifier.
         """
 
         if conversation_id:
@@ -130,9 +128,117 @@ class ConversationService:
         else:
             conversation = self._repository.create_conversation()
 
-        return ConversationEntry(
-            id=conversation.id,
-            title=conversation.title,
+        return conversation
+
+    def update_generation_defaults(
+        self,
+        conversation_id: UUID,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        requested_configuration: GenerationConfiguration,
+    ) -> ConversationRecord | None:
+        """Persist defaults for the conversation's next generation attempt.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to update.
+            provider_id:
+                Selected response provider.
+            model_id:
+                Selected provider-local model.
+            requested_configuration:
+                Provider-neutral requested generation values.
+
+        Returns:
+            Updated conversation, or ``None`` when it does not exist.
+        """
+
+        return self._repository.update_generation_defaults(
+            conversation_id,
+            provider_id,
+            model_id,
+            requested_configuration,
+        )
+
+    def start_generation_attempt(
+        self,
+        conversation_id: UUID,
+        user_content: str,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        effective_configuration: GenerationConfiguration,
+    ) -> GenerationAttemptRecord:
+        """Atomically persist a user message and pending generation attempt.
+
+        Args:
+            conversation_id:
+                Identifier of the target conversation.
+            user_content:
+                Source user-message content.
+            provider_id:
+                Effective response provider.
+            model_id:
+                Effective provider-local model.
+            effective_configuration:
+                Validated immutable generation settings.
+
+        Returns:
+            Newly persisted pending generation attempt.
+        """
+
+        return self._repository.start_generation_attempt(
+            conversation_id,
+            user_content,
+            provider_id,
+            model_id,
+            effective_configuration,
+        )
+
+    def begin_generation_attempt(
+        self,
+        attempt_id: UUID,
+        *,
+        at: datetime,
+    ) -> GenerationAttemptRecord:
+        """Transition a pending generation attempt to streaming.
+
+        Args:
+            attempt_id:
+                Identifier of the pending attempt.
+            at:
+                Time response generation started.
+
+        Returns:
+            Persisted streaming generation attempt.
+        """
+
+        return self._repository.begin_generation_attempt(attempt_id, at=at)
+
+    def complete_generation_attempt(
+        self,
+        attempt_id: UUID,
+        assistant_content: str,
+        *,
+        at: datetime,
+    ) -> GenerationAttemptRecord:
+        """Atomically persist an assistant message and complete its attempt.
+
+        Args:
+            attempt_id:
+                Identifier of the streaming attempt.
+            assistant_content:
+                Completed assistant response.
+            at:
+                Time response generation completed.
+
+        Returns:
+            Persisted completed generation attempt.
+        """
+
+        return self._repository.complete_generation_attempt(
+            attempt_id,
+            assistant_content,
+            at=at,
         )
 
     def add_message(
@@ -144,10 +250,8 @@ class ConversationService:
         Args:
             conversation_id:
                 Target conversation identifier.
-
             role:
                 Role of the message author.
-
             content:
                 Message text content.
 

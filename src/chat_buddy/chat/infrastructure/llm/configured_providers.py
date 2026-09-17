@@ -28,7 +28,7 @@ class ProviderRuntime:
 
     registry: ProviderRegistry
     response_gateway_resolver: ResponseGatewayResolver
-    legacy_gateway: LLMGateway
+    utility_gateway: LLMGateway
 
 
 def build_provider_runtime() -> ProviderRuntime:
@@ -68,5 +68,5 @@ def build_provider_runtime() -> ProviderRuntime:
     return ProviderRuntime(
         registry=registry,
         response_gateway_resolver=resolver,
-        legacy_gateway=gateway,
+        utility_gateway=gateway,
     )

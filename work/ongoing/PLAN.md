@@ -110,7 +110,7 @@ Acceptance:
 
 ### Slice 5 — Route successful generation through the new lifecycle
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Resolve the selected model and response adapter through the registry.
 - Validate requested configuration and snapshot the effective configuration

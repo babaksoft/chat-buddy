@@ -5,14 +5,15 @@ from uuid import UUID
 
 import streamlit as st
 
-from chat_buddy.chat.application.schemas import ChatRequest, ConversationEntry
+from chat_buddy.chat.application.schemas import ChatRequest
 from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.domain import ConversationRecord
 from chat_buddy.chat.ui.composition import build_services
 
 
 def render_conversation_editor(
     conversation_service: ConversationService,
-    conversation: ConversationEntry,
+    conversation: ConversationRecord,
 ) -> None:
     input_key = f"chat_rename_{conversation.id}"
 
@@ -51,7 +52,7 @@ def render_conversation_editor(
 
 def render_delete_confirm(
     conversation_service: ConversationService,
-    conversation: ConversationEntry,
+    conversation: ConversationRecord,
 ) -> None:
     col_prompt, col_confirm, col_cancel = st.columns([8, 1, 1])
 
@@ -81,7 +82,7 @@ def render_delete_confirm(
 
 def render_conversation_row(
     conversation_service: ConversationService,
-    conversation: ConversationEntry,
+    conversation: ConversationRecord,
 ) -> None:
     editing_id = st.session_state.get("chat_editing_conversation_id")
     confirming_delete_id = st.session_state.get(

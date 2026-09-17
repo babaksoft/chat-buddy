@@ -17,7 +17,6 @@ from chat_buddy.chat.infrastructure.db.repositories import (
     MemoryRepository,
 )
 from chat_buddy.chat.infrastructure.llm import build_provider_runtime
-from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
 
 
 @st.cache_resource
@@ -29,10 +28,10 @@ def build_services() -> tuple[ChatService, ConversationService]:
     memory_repository = MemoryRepository(session)
 
     provider_runtime = build_provider_runtime()
-    gateway = provider_runtime.legacy_gateway
+    utility_gateway = provider_runtime.utility_gateway
     memory_service = MemoryService(
         repository=memory_repository,
-        llm_gateway=gateway,
+        llm_gateway=utility_gateway,
         config=MemoryConfig(
             extraction_interval=settings.MEMORY_EXTRACTION_INTERVAL,
         ),
@@ -44,12 +43,12 @@ def build_services() -> tuple[ChatService, ConversationService]:
     chat_service = ChatService(
         conversation_service=conversation_service,
         memory_service=memory_service,
-        llm_gateway=gateway,
+        provider_registry=provider_runtime.registry,
+        response_gateway_resolver=provider_runtime.response_gateway_resolver,
+        title_generator=utility_gateway,
         context_builder=DefaultContextBuilder(
-            token_counter=MistralTokenCounter(),
-            summarizer=LLMSummarizer(gateway=gateway),
+            summarizer=LLMSummarizer(gateway=utility_gateway),
             config=ContextBuilderConfig(
-                model_context_window=settings.MODEL_CONTEXT_WINDOW,
                 prompt_overhead_tokens=settings.PROMPT_OVERHEAD_TOKENS,
                 summary_trigger_ratio=settings.SUMMARY_TRIGGER_RATIO,
             ),

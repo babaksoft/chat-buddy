@@ -1,394 +1,301 @@
-﻿from collections.abc import Iterator
+from collections.abc import Iterator
 from unittest.mock import Mock
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from chat_buddy.chat.application.config import MemoryConfig
 from chat_buddy.chat.application.schemas import ChatRequest
-from chat_buddy.chat.application.service import (
-    ChatService,
-    ConversationService,
-    MemoryService,
-)
+from chat_buddy.chat.application.service import ChatService, ConversationService
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
-    ExtractedMemory,
-    LLMGateway,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    GenerationParameter,
+    ModelDescriptor,
+    ModelId,
+    ProviderDescriptor,
+    ProviderId,
 )
-from chat_buddy.chat.infrastructure.db.repositories import (
-    ConversationRepository,
-    MemoryRepository,
+from chat_buddy.chat.infrastructure.db.models import GenerationAttempt
+from chat_buddy.chat.infrastructure.db.repositories import ConversationRepository
+from chat_buddy.chat.infrastructure.llm.provider_registry import (
+    StaticProviderRegistry,
+    StaticResponseGatewayResolver,
 )
-from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
+
+PROVIDER_ID = ProviderId("test-provider")
+FIRST_MODEL_ID = ModelId("first-model")
+SECOND_MODEL_ID = ModelId("second-model")
 
 
-class FakeGateway(LLMGateway):
-    def generate(
-        self,
-        messages: list[ChatMessage],
-    ) -> str:
-        return "Hello from Samantha."
+class FakeGateway:
+    """Response and title test adapter with recorded generation inputs."""
 
-    def generate_stream(
-        self,
-        messages: list[ChatMessage],
-    ) -> Iterator[str]:
-        yield "Hello "
-        yield "from "
-        yield "Samantha."
+    def __init__(self, title: str = "Conversation title") -> None:
+        """Initialize the adapter.
 
-    def summarize(
-        self,
-        messages: list[ChatMessage],
-    ) -> str:
-        return "Conversation summary."
+        Args:
+            title:
+                Title returned by the utility capability.
+        """
 
-    def generate_title(
-        self,
-        messages: list[ChatMessage],
-    ) -> str:
-        return "Conversation title."
-
-    def extract_memories(
-        self,
-        messages: list[ChatMessage],
-    ) -> list[ExtractedMemory]:
-        return []
-
-
-class RecordingGateway(FakeGateway):
-    def __init__(self) -> None:
+        self.title = title
         self.last_messages: list[ChatMessage] = []
 
     def generate(
         self,
         messages: list[ChatMessage],
+        model_id: ModelId,
+        configuration: GenerationConfiguration,
     ) -> str:
+        """Return a deterministic complete response.
+
+        Args:
+            messages:
+                Prepared conversation context.
+            model_id:
+                Selected model identifier.
+            configuration:
+                Effective generation configuration.
+
+        Returns:
+            Deterministic assistant response.
+        """
+
         self.last_messages = messages
+        return f"Response from {model_id}."
 
-        return super().generate(messages)
-
-
-class TitleGateway(FakeGateway):
-    def __init__(self, title: str) -> None:
-        self._title = title
-
-    def generate_title(
+    def generate_stream(
         self,
         messages: list[ChatMessage],
-    ) -> str:
-        return self._title
+        model_id: ModelId,
+        configuration: GenerationConfiguration,
+    ) -> Iterator[str]:
+        """Yield a deterministic response in chunks.
+
+        Args:
+            messages:
+                Prepared conversation context.
+            model_id:
+                Selected model identifier.
+            configuration:
+                Effective generation configuration.
+
+        Yields:
+            Deterministic assistant-response chunks.
+        """
+
+        self.last_messages = messages
+        yield "Streamed "
+        yield f"from {model_id}."
+
+    def generate_title(self, messages: list[ChatMessage]) -> str:
+        """Return the configured conversation title.
+
+        Args:
+            messages:
+                Completed first exchange.
+
+        Returns:
+            Configured title text.
+        """
+
+        return self.title
 
 
-class BlankTitleGateway(FakeGateway):
-    def generate_title(
-        self,
-        messages: list[ChatMessage],
-    ) -> str:
-        return "   "
+def _model(model_id: ModelId) -> ModelDescriptor:
+    """Create a selectable integration-test model.
+
+    Args:
+        model_id:
+            Provider-local model identifier.
+
+    Returns:
+        Model descriptor with deterministic defaults.
+    """
+
+    return ModelDescriptor(
+        provider_id=PROVIDER_ID,
+        id=model_id,
+        display_name=str(model_id),
+        context_window_tokens=4_096,
+        supports_streaming=True,
+        supported_generation_parameters=frozenset({GenerationParameter.TEMPERATURE}),
+        default_generation_configuration=GenerationConfiguration(temperature=0.2),
+        token_counter=Mock(),
+    )
 
 
-def _passthrough_context_builder() -> Mock:
+def _build_service(
+    session: Session,
+    gateway: FakeGateway,
+    *,
+    memory_service: Mock | None = None,
+) -> tuple[ChatService, ConversationService, ConversationRepository]:
+    """Compose provider-neutral Chat services around a real repository.
+
+    Args:
+        session:
+            Database session used for persistence.
+        gateway:
+            Fake response and title adapter.
+        memory_service:
+            Optional memory-service test double.
+
+    Returns:
+        Chat service, conversation service, and repository.
+    """
+
+    models = (_model(FIRST_MODEL_ID), _model(SECOND_MODEL_ID))
+    registry = StaticProviderRegistry(
+        providers=(ProviderDescriptor(PROVIDER_ID, "Test provider"),),
+        models=models,
+        default_provider_id=PROVIDER_ID,
+        default_model_id=FIRST_MODEL_ID,
+    )
+    resolver = StaticResponseGatewayResolver({PROVIDER_ID: gateway})
+    repository = ConversationRepository(session)
+    conversation_service = ConversationService(repository)
+    memories = memory_service or Mock()
+    memories.inject_memories.side_effect = lambda messages: messages
     context_builder = Mock()
-    context_builder.build_context.side_effect = lambda messages: messages
+    context_builder.build_context.side_effect = lambda messages, model: messages
+    return (
+        ChatService(
+            conversation_service=conversation_service,
+            memory_service=memories,
+            context_builder=context_builder,
+            provider_registry=registry,
+            response_gateway_resolver=resolver,
+            title_generator=gateway,
+        ),
+        conversation_service,
+        repository,
+    )
 
-    return context_builder
 
-
-def _passthrough_memory_service() -> Mock:
-    memory_service = Mock()
-    memory_service.inject_memories.side_effect = lambda messages: messages
-
-    return memory_service
-
-
-def test_chat_persists_messages(
+def test_new_conversation_completes_with_default_model_provenance(
     session: Session,
 ) -> None:
-    """Verify message and response are both persisted."""
+    """Verify a new conversation persists response and immutable provenance."""
 
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
+    gateway = FakeGateway()
+    service, conversations, repository = _build_service(session, gateway)
 
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=FakeGateway(),
-        context_builder=_passthrough_context_builder(),
-    )
+    response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Hello",
-        )
-    )
-
-    messages = conversation_service.get_messages(conversation.id)
-
-    assert len(messages) == 2
-
-    assert messages[0].role == ChatRole.USER
-    assert messages[0].content == "Hello"
-
-    assert messages[1].role == ChatRole.ASSISTANT
-    assert messages[1].content == "Hello from Samantha."
+    messages = conversations.get_messages(response.conversation_id)
+    attempts = list(session.scalars(select(GenerationAttempt)))
+    persisted_conversation = repository.get_conversation(response.conversation_id)
+    assert [message.role for message in messages] == [ChatRole.USER, ChatRole.ASSISTANT]
+    assert messages[1].content == "Response from first-model."
+    assert len(attempts) == 1
+    assert attempts[0].status is GenerationAttemptStatus.COMPLETED
+    assert attempts[0].provider_id == "test-provider"
+    assert attempts[0].model_id == "first-model"
+    assert attempts[0].effective_configuration["temperature"] == 0.2
+    assert attempts[0].assistant_message_id is not None
+    assert persisted_conversation is not None
+    assert persisted_conversation.model_id == FIRST_MODEL_ID
 
 
-def test_chat_returns_response(
+def test_resumed_conversation_streams_through_persisted_selection(
     session: Session,
 ) -> None:
-    """Verify LLM response is returned by chat service."""
+    """Verify streaming resumes with persisted model and requested settings."""
 
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=FakeGateway(),
-        context_builder=_passthrough_context_builder(),
+    gateway = FakeGateway()
+    service, conversations, repository = _build_service(session, gateway)
+    conversation = repository.create_conversation(
+        provider_id=PROVIDER_ID,
+        model_id=SECOND_MODEL_ID,
+        requested_generation_configuration=GenerationConfiguration(temperature=0.7),
     )
 
-    response = service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Hello",
-        )
+    conversation_id, stream = service.stream_chat(
+        ChatRequest(conversation_id=conversation.id, message="Continue")
     )
 
-    assert response.response == "Hello from Samantha."
+    assert conversation_id == conversation.id
+    assert list(stream) == ["Streamed ", "from second-model."]
+    assert conversations.get_messages(conversation.id)[1].content == (
+        "Streamed from second-model."
+    )
+    attempt = session.scalar(select(GenerationAttempt))
+    assert attempt is not None
+    assert attempt.status is GenerationAttemptStatus.COMPLETED
+    assert attempt.model_id == "second-model"
+    assert attempt.effective_configuration["temperature"] == 0.7
 
 
-def test_chat_supports_multiple_turns(
+def test_model_change_affects_next_attempt_without_rewriting_provenance(
     session: Session,
 ) -> None:
-    """Verify chat service persists multiple-turn conversations."""
+    """Verify selection changes apply only at the next attempt boundary."""
 
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
+    service, conversations, repository = _build_service(session, FakeGateway())
+    conversation = repository.create_conversation(
+        provider_id=PROVIDER_ID,
+        model_id=FIRST_MODEL_ID,
     )
-    conversation = conversation_service.create_conversation()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=FakeGateway(),
-        context_builder=_passthrough_context_builder(),
+    service.chat(ChatRequest(conversation.id, "First turn"))
+    conversations.update_generation_defaults(
+        conversation.id,
+        PROVIDER_ID,
+        SECOND_MODEL_ID,
+        GenerationConfiguration(temperature=0.8),
     )
+    service.chat(ChatRequest(conversation.id, "Second turn"))
 
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Hi",
+    attempts = list(
+        session.scalars(
+            select(GenerationAttempt).order_by(GenerationAttempt.created_at)
         )
     )
-
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="How are you?",
-        )
-    )
-
-    messages = conversation_service.get_messages(conversation.id)
-
-    assert len(messages) == 4
+    assert [attempt.model_id for attempt in attempts] == [
+        "first-model",
+        "second-model",
+    ]
+    assert attempts[0].effective_configuration["temperature"] == 0.2
+    assert attempts[1].effective_configuration["temperature"] == 0.8
 
 
-def test_chat_injects_persisted_memories_into_llm_context(
+def test_title_generation_runs_after_completed_attempt(
     session: Session,
 ) -> None:
-    """Verify persisted memories reach the language model."""
+    """Verify successful first exchange retains existing auto-title behavior."""
 
-    memory_repository = MemoryRepository(session)
-    memory_service = MemoryService(
-        repository=memory_repository,
-        llm_gateway=FakeGateway(),
-        config=MemoryConfig(extraction_interval=10),
-    )
-    memory_repository.save_memory(
-        key="favorite_language",
-        value="Python",
+    service, _, repository = _build_service(
+        session,
+        FakeGateway(title="Launch planning"),
     )
 
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
-    gateway = RecordingGateway()
+    response = service.chat(ChatRequest(None, "Plan the launch"))
 
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda messages: messages
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=memory_service,
-        llm_gateway=gateway,
-        context_builder=context_builder,
-    )
-
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Hello",
-        )
-    )
-
-    assert len(gateway.last_messages) == 2
-
-    assert gateway.last_messages[0].role == ChatRole.SYSTEM
-    assert MEMORY_CONTEXT_HEADER in gateway.last_messages[0].content
-    assert "- favorite_language: Python" in gateway.last_messages[0].content
-
-    assert gateway.last_messages[1].role == ChatRole.USER
-    assert gateway.last_messages[1].content == "Hello"
+    conversation = repository.get_conversation(response.conversation_id)
+    attempt = session.scalar(select(GenerationAttempt))
+    assert attempt is not None
+    assert attempt.status is GenerationAttemptStatus.COMPLETED
+    assert conversation is not None
+    assert conversation.title == "Launch planning"
 
 
-def test_chat_auto_titles_first_exchange(
+def test_multiple_completed_turns_remain_normal_conversation_history(
     session: Session,
 ) -> None:
-    """Verify the first exchange persists a generated title."""
+    """Verify lifecycle routing preserves ordinary multi-turn history."""
 
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
+    service, conversations, repository = _build_service(session, FakeGateway())
+    conversation = repository.create_conversation()
 
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=TitleGateway("Launch planning"),
-        context_builder=_passthrough_context_builder(),
-    )
+    service.chat(ChatRequest(conversation.id, "First"))
+    service.chat(ChatRequest(conversation.id, "Second"))
 
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Plan the launch",
-        )
-    )
-
-    persisted = conversation_service.get_or_create_conversation(conversation.id)
-
-    assert persisted is not None
-    assert persisted.title == "Launch planning"
-
-
-def test_chat_falls_back_to_first_message_title(
-    session: Session,
-) -> None:
-    """Verify blank title output falls back to the first user message."""
-
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=BlankTitleGateway(),
-        context_builder=_passthrough_context_builder(),
-    )
-
-    service.chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Need a launch plan",
-        )
-    )
-
-    persisted = conversation_service.get_or_create_conversation(conversation.id)
-
-    assert persisted is not None
-    assert persisted.title == "Need a launch plan"
-
-
-def test_chat_stream_persists_messages(
-    session: Session,
-) -> None:
-    """Verify streaming persists complete message."""
-
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=FakeGateway(),
-        context_builder=_passthrough_context_builder(),
-    )
-
-    conversation_id, generator = service.stream_chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Hello",
-        )
-    )
-
-    chunks = list(generator)
-
-    assert chunks == ["Hello ", "from ", "Samantha."]
-
-    messages = conversation_service.get_messages(conversation_id)
-    assert len(messages) == 2
-    assert messages[0].role == ChatRole.USER
-    assert messages[0].content == "Hello"
-    assert messages[1].role == ChatRole.ASSISTANT
-    assert messages[1].content == "Hello from Samantha."
-
-
-def test_chat_stream_auto_titles_first_exchange(
-    session: Session,
-) -> None:
-    """Verify streaming generates title after first exchange."""
-
-    conversation_service = ConversationService(
-        repository=ConversationRepository(
-            session=session,
-        ),
-    )
-    conversation = conversation_service.create_conversation()
-
-    service = ChatService(
-        conversation_service=conversation_service,
-        memory_service=_passthrough_memory_service(),
-        llm_gateway=FakeGateway(),
-        context_builder=_passthrough_context_builder(),
-    )
-
-    _, generator = service.stream_chat(
-        ChatRequest(
-            conversation_id=conversation.id,
-            message="Plan the launch",
-        )
-    )
-
-    list(generator)
-
-    persisted = conversation_service.get_or_create_conversation(conversation.id)
-
-    assert persisted is not None
-    assert persisted.title == "Conversation title."
+    messages = conversations.get_messages(conversation.id)
+    assert [message.role for message in messages] == [
+        ChatRole.USER,
+        ChatRole.ASSISTANT,
+        ChatRole.USER,
+        ChatRole.ASSISTANT,
+    ]
