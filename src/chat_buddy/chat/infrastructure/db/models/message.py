@@ -17,18 +17,20 @@ if TYPE_CHECKING:
 
 
 class Message(ChatBase):
-    """Represents a single message in a conversation."""
+    """Represents a persisted message within conversation history."""
 
     __tablename__ = "messages"
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
         default=uuid4,
+        doc="Unique identifier for the message.",
     )
 
     conversation_id: Mapped[UUID] = mapped_column(
         ForeignKey(f"{CHAT_SCHEMA}.conversations.id"),
         nullable=False,
+        doc="Identifier of the conversation that owns the message.",
     )
 
     role: Mapped[ChatRole] = mapped_column(
@@ -39,18 +41,22 @@ class Message(ChatBase):
             values_callable=lambda obj: [item.value for item in obj],
         ),
         nullable=False,
+        doc="Role of the message author within the conversation.",
     )
 
     content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
+        doc="Text content of the message.",
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
+        doc="Time at which the message was created.",
     )
 
     conversation: Mapped[Conversation] = relationship(
         back_populates="messages",
+        doc="Conversation that owns the message.",
     )

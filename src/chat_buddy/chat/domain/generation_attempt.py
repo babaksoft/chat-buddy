@@ -40,7 +40,7 @@ class GenerationAttemptStatus(str, Enum):
 
 
 @dataclass(slots=True, frozen=True)
-class GenerationAttempt:
+class GenerationAttemptRecord:
     """Persistence-neutral, immutable snapshot of a generation attempt."""
 
     id: UUID
@@ -129,7 +129,7 @@ class GenerationAttempt:
                 "Only a failed attempt can contain failure information.",
             )
 
-    def start(self, *, at: datetime) -> GenerationAttempt:
+    def start(self, *, at: datetime) -> GenerationAttemptRecord:
         """Move a pending attempt into streaming state.
 
         Args:
@@ -150,7 +150,7 @@ class GenerationAttempt:
             started_at=at,
         )
 
-    def checkpoint(self, partial_content: str) -> GenerationAttempt:
+    def checkpoint(self, partial_content: str) -> GenerationAttemptRecord:
         """Replace the recoverable partial output of a streaming attempt.
 
         Args:
@@ -172,7 +172,7 @@ class GenerationAttempt:
 
     def complete(
         self, *, assistant_message_id: UUID, at: datetime
-    ) -> GenerationAttempt:
+    ) -> GenerationAttemptRecord:
         """Complete a streaming attempt and link its assistant message.
 
         Args:
@@ -205,7 +205,7 @@ class GenerationAttempt:
         at: datetime,
         error_detail: str | None = None,
         partial_content: str | None = None,
-    ) -> GenerationAttempt:
+    ) -> GenerationAttemptRecord:
         """Terminate a streaming attempt with normalized safe failure data.
 
         Args:
@@ -239,7 +239,7 @@ class GenerationAttempt:
 
     def interrupt(
         self, *, at: datetime, partial_content: str | None = None
-    ) -> GenerationAttempt:
+    ) -> GenerationAttemptRecord:
         """Terminate a streaming attempt because its consumer stopped.
 
         Args:

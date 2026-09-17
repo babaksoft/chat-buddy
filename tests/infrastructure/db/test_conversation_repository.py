@@ -1,7 +1,19 @@
-﻿import pytest
+﻿from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from chat_buddy.chat.domain import ChatRole
+from chat_buddy.chat.domain import (
+    ChatRole,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    InvalidGenerationAttemptTransitionError,
+    ModelId,
+    ProviderId,
+)
+from chat_buddy.chat.infrastructure.db.models import GenerationAttempt, Message
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
 )
@@ -38,6 +50,41 @@ def test_create_conversation(
 
     assert conversation.id is not None
     assert conversation.title == "Test Conversation"
+
+
+def test_create_and_update_conversation_generation_defaults(
+    repository: ConversationRepository,
+) -> None:
+    """Verify provider, model, and requested defaults round-trip.
+
+    Args:
+        repository: Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation(
+        provider_id=ProviderId("ollama"),
+        model_id=ModelId("mistral"),
+        requested_generation_configuration=GenerationConfiguration(temperature=0.4),
+    )
+
+    assert conversation.provider_id == ProviderId("ollama")
+    assert conversation.model_id == ModelId("mistral")
+    assert conversation.requested_generation_configuration.temperature == 0.4
+
+    updated = repository.update_generation_defaults(
+        conversation.id,
+        ProviderId("local-test"),
+        ModelId("test-model"),
+        GenerationConfiguration(top_p=0.8, seed=7),
+    )
+
+    assert updated is not None
+    assert updated.provider_id == ProviderId("local-test")
+    assert updated.model_id == ModelId("test-model")
+    assert updated.requested_generation_configuration == GenerationConfiguration(
+        top_p=0.8,
+        seed=7,
+    )
 
 
 def test_get_conversation(
@@ -200,3 +247,222 @@ def test_update_conversation_title(
 
     assert retrieved is not None
     assert retrieved.title == "Launch Planning"
+
+
+def test_generation_attempt_follows_completed_repository_lifecycle(
+    repository: ConversationRepository,
+) -> None:
+    """Verify pending, streaming, checkpoint, and atomic completion persistence.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(temperature=0.5, max_output_tokens=200),
+    )
+
+    assert pending.status is GenerationAttemptStatus.PENDING
+    assert pending.effective_configuration.temperature == 0.5
+    assert [
+        message.content for message in repository.get_messages(conversation.id)
+    ] == ["Hello"]
+
+    started_at = pending.created_at + timedelta(seconds=1)
+    streaming = repository.begin_generation_attempt(pending.id, at=started_at)
+    checkpointed = repository.checkpoint_generation_attempt(
+        streaming.id,
+        "Partial response",
+    )
+    completed = repository.complete_generation_attempt(
+        checkpointed.id,
+        "Completed response",
+        at=started_at + timedelta(seconds=1),
+    )
+
+    assert completed.status is GenerationAttemptStatus.COMPLETED
+    assert completed.partial_content is None
+    assert completed.assistant_message_id is not None
+    assert [
+        message.content for message in repository.get_messages(conversation.id)
+    ] == [
+        "Hello",
+        "Completed response",
+    ]
+    assert repository.get_generation_attempt(completed.id) == completed
+
+
+@pytest.mark.parametrize("terminal_state", ["failed", "interrupted"])
+def test_generation_attempt_persists_incomplete_terminal_states(
+    repository: ConversationRepository,
+    terminal_state: str,
+) -> None:
+    """Verify failed and interrupted attempts retain partial output.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+        terminal_state:
+            Incomplete terminal transition to exercise.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    started_at = pending.created_at
+    repository.begin_generation_attempt(pending.id, at=started_at)
+
+    if terminal_state == "failed":
+        terminal = repository.fail_generation_attempt(
+            pending.id,
+            error_code="provider_unavailable",
+            error_detail="Provider is unavailable.",
+            partial_content="Partial",
+            at=started_at + timedelta(seconds=1),
+        )
+    else:
+        terminal = repository.interrupt_generation_attempt(
+            pending.id,
+            partial_content="Partial",
+            at=started_at + timedelta(seconds=1),
+        )
+
+    assert terminal.status.value == terminal_state
+    assert terminal.partial_content == "Partial"
+    assert terminal.assistant_message_id is None
+    assert [
+        message.content for message in repository.get_messages(conversation.id)
+    ] == ["Hello"]
+
+
+def test_generation_repository_rejects_invalid_transitions(
+    repository: ConversationRepository,
+) -> None:
+    """Verify repository operations enforce the domain lifecycle.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+
+    with pytest.raises(InvalidGenerationAttemptTransitionError):
+        repository.checkpoint_generation_attempt(pending.id, "Too early")
+    with pytest.raises(InvalidGenerationAttemptTransitionError):
+        repository.complete_generation_attempt(
+            pending.id,
+            "Too early",
+            at=pending.created_at,
+        )
+
+    repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
+
+    with pytest.raises(InvalidGenerationAttemptTransitionError):
+        repository.begin_generation_attempt(pending.id, at=pending.created_at)
+
+
+def test_start_generation_attempt_rolls_back_message_and_attempt_together(
+    repository: ConversationRepository,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify a failed start commit leaves neither atomic record.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+        session:
+            Database session used by the repository.
+        monkeypatch:
+            Pytest helper used to simulate commit failure.
+    """
+
+    conversation = repository.create_conversation()
+
+    def fail_commit() -> None:
+        """Simulate a database failure while committing the transaction."""
+
+        raise SQLAlchemyError("simulated commit failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(session, "commit", fail_commit)
+        with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+            repository.start_generation_attempt(
+                conversation.id,
+                "Hello",
+                ProviderId("ollama"),
+                ModelId("mistral"),
+                GenerationConfiguration(),
+            )
+
+    assert session.scalar(select(func.count()).select_from(Message)) == 0
+    assert session.scalar(select(func.count()).select_from(GenerationAttempt)) == 0
+
+
+def test_complete_generation_attempt_rolls_back_message_and_status_together(
+    repository: ConversationRepository,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify a failed completion commit preserves the streaming attempt.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+        session:
+            Database session used by the repository.
+        monkeypatch:
+            Pytest helper used to simulate commit failure.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    repository.begin_generation_attempt(pending.id, at=pending.created_at)
+
+    def fail_commit() -> None:
+        """Simulate a database failure while committing the transaction."""
+
+        raise SQLAlchemyError("simulated commit failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(session, "commit", fail_commit)
+        with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+            repository.complete_generation_attempt(
+                pending.id,
+                "Response",
+                at=datetime.now(UTC),
+            )
+
+    session.expire_all()
+    persisted = repository.get_generation_attempt(pending.id)
+    assert persisted is not None
+    assert persisted.status is GenerationAttemptStatus.STREAMING
+    assert [
+        message.content for message in repository.get_messages(conversation.id)
+    ] == ["Hello"]

@@ -87,7 +87,7 @@ Acceptance:
 
 ### Slice 4 — Add generation persistence
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add current provider, model, and requested generation defaults to a
   conversation.

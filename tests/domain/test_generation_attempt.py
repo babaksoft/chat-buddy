@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from chat_buddy.chat.domain import (
-    GenerationAttempt,
+    GenerationAttemptRecord,
     GenerationAttemptStatus,
     GenerationConfiguration,
     InvalidGenerationAttemptTransitionError,
@@ -14,14 +14,14 @@ from chat_buddy.chat.domain import (
 )
 
 
-def _pending_attempt() -> GenerationAttempt:
+def _pending_attempt() -> GenerationAttemptRecord:
     """Build a valid pending attempt for lifecycle tests.
 
     Returns:
         A pending generation attempt with unique identifiers.
     """
 
-    return GenerationAttempt(
+    return GenerationAttemptRecord(
         id=uuid4(),
         conversation_id=uuid4(),
         source_user_message_id=uuid4(),
@@ -114,7 +114,7 @@ def test_attempt_requires_timezone_aware_timestamps() -> None:
     """Verify that generation attempt timestamps include timezone data."""
 
     with pytest.raises(ValueError, match="timezone-aware"):
-        GenerationAttempt(
+        GenerationAttemptRecord(
             id=uuid4(),
             conversation_id=uuid4(),
             source_user_message_id=uuid4(),

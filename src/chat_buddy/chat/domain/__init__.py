@@ -19,7 +19,7 @@ from chat_buddy.chat.domain.gateways import (
     TitleGenerator,
 )
 from chat_buddy.chat.domain.generation_attempt import (
-    GenerationAttempt,
+    GenerationAttemptRecord,
     GenerationAttemptStatus,
 )
 from chat_buddy.chat.domain.llm_gateway import LLMGateway
@@ -50,7 +50,7 @@ __all__ = [
     "ConversationRecord",
     "ConversationRepository",
     "ExtractedMemory",
-    "GenerationAttempt",
+    "GenerationAttemptRecord",
     "GenerationAttemptStatus",
     "GenerationConfiguration",
     "GenerationParameter",
