@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.chat.application.schemas import ChatRequest
+from chat_buddy.chat.application.schemas import ChatRequest, GenerationSelection
 from chat_buddy.chat.application.service import ChatService
 from chat_buddy.chat.domain import (
     ChatMessage,
@@ -17,6 +17,7 @@ from chat_buddy.chat.domain import (
     InvalidGenerationConfigurationError,
     ModelDescriptor,
     ModelId,
+    ProviderDescriptor,
     ProviderId,
 )
 
@@ -102,6 +103,7 @@ def _service(
     conversation_service.get_messages.return_value = [
         ChatMessage(ChatRole.USER, "Hello")
     ]
+    conversation_service.get_unresolved_generation_attempts.return_value = []
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from the model."
@@ -214,6 +216,129 @@ def test_new_conversation_persists_registry_default_before_attempt() -> None:
         model.id,
         GenerationConfiguration(),
     )
+
+
+def test_generation_selection_restores_persisted_application_choices() -> None:
+    """Verify UI choices are projected through the application service."""
+
+    service, conversations, _, registry, _, _ = _service()
+    model = registry.get_model.return_value
+    conversation_id = uuid4()
+    configuration = GenerationConfiguration(temperature=0.6)
+    conversations.get_conversation.return_value = ConversationRecord(
+        id=conversation_id,
+        title=None,
+        provider_id=model.provider_id,
+        model_id=model.id,
+        requested_generation_configuration=configuration,
+    )
+    registry.list_providers.return_value = (
+        ProviderDescriptor(id=model.provider_id, display_name="Test provider"),
+    )
+    registry.list_models.return_value = (model,)
+
+    selection = service.get_generation_selection(conversation_id)
+
+    assert isinstance(selection, GenerationSelection)
+    assert selection.provider_id == model.provider_id
+    assert selection.model_id == model.id
+    assert selection.configuration == configuration
+    assert selection.providers[0].display_name == "Test provider"
+    assert selection.models[0].display_name == "Test model"
+
+
+def test_generation_selection_change_is_validated_then_persisted() -> None:
+    """Verify selector changes become defaults for the next generation only."""
+
+    service, conversations, _, registry, _, _ = _service()
+    model = registry.get_model.return_value
+    conversation = conversations.get_or_create_conversation.return_value
+    configuration = GenerationConfiguration(top_p=0.8)
+    conversations.get_conversation.return_value = conversation
+    conversations.update_generation_defaults.return_value = ConversationRecord(
+        id=conversation.id,
+        title=None,
+        provider_id=model.provider_id,
+        model_id=model.id,
+        requested_generation_configuration=configuration,
+    )
+
+    updated_id = service.update_generation_selection(
+        conversation.id,
+        model.provider_id,
+        model.id,
+        configuration,
+    )
+
+    registry.resolve_generation_configuration.assert_called_once_with(
+        model, configuration
+    )
+    conversations.update_generation_defaults.assert_called_once_with(
+        conversation.id,
+        model.provider_id,
+        model.id,
+        configuration,
+    )
+    assert updated_id == conversation.id
+
+
+def test_recoverable_attempts_are_deduplicated_and_exclude_completions() -> None:
+    """Verify recovery cards use the latest incomplete attempt per source."""
+
+    service, conversations, _, registry, _, _ = _service()
+    model = registry.get_model.return_value
+    conversation_id = uuid4()
+    source_id = uuid4()
+    other_source_id = uuid4()
+    first = _attempt(conversation_id, model)
+    first = GenerationAttemptRecord(
+        id=first.id,
+        conversation_id=conversation_id,
+        source_user_message_id=source_id,
+        provider_id=model.provider_id,
+        model_id=model.id,
+        effective_configuration=GenerationConfiguration(),
+        status=GenerationAttemptStatus.PENDING,
+        created_at=first.created_at,
+    )
+    failed = first.start(at=first.created_at).fail(
+        error_code="provider_error", at=first.created_at
+    )
+    retry = _attempt(conversation_id, model)
+    retry = GenerationAttemptRecord(
+        id=retry.id,
+        conversation_id=conversation_id,
+        source_user_message_id=source_id,
+        provider_id=model.provider_id,
+        model_id=model.id,
+        effective_configuration=GenerationConfiguration(),
+        status=GenerationAttemptStatus.PENDING,
+        created_at=retry.created_at,
+    )
+    interrupted = retry.start(at=retry.created_at).interrupt(at=retry.created_at)
+    completed_pending = _attempt(conversation_id, model)
+    completed_pending = GenerationAttemptRecord(
+        id=completed_pending.id,
+        conversation_id=conversation_id,
+        source_user_message_id=other_source_id,
+        provider_id=model.provider_id,
+        model_id=model.id,
+        effective_configuration=GenerationConfiguration(),
+        status=GenerationAttemptStatus.PENDING,
+        created_at=completed_pending.created_at,
+    )
+    completed = completed_pending.start(at=completed_pending.created_at).complete(
+        assistant_message_id=uuid4(), at=completed_pending.created_at
+    )
+    conversations.get_generation_attempts.return_value = [
+        failed,
+        interrupted,
+        completed,
+    ]
+
+    recoverable = service.get_recoverable_generation_attempts(conversation_id)
+
+    assert recoverable == (interrupted,)
 
 
 def test_streaming_capability_is_validated_before_attempt_is_started() -> None:

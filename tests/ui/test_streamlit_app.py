@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
@@ -6,9 +7,24 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
-from chat_buddy.chat.application.schemas import ChatRequest
+from chat_buddy.chat.application.schemas import (
+    ChatRequest,
+    GenerationSelection,
+    ModelOption,
+    ProviderOption,
+)
 from chat_buddy.chat.application.service import ChatService, ConversationService
-from chat_buddy.chat.domain import ChatMessage, ChatRole, ConversationRecord
+from chat_buddy.chat.domain import (
+    ChatMessage,
+    ChatRole,
+    ConversationRecord,
+    GenerationAttemptRecord,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    GenerationParameter,
+    ModelId,
+    ProviderId,
+)
 from chat_buddy.chat.ui import page as chat_page
 
 
@@ -34,6 +50,23 @@ def conversation_id() -> UUID:
 def services(conversation_id: UUID) -> Generator[Mock, None, None]:
     chat = Mock(spec=ChatService)
     conversations = Mock(spec=ConversationService)
+    provider_id = ProviderId("local")
+    model_id = ModelId("main")
+    chat.get_generation_selection.return_value = GenerationSelection(
+        providers=(ProviderOption(id=provider_id, display_name="Local"),),
+        models=(
+            ModelOption(
+                provider_id=provider_id,
+                id=model_id,
+                display_name="Main model",
+                supported_generation_parameters=frozenset(GenerationParameter),
+            ),
+        ),
+        provider_id=provider_id,
+        model_id=model_id,
+        configuration=GenerationConfiguration(),
+    )
+    chat.get_recoverable_generation_attempts.return_value = ()
     conversations.get_conversations.return_value = [
         ConversationRecord(id=conversation_id, title="Existing conversation")
     ]
@@ -149,6 +182,149 @@ def test_chat_streams_and_selects_resulting_conversation(
     assert chunks == ["Hello", " there"]
     assert app.session_state["chat_conversation_id"] == conversation_id
     assert app.chat_message[-1].markdown[0].value == "Hello there"
+
+
+def test_new_chat_model_switch_is_persisted_for_next_generation(
+    app: AppTest, services: Mock, conversation_id: UUID
+) -> None:
+    """Verify a new-chat model selection is applied through ChatService."""
+
+    chat, _ = services.return_value
+    initial = chat.get_generation_selection.return_value
+    other_model = ModelOption(
+        provider_id=initial.provider_id,
+        id=ModelId("other"),
+        display_name="Other model",
+        supported_generation_parameters=frozenset(GenerationParameter),
+    )
+    switched = GenerationSelection(
+        providers=initial.providers,
+        models=(*initial.models, other_model),
+        provider_id=initial.provider_id,
+        model_id=other_model.id,
+        configuration=initial.configuration,
+    )
+    chat.get_generation_selection.return_value = GenerationSelection(
+        providers=initial.providers,
+        models=switched.models,
+        provider_id=initial.provider_id,
+        model_id=initial.model_id,
+        configuration=initial.configuration,
+    )
+
+    def update_selection(*args: object) -> UUID:
+        chat.get_generation_selection.return_value = switched
+        return conversation_id
+
+    chat.update_generation_selection.side_effect = update_selection
+
+    app.run()
+    app.selectbox(key="chat_model_new_local").set_value("Other model").run()
+
+    assert not app.exception
+    chat.update_generation_selection.assert_called_once_with(
+        None,
+        ProviderId("local"),
+        ModelId("other"),
+        GenerationConfiguration(),
+    )
+    assert app.session_state["chat_conversation_id"] == conversation_id
+    assert app.selectbox(key=f"chat_model_{conversation_id}_local").value == "other"
+
+
+def test_resumed_conversation_restores_persisted_model(
+    app: AppTest, services: Mock, conversation_id: UUID
+) -> None:
+    """Verify selecting a conversation restores its application-owned defaults."""
+
+    chat, _ = services.return_value
+    initial = chat.get_generation_selection.return_value
+    resumed_model = ModelOption(
+        provider_id=initial.provider_id,
+        id=ModelId("resumed"),
+        display_name="Resumed model",
+        supported_generation_parameters=frozenset(GenerationParameter),
+    )
+    resumed = GenerationSelection(
+        providers=initial.providers,
+        models=(*initial.models, resumed_model),
+        provider_id=initial.provider_id,
+        model_id=resumed_model.id,
+        configuration=GenerationConfiguration(temperature=0.7),
+    )
+    chat.get_generation_selection.side_effect = lambda selected_id: (
+        resumed if selected_id == conversation_id else initial
+    )
+
+    app.button(key=f"chat_select_{conversation_id}").click().run()
+
+    assert not app.exception
+    assert app.selectbox(key=f"chat_model_{conversation_id}_local").value == "resumed"
+    assert app.number_input(
+        key=f"chat_temperature_{conversation_id}_local_resumed"
+    ).value == pytest.approx(0.7)
+    chat.update_generation_selection.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_message"),
+    [
+        (GenerationAttemptStatus.FAILED, "Provider unavailable"),
+        (
+            GenerationAttemptStatus.INTERRUPTED,
+            "Response generation was interrupted before it completed.",
+        ),
+    ],
+)
+def test_incomplete_attempt_is_separate_from_history_and_can_be_retried(
+    app: AppTest,
+    services: Mock,
+    conversation_id: UUID,
+    status: GenerationAttemptStatus,
+    expected_message: str,
+) -> None:
+    """Verify failure recovery does not turn partial output into history."""
+
+    chat, _ = services.return_value
+    now = datetime.now(UTC)
+    attempt = GenerationAttemptRecord(
+        id=uuid4(),
+        conversation_id=conversation_id,
+        source_user_message_id=uuid4(),
+        provider_id=ProviderId("local"),
+        model_id=ModelId("main"),
+        effective_configuration=GenerationConfiguration(),
+        status=status,
+        created_at=now,
+        started_at=now,
+        finished_at=now,
+        partial_content="Unfinished words",
+        error_code=(
+            "provider_error" if status is GenerationAttemptStatus.FAILED else None
+        ),
+        error_detail=(
+            "Provider unavailable" if status is GenerationAttemptStatus.FAILED else None
+        ),
+    )
+    chat.get_recoverable_generation_attempts.return_value = (attempt,)
+    app.button(key=f"chat_select_{conversation_id}").click().run()
+
+    assert not app.exception
+    assert app.warning[0].value == expected_message
+    assert "Unfinished words" not in [
+        message.markdown[0].value for message in app.chat_message
+    ]
+
+    def retry_stream() -> Generator[str, None, None]:
+        yield "Recovered response"
+        chat.get_recoverable_generation_attempts.return_value = ()
+
+    chat.stream_retry.return_value = (conversation_id, retry_stream())
+    app.button(key=f"chat_retry_{attempt.id}").click().run()
+
+    assert not app.exception
+    chat.stream_retry.assert_called_once_with(attempt.id)
+    assert not app.warning
 
 
 @pytest.mark.parametrize("action", ["save", "cancel", "blank"])

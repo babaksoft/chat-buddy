@@ -432,6 +432,37 @@ def test_unresolved_attempt_query_excludes_terminal_attempts(
     assert {attempt.id for attempt in unresolved} == {pending.id, streaming.id}
 
 
+def test_generation_attempt_query_includes_terminal_recovery_states(
+    repository: ConversationRepository,
+) -> None:
+    """Verify the application can retrieve attempts needed for recovery UI.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    failed = repository.fail_generation_attempt(
+        pending.id,
+        error_code="provider_error",
+        at=pending.created_at,
+        partial_content="Partial",
+    )
+
+    attempts = repository.get_generation_attempts(conversation.id)
+
+    assert attempts == [failed]
+
+
 def test_generation_repository_rejects_invalid_transitions(
     repository: ConversationRepository,
 ) -> None:

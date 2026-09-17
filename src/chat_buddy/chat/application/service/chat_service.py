@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from chat_buddy.chat.application.schemas import ChatRequest, ChatResponse
+from chat_buddy.chat.application.schemas import (
+    ChatRequest,
+    ChatResponse,
+    GenerationSelection,
+    ModelOption,
+    ProviderOption,
+)
 from chat_buddy.chat.application.service.conversation_service import ConversationService
 from chat_buddy.chat.application.service.memory_service import MemoryService
 from chat_buddy.chat.domain import (
@@ -20,6 +26,8 @@ from chat_buddy.chat.domain import (
     InvalidGenerationAttemptTransitionError,
     InvalidGenerationConfigurationError,
     ModelDescriptor,
+    ModelId,
+    ProviderId,
     ProviderRegistry,
     ResponseGatewayResolver,
     ResponseGenerator,
@@ -192,6 +200,141 @@ class ChatService:
                 "Reconciled stale generation attempt %s as interrupted.",
                 attempt.id,
             )
+
+    def get_generation_selection(
+        self, conversation_id: UUID | None
+    ) -> GenerationSelection:
+        """Return application-owned provider choices and current defaults.
+
+        Args:
+            conversation_id:
+                Selected conversation, or ``None`` for a new conversation.
+
+        Returns:
+            Available choices and the selection to display.
+        """
+
+        selected = (
+            self._conversation_service.get_conversation(conversation_id)
+            if conversation_id is not None
+            else None
+        )
+        if (
+            selected is None
+            or selected.provider_id is None
+            or selected.model_id is None
+        ):
+            model = self._provider_registry.get_default_model()
+            configuration = (
+                selected.requested_generation_configuration
+                if selected is not None
+                else GenerationConfiguration()
+            )
+        else:
+            model = self._provider_registry.get_model(
+                selected.provider_id, selected.model_id
+            )
+            configuration = selected.requested_generation_configuration
+
+        providers = tuple(
+            ProviderOption(id=item.id, display_name=item.display_name)
+            for item in self._provider_registry.list_providers()
+        )
+        models = tuple(
+            ModelOption(
+                provider_id=item.provider_id,
+                id=item.id,
+                display_name=item.display_name,
+                supported_generation_parameters=item.supported_generation_parameters,
+            )
+            for item in self._provider_registry.list_models()
+        )
+        return GenerationSelection(
+            providers=providers,
+            models=models,
+            provider_id=model.provider_id,
+            model_id=model.id,
+            configuration=configuration,
+        )
+
+    def update_generation_selection(
+        self,
+        conversation_id: UUID | None,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        configuration: GenerationConfiguration,
+    ) -> UUID:
+        """Validate and persist defaults used at the next generation boundary.
+
+        Args:
+            conversation_id:
+                Existing conversation, or ``None`` to create one.
+            provider_id:
+                Selected provider identifier.
+            model_id:
+                Selected provider-local model identifier.
+            configuration:
+                Requested provider-neutral generation configuration.
+
+        Returns:
+            Identifier of the updated conversation.
+
+        Raises:
+            LookupError:
+                If an existing conversation no longer exists.
+        """
+
+        model = self._provider_registry.get_model(provider_id, model_id)
+        self._provider_registry.resolve_generation_configuration(model, configuration)
+        conversation: ConversationRecord | None
+        if conversation_id is None:
+            conversation = self._conversation_service.create_conversation()
+        else:
+            conversation = self._conversation_service.get_conversation(conversation_id)
+            if conversation is None:
+                raise LookupError(f"Conversation {conversation_id} does not exist.")
+        updated = self._conversation_service.update_generation_defaults(
+            conversation.id,
+            provider_id,
+            model_id,
+            configuration,
+        )
+        if updated is None:
+            raise LookupError(f"Conversation {conversation.id} does not exist.")
+        return updated.id
+
+    def get_recoverable_generation_attempts(
+        self, conversation_id: UUID
+    ) -> tuple[GenerationAttemptRecord, ...]:
+        """Return latest incomplete attempts that have no successful retry.
+
+        Args:
+            conversation_id:
+                Identifier of the resumed conversation.
+
+        Returns:
+            Latest failed or interrupted attempt for each unresolved user message.
+        """
+
+        self.reconcile_generation_attempts(conversation_id)
+        attempts = self._conversation_service.get_generation_attempts(conversation_id)
+        completed_sources = {
+            attempt.source_user_message_id
+            for attempt in attempts
+            if attempt.status is GenerationAttemptStatus.COMPLETED
+        }
+        recoverable_by_source: dict[UUID, GenerationAttemptRecord] = {}
+        for attempt in attempts:
+            if (
+                attempt.source_user_message_id not in completed_sources
+                and attempt.status
+                in {
+                    GenerationAttemptStatus.FAILED,
+                    GenerationAttemptStatus.INTERRUPTED,
+                }
+            ):
+                recoverable_by_source[attempt.source_user_message_id] = attempt
+        return tuple(recoverable_by_source.values())
 
     def _stream_generation(
         self, generation: _PreparedGeneration

@@ -395,6 +395,21 @@ class ConversationService:
 
         return self._repository.get_unresolved_generation_attempts(conversation_id)
 
+    def get_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve all generation attempts for a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Attempts ordered from oldest to newest.
+        """
+
+        return self._repository.get_generation_attempts(conversation_id)
+
     def get_message(self, message_id: UUID) -> ChatMessage | None:
         """Retrieve one message by identifier.
 

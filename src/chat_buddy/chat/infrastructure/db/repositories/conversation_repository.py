@@ -727,6 +727,29 @@ class ConversationRepository:
             for model in self._session.scalars(statement)
         ]
 
+    def get_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve all attempts for a conversation in creation order.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Attempts ordered from oldest to newest.
+        """
+
+        statement = (
+            select(GenerationAttempt)
+            .where(GenerationAttempt.conversation_id == conversation_id)
+            .order_by(GenerationAttempt.created_at.asc())
+        )
+        return [
+            self._to_generation_attempt(model)
+            for model in self._session.scalars(statement)
+        ]
+
     @staticmethod
     def _to_conversation_record(conversation: Conversation) -> ConversationRecord:
         """Translate a persistence model into a domain record.

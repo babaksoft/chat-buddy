@@ -7,7 +7,16 @@ import streamlit as st
 
 from chat_buddy.chat.application.schemas import ChatRequest
 from chat_buddy.chat.application.service import ChatService, ConversationService
-from chat_buddy.chat.domain import ConversationRecord
+from chat_buddy.chat.domain import (
+    ConversationRecord,
+    GenerationAttemptRecord,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    GenerationParameter,
+    ModelId,
+    ProviderId,
+    ProviderInvocationError,
+)
 from chat_buddy.chat.ui.composition import build_services
 
 
@@ -165,6 +174,234 @@ def render_sidebar(conversation_service: ConversationService) -> None:
             )
 
 
+def _optional_float(
+    label: str, value: float | None, *, minimum: float, maximum: float, key: str
+) -> float | None:
+    """Render an optional floating-point generation setting.
+
+    Args:
+        label:
+            User-visible input label.
+        value:
+            Currently requested value.
+        minimum:
+            Smallest accepted value.
+        maximum:
+            Largest accepted value.
+        key:
+            Stable Streamlit widget key.
+
+    Returns:
+        Requested value, or ``None`` to use the model default.
+    """
+
+    result = st.number_input(
+        label,
+        min_value=minimum,
+        max_value=maximum,
+        value=value,
+        step=0.05,
+        key=key,
+        placeholder="Model default",
+    )
+    return float(result) if result is not None else None
+
+
+def _optional_int(
+    label: str, value: int | None, *, minimum: int, key: str
+) -> int | None:
+    """Render an optional integer generation setting.
+
+    Args:
+        label:
+            User-visible input label.
+        value:
+            Currently requested value.
+        minimum:
+            Smallest accepted value.
+        key:
+            Stable Streamlit widget key.
+
+    Returns:
+        Requested value, or ``None`` to use the model default.
+    """
+
+    result = st.number_input(
+        label,
+        min_value=minimum,
+        value=value,
+        step=1,
+        key=key,
+        placeholder="Model default",
+    )
+    return int(result) if result is not None else None
+
+
+def render_generation_selection(
+    chat_service: ChatService,
+    conversation_id: UUID | None,
+) -> UUID | None:
+    """Render and persist provider-neutral defaults for the next response.
+
+    Args:
+        chat_service:
+            Chat application service exposing provider choices.
+        conversation_id:
+            Currently selected conversation, if any.
+
+    Returns:
+        Existing or newly created conversation identifier.
+    """
+
+    selection = chat_service.get_generation_selection(conversation_id)
+    key_suffix = str(conversation_id or "new")
+    provider_names = {str(item.id): item.display_name for item in selection.providers}
+    provider_values = tuple(provider_names)
+    selected_provider = st.selectbox(
+        "Provider",
+        provider_values,
+        index=provider_values.index(str(selection.provider_id)),
+        format_func=provider_names.__getitem__,
+        key=f"chat_provider_{key_suffix}",
+    )
+    provider_id = ProviderId(selected_provider)
+    available_models = tuple(
+        item for item in selection.models if item.provider_id == provider_id
+    )
+    model_names = {str(item.id): item.display_name for item in available_models}
+    model_values = tuple(model_names)
+    persisted_model = str(selection.model_id)
+    model_index = (
+        model_values.index(persisted_model) if persisted_model in model_values else 0
+    )
+    selected_model = st.selectbox(
+        "Model",
+        model_values,
+        index=model_index,
+        format_func=model_names.__getitem__,
+        key=f"chat_model_{key_suffix}_{provider_id}",
+    )
+    model_id = ModelId(selected_model)
+    model = next(item for item in available_models if item.id == model_id)
+    current = selection.configuration
+    with st.expander("Generation settings"):
+        temperature = (
+            _optional_float(
+                "Temperature",
+                current.temperature,
+                minimum=0.0,
+                maximum=2.0,
+                key=f"chat_temperature_{key_suffix}_{provider_id}_{model_id}",
+            )
+            if GenerationParameter.TEMPERATURE in model.supported_generation_parameters
+            else None
+        )
+        top_p = (
+            _optional_float(
+                "Top P",
+                current.top_p,
+                minimum=0.01,
+                maximum=1.0,
+                key=f"chat_top_p_{key_suffix}_{provider_id}_{model_id}",
+            )
+            if GenerationParameter.TOP_P in model.supported_generation_parameters
+            else None
+        )
+        max_output_tokens = (
+            _optional_int(
+                "Maximum output tokens",
+                current.max_output_tokens,
+                minimum=1,
+                key=f"chat_max_tokens_{key_suffix}_{provider_id}_{model_id}",
+            )
+            if GenerationParameter.MAX_OUTPUT_TOKENS
+            in model.supported_generation_parameters
+            else None
+        )
+        seed = (
+            _optional_int(
+                "Seed",
+                current.seed,
+                minimum=0,
+                key=f"chat_seed_{key_suffix}_{provider_id}_{model_id}",
+            )
+            if GenerationParameter.SEED in model.supported_generation_parameters
+            else None
+        )
+    configuration = GenerationConfiguration(
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_output_tokens,
+        seed=seed,
+    )
+    if (
+        provider_id != selection.provider_id
+        or model_id != selection.model_id
+        or configuration != selection.configuration
+    ):
+        conversation_id = chat_service.update_generation_selection(
+            conversation_id,
+            provider_id,
+            model_id,
+            configuration,
+        )
+        st.session_state.chat_conversation_id = conversation_id
+        st.rerun()
+
+    return conversation_id
+
+
+def _attempt_message(attempt: GenerationAttemptRecord) -> str:
+    """Build safe user-facing copy for an incomplete attempt.
+
+    Args:
+        attempt:
+            Failed or interrupted generation attempt.
+
+    Returns:
+        Status copy suitable for the recovery panel.
+    """
+
+    if attempt.status is GenerationAttemptStatus.FAILED:
+        return (
+            attempt.error_detail
+            or "The response provider could not complete the request."
+        )
+
+    return "Response generation was interrupted before it completed."
+
+
+def render_recovery(
+    chat_service: ChatService,
+    conversation_id: UUID,
+) -> None:
+    """Render incomplete attempts separately from completed message history.
+
+    Args:
+        chat_service:
+            Chat application service used for recovery operations.
+        conversation_id:
+            Conversation whose recoverable attempts to render.
+    """
+
+    attempts = chat_service.get_recoverable_generation_attempts(conversation_id)
+    for attempt in attempts:
+        with st.container(border=True):
+            st.warning(_attempt_message(attempt))
+            if attempt.partial_content:
+                st.caption("Incomplete response")
+                st.markdown(attempt.partial_content)
+            if st.button("Retry", key=f"chat_retry_{attempt.id}"):
+                with st.chat_message("assistant"):
+                    _, response_generator = chat_service.stream_retry(attempt.id)
+                    try:
+                        st.write_stream(response_generator)
+                    except ProviderInvocationError:
+                        st.rerun()
+
+                st.rerun()
+
+
 def render_conversation(
     service: ConversationService,
     conversation_id: UUID,
@@ -210,9 +447,17 @@ def render(
     render_sidebar(conversation_service=conversation_service)
 
     conversation_id = st.session_state.chat_conversation_id
+    conversation_id = render_generation_selection(
+        chat_service=chat_service,
+        conversation_id=conversation_id,
+    )
     if conversation_id is not None:
         render_conversation(
             service=conversation_service,
+            conversation_id=conversation_id,
+        )
+        render_recovery(
+            chat_service=chat_service,
             conversation_id=conversation_id,
         )
 
@@ -232,8 +477,10 @@ def render(
                     message=prompt,
                 )
             )
-            st.write_stream(response_generator)
-
-        st.session_state.chat_conversation_id = new_conversation_id
+            st.session_state.chat_conversation_id = new_conversation_id
+            try:
+                st.write_stream(response_generator)
+            except ProviderInvocationError:
+                st.rerun()
 
         st.rerun()

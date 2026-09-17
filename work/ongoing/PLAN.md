@@ -157,7 +157,7 @@ Acceptance:
 
 ### Slice 7 — Add provider selection and recovery UI
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add provider and model selectors whose choices come from the application
   service rather than infrastructure.

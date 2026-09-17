@@ -430,6 +430,21 @@ class ConversationRepository(Protocol):
 
         ...
 
+    def get_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve all attempts for a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Attempts ordered from oldest to newest.
+        """
+
+        ...
+
 
 class MemoryRepository(Protocol):
     """Persistence operations required by memory services."""
