@@ -346,6 +346,92 @@ def test_generation_attempt_persists_incomplete_terminal_states(
     ] == ["Hello"]
 
 
+def test_retry_generation_attempt_reuses_source_user_message(
+    repository: ConversationRepository,
+) -> None:
+    """Verify retry creates provenance without duplicating ordinary history.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    original = repository.start_generation_attempt(
+        conversation.id,
+        "Hello",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    repository.begin_generation_attempt(original.id, at=original.created_at)
+    failed = repository.fail_generation_attempt(
+        original.id,
+        error_code="provider_error",
+        at=original.created_at,
+    )
+
+    retry = repository.retry_generation_attempt(
+        failed.id,
+        ProviderId("local-test"),
+        ModelId("new-model"),
+        GenerationConfiguration(temperature=0.3),
+    )
+
+    assert retry.status is GenerationAttemptStatus.PENDING
+    assert retry.id != failed.id
+    assert retry.source_user_message_id == failed.source_user_message_id
+    assert retry.model_id == ModelId("new-model")
+    assert [
+        message.content for message in repository.get_messages(conversation.id)
+    ] == ["Hello"]
+
+
+def test_unresolved_attempt_query_excludes_terminal_attempts(
+    repository: ConversationRepository,
+) -> None:
+    """Verify recovery queries return only pending and streaming attempts.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Pending",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    streaming = repository.start_generation_attempt(
+        conversation.id,
+        "Streaming",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    repository.begin_generation_attempt(streaming.id, at=streaming.created_at)
+    failed = repository.start_generation_attempt(
+        conversation.id,
+        "Failed",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    repository.begin_generation_attempt(failed.id, at=failed.created_at)
+    repository.fail_generation_attempt(
+        failed.id,
+        error_code="provider_error",
+        at=failed.created_at,
+    )
+
+    unresolved = repository.get_unresolved_generation_attempts(conversation.id)
+
+    assert {attempt.id for attempt in unresolved} == {pending.id, streaming.id}
+
+
 def test_generation_repository_rejects_invalid_transitions(
     repository: ConversationRepository,
 ) -> None:

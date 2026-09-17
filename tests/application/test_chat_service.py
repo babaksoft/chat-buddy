@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import UUID, uuid4
@@ -252,5 +253,90 @@ def test_provider_error_does_not_complete_or_run_turn_effects() -> None:
         service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
     conversations.complete_generation_attempt.assert_not_called()
+    conversations.fail_generation_attempt.assert_called_once()
     memory_service.extract_memories.assert_not_called()
     conversations.rename_conversation.assert_not_called()
+
+
+def test_stream_failure_before_output_marks_attempt_failed() -> None:
+    """Verify a provider failure before its first chunk is persisted."""
+
+    service, conversations, gateway, _, _, memory_service = _service()
+    gateway.generate_stream.side_effect = RuntimeError("provider unavailable")
+
+    _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        next(stream)
+
+    failure = conversations.fail_generation_attempt.call_args
+    assert failure.kwargs["error_code"] == "provider_error"
+    assert failure.kwargs["partial_content"] is None
+    conversations.complete_generation_attempt.assert_not_called()
+    memory_service.extract_memories.assert_not_called()
+
+
+def test_stream_failure_flushes_partial_output_to_attempt() -> None:
+    """Verify provider failure retains chunks outside completed history."""
+
+    service, conversations, gateway, _, _, memory_service = _service()
+
+    def failing_stream() -> Generator[str, None, None]:
+        """Yield one chunk before simulating a provider failure."""
+
+        yield "Partial"
+        raise RuntimeError("stream failed")
+
+    gateway.generate_stream.return_value = failing_stream()
+    _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
+
+    assert next(stream) == "Partial"
+    with pytest.raises(RuntimeError, match="stream failed"):
+        next(stream)
+
+    failure = conversations.fail_generation_attempt.call_args
+    assert failure.kwargs["partial_content"] == "Partial"
+    conversations.complete_generation_attempt.assert_not_called()
+    memory_service.extract_memories.assert_not_called()
+
+
+def test_stream_consumer_closure_marks_attempt_interrupted() -> None:
+    """Verify generator closure flushes partial output as interrupted."""
+
+    service, conversations, _, _, _, memory_service = _service()
+    _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
+
+    assert next(stream) == "Hello "
+    stream.close()
+
+    interruption = conversations.interrupt_generation_attempt.call_args
+    assert interruption.kwargs["partial_content"] == "Hello "
+    conversations.complete_generation_attempt.assert_not_called()
+    memory_service.extract_memories.assert_not_called()
+
+
+def test_stream_consumer_closure_before_output_marks_attempt_interrupted() -> None:
+    """Verify an unconsumed prepared stream can still be closed durably."""
+
+    service, conversations, gateway, _, _, _ = _service()
+    _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
+
+    stream.close()
+
+    conversations.interrupt_generation_attempt.assert_called_once()
+    gateway.generate_stream.assert_not_called()
+
+
+def test_stale_streaming_attempt_is_reconciled_as_interrupted() -> None:
+    """Verify resuming a conversation terminates an unowned stream."""
+
+    service, conversations, _, registry, _, _ = _service()
+    conversation = conversations.get_or_create_conversation.return_value
+    stale = _attempt(conversation.id, registry.get_model.return_value).start(
+        at=datetime.now(UTC)
+    )
+    conversations.get_unresolved_generation_attempts.return_value = [stale]
+
+    service.reconcile_generation_attempts(conversation.id)
+
+    conversations.interrupt_generation_attempt.assert_called_once()
+    conversations.begin_generation_attempt.assert_not_called()

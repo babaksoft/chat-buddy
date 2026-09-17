@@ -189,6 +189,19 @@ class ConversationRepository(Protocol):
 
         ...
 
+    def get_message(self, message_id: UUID) -> MessageRecord | None:
+        """Retrieve one message by identifier.
+
+        Args:
+            message_id:
+                Identifier of the message to retrieve.
+
+        Returns:
+            The matching message, or ``None`` when it does not exist.
+        """
+
+        ...
+
     def start_generation_attempt(
         self,
         conversation_id: UUID,
@@ -217,6 +230,37 @@ class ConversationRepository(Protocol):
         Raises:
             LookupError:
                 If the target conversation does not exist.
+        """
+
+        ...
+
+    def retry_generation_attempt(
+        self,
+        attempt_id: UUID,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        effective_configuration: GenerationConfiguration,
+    ) -> GenerationAttemptRecord:
+        """Create a pending retry that reuses an incomplete attempt's source.
+
+        Args:
+            attempt_id:
+                Identifier of the failed or interrupted attempt to retry.
+            provider_id:
+                Effective response provider for the new attempt.
+            model_id:
+                Effective provider-local model for the new attempt.
+            effective_configuration:
+                Validated immutable generation settings for the new attempt.
+
+        Returns:
+            The newly persisted pending retry attempt.
+
+        Raises:
+            LookupError:
+                If the source attempt does not exist.
+            InvalidGenerationAttemptTransitionError:
+                If the source attempt is not failed or interrupted.
         """
 
         ...
@@ -367,6 +411,21 @@ class ConversationRepository(Protocol):
 
         Returns:
             The matching attempt, or ``None`` when it does not exist.
+        """
+
+        ...
+
+    def get_unresolved_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve pending and streaming attempts for a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Unresolved attempts ordered from oldest to newest.
         """
 
         ...

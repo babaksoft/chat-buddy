@@ -133,7 +133,7 @@ Acceptance:
 
 ### Slice 6 — Implement failure, interruption, and retry
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Mark provider errors as failed attempts and stream-consumer cancellation as
   interrupted attempts.

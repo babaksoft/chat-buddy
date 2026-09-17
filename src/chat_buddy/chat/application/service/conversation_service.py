@@ -130,6 +130,19 @@ class ConversationService:
 
         return conversation
 
+    def get_conversation(self, conversation_id: UUID) -> ConversationRecord | None:
+        """Retrieve a conversation without creating a replacement.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to retrieve.
+
+        Returns:
+            The matching conversation, or ``None`` when it does not exist.
+        """
+
+        return self._repository.get_conversation(conversation_id)
+
     def update_generation_defaults(
         self,
         conversation_id: UUID,
@@ -194,6 +207,36 @@ class ConversationService:
             effective_configuration,
         )
 
+    def retry_generation_attempt(
+        self,
+        attempt_id: UUID,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        effective_configuration: GenerationConfiguration,
+    ) -> GenerationAttemptRecord:
+        """Create a pending retry for an incomplete generation attempt.
+
+        Args:
+            attempt_id:
+                Identifier of the failed or interrupted attempt.
+            provider_id:
+                Effective response provider for the retry.
+            model_id:
+                Effective provider-local model for the retry.
+            effective_configuration:
+                Validated immutable generation settings for the retry.
+
+        Returns:
+            Newly persisted pending retry attempt.
+        """
+
+        return self._repository.retry_generation_attempt(
+            attempt_id,
+            provider_id,
+            model_id,
+            effective_configuration,
+        )
+
     def begin_generation_attempt(
         self,
         attempt_id: UUID,
@@ -240,6 +283,134 @@ class ConversationService:
             assistant_content,
             at=at,
         )
+
+    def checkpoint_generation_attempt(
+        self, attempt_id: UUID, partial_content: str
+    ) -> GenerationAttemptRecord:
+        """Persist the complete partial output accumulated by an active attempt.
+
+        Args:
+            attempt_id:
+                Identifier of the streaming attempt.
+            partial_content:
+                Complete partial response accumulated so far.
+
+        Returns:
+            Updated streaming attempt.
+        """
+
+        return self._repository.checkpoint_generation_attempt(
+            attempt_id, partial_content
+        )
+
+    def fail_generation_attempt(
+        self,
+        attempt_id: UUID,
+        *,
+        error_code: str,
+        at: datetime,
+        error_detail: str | None = None,
+        partial_content: str | None = None,
+    ) -> GenerationAttemptRecord:
+        """Persist a failed generation attempt.
+
+        Args:
+            attempt_id:
+                Identifier of the streaming attempt.
+            error_code:
+                Stable normalized failure code.
+            at:
+                Time generation failed.
+            error_detail:
+                Optional safe user-facing failure detail.
+            partial_content:
+                Optional complete partial response.
+
+        Returns:
+            Persisted failed attempt.
+        """
+
+        return self._repository.fail_generation_attempt(
+            attempt_id,
+            error_code=error_code,
+            at=at,
+            error_detail=error_detail,
+            partial_content=partial_content,
+        )
+
+    def interrupt_generation_attempt(
+        self,
+        attempt_id: UUID,
+        *,
+        at: datetime,
+        partial_content: str | None = None,
+    ) -> GenerationAttemptRecord:
+        """Persist an interrupted generation attempt.
+
+        Args:
+            attempt_id:
+                Identifier of the streaming attempt.
+            at:
+                Time generation was interrupted.
+            partial_content:
+                Optional complete partial response.
+
+        Returns:
+            Persisted interrupted attempt.
+        """
+
+        return self._repository.interrupt_generation_attempt(
+            attempt_id,
+            at=at,
+            partial_content=partial_content,
+        )
+
+    def get_generation_attempt(
+        self, attempt_id: UUID
+    ) -> GenerationAttemptRecord | None:
+        """Retrieve a generation attempt by identifier.
+
+        Args:
+            attempt_id:
+                Identifier of the attempt to retrieve.
+
+        Returns:
+            Matching attempt, or ``None`` when it does not exist.
+        """
+
+        return self._repository.get_generation_attempt(attempt_id)
+
+    def get_unresolved_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve pending and streaming attempts for a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Unresolved attempts ordered from oldest to newest.
+        """
+
+        return self._repository.get_unresolved_generation_attempts(conversation_id)
+
+    def get_message(self, message_id: UUID) -> ChatMessage | None:
+        """Retrieve one message by identifier.
+
+        Args:
+            message_id:
+                Identifier of the message to retrieve.
+
+        Returns:
+            Matching application message, or ``None`` when absent.
+        """
+
+        message = self._repository.get_message(message_id)
+        if message is None:
+            return None
+
+        return ChatMessage(role=message.role, content=message.content)
 
     def add_message(
         self, conversation_id: UUID, role: ChatRole, content: str

@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from unittest.mock import Mock
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -102,6 +103,45 @@ class FakeGateway:
         """
 
         return self.title
+
+
+class RecoveringGateway(FakeGateway):
+    """Fake gateway whose synchronous response can fail and recover."""
+
+    def __init__(self) -> None:
+        """Initialize the gateway in its failing state."""
+
+        super().__init__()
+        self.should_fail = True
+
+    def generate(
+        self,
+        messages: list[ChatMessage],
+        model_id: ModelId,
+        configuration: GenerationConfiguration,
+    ) -> str:
+        """Fail while configured to do so, otherwise return a response.
+
+        Args:
+            messages:
+                Prepared conversation context.
+            model_id:
+                Selected model identifier.
+            configuration:
+                Effective generation configuration.
+
+        Returns:
+            Deterministic assistant response after recovery.
+
+        Raises:
+            RuntimeError:
+                If the gateway is still configured to fail.
+        """
+
+        if self.should_fail:
+            raise RuntimeError("provider unavailable")
+
+        return super().generate(messages, model_id, configuration)
 
 
 def _model(model_id: ModelId) -> ModelDescriptor:
@@ -299,3 +339,59 @@ def test_multiple_completed_turns_remain_normal_conversation_history(
         ChatRole.USER,
         ChatRole.ASSISTANT,
     ]
+
+
+def test_successful_retry_reuses_user_message_and_adds_one_assistant(
+    session: Session,
+) -> None:
+    """Verify retry recovery creates one response without duplicate input."""
+
+    gateway = RecoveringGateway()
+    service, conversations, _ = _build_service(session, gateway)
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        service.chat(ChatRequest(None, "Recover this turn"))
+    failed = session.scalar(select(GenerationAttempt))
+    assert failed is not None
+    assert failed.status is GenerationAttemptStatus.FAILED
+
+    gateway.should_fail = False
+    response = service.retry(failed.id)
+
+    messages = conversations.get_messages(response.conversation_id)
+    attempts = list(
+        session.scalars(
+            select(GenerationAttempt).order_by(GenerationAttempt.created_at)
+        )
+    )
+    assert [message.role for message in messages] == [
+        ChatRole.USER,
+        ChatRole.ASSISTANT,
+    ]
+    assert [message.content for message in messages].count("Recover this turn") == 1
+    assert [attempt.status for attempt in attempts] == [
+        GenerationAttemptStatus.FAILED,
+        GenerationAttemptStatus.COMPLETED,
+    ]
+    assert attempts[0].source_user_message_id == attempts[1].source_user_message_id
+
+
+def test_failed_retry_remains_outside_completed_history(session: Session) -> None:
+    """Verify another provider failure creates no assistant message."""
+
+    gateway = RecoveringGateway()
+    service, conversations, _ = _build_service(session, gateway)
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        service.chat(ChatRequest(None, "Still failing"))
+    failed = session.scalar(select(GenerationAttempt))
+    assert failed is not None
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        service.retry(failed.id)
+
+    attempts = list(session.scalars(select(GenerationAttempt)))
+    messages = conversations.get_messages(failed.conversation_id)
+    assert len(attempts) == 2
+    assert all(attempt.status is GenerationAttemptStatus.FAILED for attempt in attempts)
+    assert [message.role for message in messages] == [ChatRole.USER]

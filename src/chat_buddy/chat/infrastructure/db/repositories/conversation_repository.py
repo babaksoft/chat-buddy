@@ -13,6 +13,7 @@ from chat_buddy.chat.domain import (
     GenerationAttemptRecord,
     GenerationAttemptStatus,
     GenerationConfiguration,
+    InvalidGenerationAttemptTransitionError,
     MessageRecord,
     ModelId,
     ProviderId,
@@ -350,6 +351,20 @@ class ConversationRepository:
 
         return [self._to_message_record(item) for item in messages]
 
+    def get_message(self, message_id: UUID) -> MessageRecord | None:
+        """Retrieve one persisted message by identifier.
+
+        Args:
+            message_id:
+                Identifier of the message to retrieve.
+
+        Returns:
+            The matching message, or ``None`` when it does not exist.
+        """
+
+        message = self._session.get(Message, message_id)
+        return self._to_message_record(message) if message is not None else None
+
     def start_generation_attempt(
         self,
         conversation_id: UUID,
@@ -418,6 +433,66 @@ class ConversationRepository:
                 "Failed to start generation attempt for conversation %s.",
                 conversation_id,
             )
+            raise
+
+    def retry_generation_attempt(
+        self,
+        attempt_id: UUID,
+        provider_id: ProviderId,
+        model_id: ModelId,
+        effective_configuration: GenerationConfiguration,
+    ) -> GenerationAttemptRecord:
+        """Create a pending retry that reuses an incomplete attempt's source.
+
+        Args:
+            attempt_id:
+                Identifier of the failed or interrupted attempt to retry.
+            provider_id:
+                Effective response provider for the retry.
+            model_id:
+                Effective provider-local model for the retry.
+            effective_configuration:
+                Validated immutable generation settings for the retry.
+
+        Returns:
+            The newly persisted pending retry.
+
+        Raises:
+            LookupError:
+                If the source attempt does not exist.
+            InvalidGenerationAttemptTransitionError:
+                If the source attempt is not incomplete.
+            SQLAlchemyError:
+                If persistence fails.
+        """
+
+        source = self._get_attempt_model(attempt_id)
+        if source.status not in {
+            GenerationAttemptStatus.FAILED,
+            GenerationAttemptStatus.INTERRUPTED,
+        }:
+            raise InvalidGenerationAttemptTransitionError(
+                "Only a failed or interrupted attempt can be retried."
+            )
+
+        retry = GenerationAttemptRecord(
+            id=uuid4(),
+            conversation_id=source.conversation_id,
+            source_user_message_id=source.source_user_message_id,
+            provider_id=provider_id,
+            model_id=model_id,
+            effective_configuration=effective_configuration,
+            status=GenerationAttemptStatus.PENDING,
+            created_at=datetime.now(UTC),
+        )
+        try:
+            self._session.add(self._from_generation_attempt(retry))
+            self._session.commit()
+            return retry
+
+        except SQLAlchemyError:
+            self._session.rollback()
+            logger.exception("Failed to retry generation attempt %s.", attempt_id)
             raise
 
     def begin_generation_attempt(
@@ -620,6 +695,37 @@ class ConversationRepository:
 
         model = self._session.get(GenerationAttempt, attempt_id)
         return self._to_generation_attempt(model) if model is not None else None
+
+    def get_unresolved_generation_attempts(
+        self, conversation_id: UUID
+    ) -> list[GenerationAttemptRecord]:
+        """Retrieve pending and streaming attempts for a conversation.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Unresolved attempts ordered from oldest to newest.
+        """
+
+        statement = (
+            select(GenerationAttempt)
+            .where(
+                GenerationAttempt.conversation_id == conversation_id,
+                GenerationAttempt.status.in_(
+                    (
+                        GenerationAttemptStatus.PENDING,
+                        GenerationAttemptStatus.STREAMING,
+                    )
+                ),
+            )
+            .order_by(GenerationAttempt.created_at.asc())
+        )
+        return [
+            self._to_generation_attempt(model)
+            for model in self._session.scalars(statement)
+        ]
 
     @staticmethod
     def _to_conversation_record(conversation: Conversation) -> ConversationRecord:
