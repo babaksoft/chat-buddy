@@ -16,7 +16,7 @@ from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
     MemoryRepository,
 )
-from chat_buddy.chat.infrastructure.llm import OllamaGateway
+from chat_buddy.chat.infrastructure.llm import build_provider_runtime
 from chat_buddy.chat.infrastructure.tokenization import MistralTokenCounter
 
 
@@ -28,7 +28,8 @@ def build_services() -> tuple[ChatService, ConversationService]:
     conversation_repository = ConversationRepository(session)
     memory_repository = MemoryRepository(session)
 
-    gateway = OllamaGateway()
+    provider_runtime = build_provider_runtime()
+    gateway = provider_runtime.legacy_gateway
     memory_service = MemoryService(
         repository=memory_repository,
         llm_gateway=gateway,

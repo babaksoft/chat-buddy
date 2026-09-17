@@ -5,6 +5,7 @@ from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
 APPLICATION_ROOT = PACKAGE_ROOT / "chat" / "application"
+UI_ROOTS = (PACKAGE_ROOT / "chat" / "ui", PACKAGE_ROOT / "ui")
 ALLOWED_CHAT_DEPENDENCIES = (
     "chat_buddy.chat.application",
     "chat_buddy.chat.domain",
@@ -36,3 +37,27 @@ def test_chat_application_has_only_inward_chat_dependencies() -> None:
     ]
 
     assert violations == []
+
+
+def test_application_and_ui_do_not_import_ollama_sdk_or_adapter() -> None:
+    """Keep provider clients and concrete adapter types in infrastructure."""
+
+    roots = (APPLICATION_ROOT, *UI_ROOTS)
+    violations = [
+        f"{path.relative_to(PACKAGE_ROOT)} imports {imported_module}"
+        for root in roots
+        for path in sorted(root.rglob("*.py"))
+        for imported_module in sorted(_imports(path))
+        if imported_module == "ollama"
+        or imported_module.startswith("ollama.")
+        or imported_module.endswith("ollama_gateway")
+    ]
+    adapter_name_violations = [
+        str(path.relative_to(PACKAGE_ROOT))
+        for root in roots
+        for path in sorted(root.rglob("*.py"))
+        if "OllamaGateway" in path.read_text(encoding="utf-8-sig")
+    ]
+
+    assert violations == []
+    assert adapter_name_violations == []

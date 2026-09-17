@@ -1,10 +1,17 @@
 ﻿import json
 import logging
 from collections.abc import Iterator
+from typing import NoReturn
 
-from ollama import Client
+from ollama import Client, RequestError, ResponseError
 
-from chat_buddy.chat.domain import ChatMessage, ExtractedMemory
+from chat_buddy.chat.domain import (
+    ChatMessage,
+    ExtractedMemory,
+    GenerationConfiguration,
+    ModelId,
+    ProviderInvocationError,
+)
 from chat_buddy.chat.infrastructure.config import settings
 from chat_buddy.chat.prompts import (
     EXTRACT_MEMORY_PROMPT,
@@ -16,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaGateway:
-    """
-    Ollama-backed implementation of the LLM gateway.
-    """
+    """Ollama implementation of Chat response and utility capabilities."""
 
     def __init__(
         self,
@@ -44,6 +49,8 @@ class OllamaGateway:
     def generate(
         self,
         messages: list[ChatMessage],
+        model_id: ModelId | None = None,
+        configuration: GenerationConfiguration | None = None,
     ) -> str:
         """
         Generate a response using Ollama.
@@ -52,13 +59,20 @@ class OllamaGateway:
             messages:
                 Current conversation history, including the last user message.
 
+            model_id:
+                Selected Ollama model, or the legacy configured model when omitted.
+
+            configuration:
+                Validated generation settings, or provider defaults when omitted.
+
         Returns:
             Generated response text.
         """
 
+        model_name = self._resolve_model_name(model_id)
         logger.debug(
             "Generating response using model '%s'.",
-            self._chat_model,
+            model_name,
         )
 
         response = self._chat(
@@ -69,7 +83,8 @@ class OllamaGateway:
                 }
                 for message in messages
             ],
-            model_name=self._chat_model,
+            model_name=model_name,
+            configuration=configuration,
         )
 
         logger.debug(
@@ -82,6 +97,8 @@ class OllamaGateway:
     def generate_stream(
         self,
         messages: list[ChatMessage],
+        model_id: ModelId | None = None,
+        configuration: GenerationConfiguration | None = None,
     ) -> Iterator[str]:
         """
         Generate a streaming response using Ollama.
@@ -90,13 +107,20 @@ class OllamaGateway:
             messages:
                 Current conversation history, including the last user message.
 
+            model_id:
+                Selected Ollama model, or the legacy configured model when omitted.
+
+            configuration:
+                Validated generation settings, or provider defaults when omitted.
+
         Yields:
             Response chunks as they are generated.
         """
 
+        model_name = self._resolve_model_name(model_id)
         logger.debug(
             "Generating streaming response using model '%s'.",
-            self._chat_model,
+            model_name,
         )
 
         formatted_messages = [
@@ -107,21 +131,33 @@ class OllamaGateway:
             for message in messages
         ]
 
-        response_stream = self._client.chat(
-            model=self._chat_model,
-            messages=formatted_messages,
-            stream=True,
-        )
-
         total_chunks = 0
         total_chars = 0
 
-        for chunk in response_stream:
-            content = chunk["message"]["content"]
-            if content:
-                total_chunks += 1
-                total_chars += len(content)
-                yield content
+        try:
+            options = self._build_options(configuration)
+            if options:
+                response_stream = self._client.chat(
+                    model=model_name,
+                    messages=formatted_messages,
+                    stream=True,
+                    options=options,
+                )
+            else:
+                response_stream = self._client.chat(
+                    model=model_name,
+                    messages=formatted_messages,
+                    stream=True,
+                )
+
+            for chunk in response_stream:
+                content = chunk["message"]["content"]
+                if content:
+                    total_chunks += 1
+                    total_chars += len(content)
+                    yield content
+        except (RequestError, ResponseError) as error:
+            self._raise_provider_error(model_name, error)
 
         logger.debug(
             "Completed streaming response: chunks=%d chars=%d",
@@ -291,6 +327,7 @@ class OllamaGateway:
         self,
         messages: list[dict[str, str]],
         model_name: str,
+        configuration: GenerationConfiguration | None = None,
     ) -> str:
         """
         Generates a chat completion using given LLM model.
@@ -302,14 +339,28 @@ class OllamaGateway:
             model_name:
                 LLM model to use for chat completion.
 
+            configuration:
+                Validated generation settings, or provider defaults when omitted.
+
         Returns:
             LLM response as plain text.
         """
 
-        response = self._client.chat(
-            model=model_name,
-            messages=messages,
-        )
+        try:
+            options = self._build_options(configuration)
+            if options:
+                response = self._client.chat(
+                    model=model_name,
+                    messages=messages,
+                    options=options,
+                )
+            else:
+                response = self._client.chat(
+                    model=model_name,
+                    messages=messages,
+                )
+        except (RequestError, ResponseError) as error:
+            self._raise_provider_error(model_name, error)
 
         prompt_tokens = int(response["prompt_eval_count"])
         completion_tokens = int(response["eval_count"])
@@ -323,3 +374,69 @@ class OllamaGateway:
         )
 
         return str(response["message"]["content"])
+
+    def _resolve_model_name(self, model_id: ModelId | None) -> str:
+        """Resolve a selected model while retaining the legacy default.
+
+        Args:
+            model_id:
+                Selected provider-local model identifier.
+
+        Returns:
+            Ollama model name used for the request.
+        """
+
+        if model_id is None:
+            return self._chat_model
+
+        return model_id.value
+
+    def _build_options(
+        self,
+        configuration: GenerationConfiguration | None,
+    ) -> dict[str, float | int]:
+        """Translate provider-neutral settings into Ollama options.
+
+        Args:
+            configuration:
+                Validated effective generation configuration.
+
+        Returns:
+            Ollama options with unrequested values omitted.
+        """
+
+        if configuration is None:
+            return {}
+
+        options: dict[str, float | int] = {}
+        if configuration.temperature is not None:
+            options["temperature"] = configuration.temperature
+        if configuration.top_p is not None:
+            options["top_p"] = configuration.top_p
+        if configuration.max_output_tokens is not None:
+            options["num_predict"] = configuration.max_output_tokens
+        if configuration.seed is not None:
+            options["seed"] = configuration.seed
+        return options
+
+    def _raise_provider_error(
+        self,
+        model_name: str,
+        error: RequestError | ResponseError,
+    ) -> NoReturn:
+        """Translate an Ollama SDK failure into a safe Chat exception.
+
+        Args:
+            model_name:
+                Ollama model involved in the failed request.
+            error:
+                Provider-specific SDK failure.
+
+        Raises:
+            ProviderInvocationError:
+                Always raised with the provider-specific failure chained.
+        """
+
+        raise ProviderInvocationError(
+            f"Provider 'ollama' failed while invoking model '{model_name}'."
+        ) from error

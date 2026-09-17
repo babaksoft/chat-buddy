@@ -6,6 +6,9 @@ from chat_buddy.chat.domain.exceptions import (
     ContextWindowExceededError,
     InvalidGenerationAttemptTransitionError,
     InvalidGenerationConfigurationError,
+    ProviderInvocationError,
+    UnknownModelError,
+    UnknownProviderError,
 )
 from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
 from chat_buddy.chat.domain.gateways import (
@@ -62,6 +65,7 @@ __all__ = [
     "ModelId",
     "ProviderDescriptor",
     "ProviderId",
+    "ProviderInvocationError",
     "ProviderRegistry",
     "ResponseGatewayResolver",
     "ResponseGenerator",
@@ -70,4 +74,6 @@ __all__ = [
     "TitleGenerator",
     "TokenCounter",
     "TokenUsage",
+    "UnknownModelError",
+    "UnknownProviderError",
 ]

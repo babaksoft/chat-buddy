@@ -68,7 +68,7 @@ Acceptance:
 
 ### Slice 3 — Adapt Ollama and build the provider registry
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Adapt Ollama to the new response-generation and utility interfaces.
 - Add a configured registry containing the enabled Ollama provider and models.
