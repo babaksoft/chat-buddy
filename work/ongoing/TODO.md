@@ -1,3 +1,3 @@
-# Remaining tasks in an ongoing stage
+# Remaining tasks in current stage
 
-(no items)
+No remaining tasks.

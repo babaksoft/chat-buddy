@@ -7,7 +7,11 @@ from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
 
 class LLMGateway(Protocol):
     """
-    Abstraction for language model interactions.
+    Temporary compatibility contract for the pre-Stage 2 Ollama adapter.
+
+    New provider adapters should implement the capability-specific protocols in
+    ``chat_buddy.chat.domain.gateways`` instead. This combined contract remains
+    until application composition is migrated in later Stage 2 slices.
     """
 
     def generate(

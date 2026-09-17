@@ -7,7 +7,7 @@ from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
-    LLMGateway,
+    MemoryExtractor,
     MemoryRepository,
 )
 from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
@@ -21,7 +21,7 @@ class MemoryService:
     def __init__(
         self,
         repository: MemoryRepository,
-        llm_gateway: LLMGateway,
+        llm_gateway: MemoryExtractor,
         config: MemoryConfig,
     ) -> None:
         """

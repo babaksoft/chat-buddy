@@ -46,7 +46,7 @@ Acceptance:
 
 ### Slice 2 — Introduce domain contracts
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add immutable provider and model identifiers.
 - Add model descriptors, supported capabilities, and generation configuration.

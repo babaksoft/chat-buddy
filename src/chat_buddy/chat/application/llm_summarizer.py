@@ -1,4 +1,4 @@
-from chat_buddy.chat.domain import ChatMessage, LLMGateway
+from chat_buddy.chat.domain import ChatMessage, SummaryGenerator
 
 
 class LLMSummarizer:
@@ -8,7 +8,7 @@ class LLMSummarizer:
 
     def __init__(
         self,
-        gateway: LLMGateway,
+        gateway: SummaryGenerator,
     ) -> None:
         """
         Initialize the summarizer.
