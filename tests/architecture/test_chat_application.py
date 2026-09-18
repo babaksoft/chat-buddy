@@ -61,3 +61,20 @@ def test_application_and_ui_do_not_import_ollama_sdk_or_adapter() -> None:
 
     assert violations == []
     assert adapter_name_violations == []
+
+
+def test_ollama_sdk_is_confined_to_its_infrastructure_adapter() -> None:
+    """Prevent provider SDK imports from escaping the concrete adapter."""
+
+    allowed_path = (
+        PACKAGE_ROOT / "chat" / "infrastructure" / "llm" / "ollama_gateway.py"
+    )
+    violations = [
+        f"{path.relative_to(PACKAGE_ROOT)} imports {imported_module}"
+        for path in sorted(PACKAGE_ROOT.rglob("*.py"))
+        if path != allowed_path
+        for imported_module in sorted(_imports(path))
+        if imported_module == "ollama" or imported_module.startswith("ollama.")
+    ]
+
+    assert violations == []

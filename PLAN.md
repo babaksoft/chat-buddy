@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-09-16
+Last updated: 2026-09-18
 
 ## How to use this plan
 
@@ -84,6 +84,8 @@ its new module, fresh migrations create isolated schemas, and no area-specific
 model, service, prompt, or repository remains in shared code.
 
 ## Stage 2 — Complete the Chat foundation
+
+**Status: Complete.**
 
 - Accept the focused Chat provider-capability and generation-lifecycle ADRs before
   implementation.

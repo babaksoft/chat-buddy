@@ -1,8 +1,8 @@
 # Stage 2 Implementation Plan
 
-Status: Frozen
+Status: Complete
 
-Last updated: 2026-09-16
+Last updated: 2026-09-18
 
 ## Scope
 
@@ -177,7 +177,7 @@ Acceptance:
 
 ### Slice 8 — Prove provider extensibility and complete Stage 2
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Register a fake second provider through composition without changing Chat
   application services.

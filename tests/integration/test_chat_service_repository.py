@@ -26,8 +26,10 @@ from chat_buddy.chat.infrastructure.llm.provider_registry import (
 )
 
 PROVIDER_ID = ProviderId("test-provider")
+SECOND_PROVIDER_ID = ProviderId("second-provider")
 FIRST_MODEL_ID = ModelId("first-model")
 SECOND_MODEL_ID = ModelId("second-model")
+SECOND_PROVIDER_MODEL_ID = ModelId("second-provider-model")
 
 
 class FakeGateway:
@@ -144,19 +146,24 @@ class RecoveringGateway(FakeGateway):
         return super().generate(messages, model_id, configuration)
 
 
-def _model(model_id: ModelId) -> ModelDescriptor:
+def _model(
+    model_id: ModelId,
+    provider_id: ProviderId = PROVIDER_ID,
+) -> ModelDescriptor:
     """Create a selectable integration-test model.
 
     Args:
         model_id:
             Provider-local model identifier.
+        provider_id:
+            Provider that owns the model.
 
     Returns:
         Model descriptor with deterministic defaults.
     """
 
     return ModelDescriptor(
-        provider_id=PROVIDER_ID,
+        provider_id=provider_id,
         id=model_id,
         display_name=str(model_id),
         context_window_tokens=4_096,
@@ -172,6 +179,7 @@ def _build_service(
     gateway: FakeGateway,
     *,
     memory_service: Mock | None = None,
+    second_provider_gateway: FakeGateway | None = None,
 ) -> tuple[ChatService, ConversationService, ConversationRepository]:
     """Compose provider-neutral Chat services around a real repository.
 
@@ -182,19 +190,28 @@ def _build_service(
             Fake response and title adapter.
         memory_service:
             Optional memory-service test double.
+        second_provider_gateway:
+            Optional independently composed second response provider.
 
     Returns:
         Chat service, conversation service, and repository.
     """
 
-    models = (_model(FIRST_MODEL_ID), _model(SECOND_MODEL_ID))
+    providers = [ProviderDescriptor(PROVIDER_ID, "Test provider")]
+    models = [_model(FIRST_MODEL_ID), _model(SECOND_MODEL_ID)]
+    gateways = {PROVIDER_ID: gateway}
+    if second_provider_gateway is not None:
+        providers.append(ProviderDescriptor(SECOND_PROVIDER_ID, "Second provider"))
+        models.append(_model(SECOND_PROVIDER_MODEL_ID, SECOND_PROVIDER_ID))
+        gateways[SECOND_PROVIDER_ID] = second_provider_gateway
+
     registry = StaticProviderRegistry(
-        providers=(ProviderDescriptor(PROVIDER_ID, "Test provider"),),
+        providers=providers,
         models=models,
         default_provider_id=PROVIDER_ID,
         default_model_id=FIRST_MODEL_ID,
     )
-    resolver = StaticResponseGatewayResolver({PROVIDER_ID: gateway})
+    resolver = StaticResponseGatewayResolver(gateways)
     repository = ConversationRepository(session)
     conversation_service = ConversationService(repository)
     memories = memory_service or Mock()
@@ -267,6 +284,41 @@ def test_resumed_conversation_streams_through_persisted_selection(
     assert attempt.status is GenerationAttemptStatus.COMPLETED
     assert attempt.model_id == "second-model"
     assert attempt.effective_configuration["temperature"] == 0.7
+
+
+def test_composed_second_provider_is_selectable_and_streams(
+    session: Session,
+) -> None:
+    """Verify a second provider works without changing application services."""
+
+    second_gateway = FakeGateway()
+    service, conversations, repository = _build_service(
+        session,
+        FakeGateway(),
+        second_provider_gateway=second_gateway,
+    )
+    conversation = repository.create_conversation()
+    service.update_generation_selection(
+        conversation.id,
+        SECOND_PROVIDER_ID,
+        SECOND_PROVIDER_MODEL_ID,
+        GenerationConfiguration(temperature=0.6),
+    )
+
+    conversation_id, stream = service.stream_chat(
+        ChatRequest(conversation.id, "Use the second provider")
+    )
+
+    assert conversation_id == conversation.id
+    assert list(stream) == ["Streamed ", "from second-provider-model."]
+    assert conversations.get_messages(conversation.id)[1].content == (
+        "Streamed from second-provider-model."
+    )
+    attempt = session.scalar(select(GenerationAttempt))
+    assert attempt is not None
+    assert attempt.provider_id == "second-provider"
+    assert attempt.model_id == "second-provider-model"
+    assert attempt.effective_configuration["temperature"] == 0.6
 
 
 def test_model_change_affects_next_attempt_without_rewriting_provenance(
