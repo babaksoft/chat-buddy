@@ -82,6 +82,12 @@ data migration or compatibility layer for Chat.
 Chat is a general-purpose assistant experience. It does not model identities,
 personas, relationships, or continuities from the Characters area.
 
+The Stage 3 Chat design supersedes the earlier prototype behavior. The prototype
+database schema is only a structural starting point: its old test data has been
+deleted, and the redesign has no legacy-row preservation or conversion
+requirement. Applied migrations remain historical records; new schema work uses
+new Chat migrations.
+
 ### Conversations and providers
 
 - Conversations and messages persist and can be resumed independently.
@@ -96,26 +102,57 @@ personas, relationships, or continuities from the Characters area.
 
 ### Context management and summaries
 
-Chat assembles context from active Chat memory, the current conversation's
-summary, and recent messages. Context eligibility and token budgeting are
-separate decisions: eligibility determines what may be included, while budgeting
-determines what fits the selected model.
+Chat assembles context through separate eligibility, rolling-summary, and token-
+budgeting services. Eligible inputs are active Chat memory, the current
+conversation's active summary, complete turns not already covered by that
+summary, and the current user input. Incomplete attempts and partial output are
+never eligible.
 
-When a conversation exceeds its context budget, older conversational content is
-compressed into a rolling summary. A summary belongs only to its conversation and
-never becomes memory merely because it was summarized.
+Each selected model provides a context-window limit, token counter, and default
+output reserve. Prompt capacity subtracts both fixed prompt overhead and the
+effective output reserve from the context window. Mandatory current input, the
+active summary, and the configured minimum recent turns must fit without
+arbitrary text truncation. Active memories and additional turns are admitted in
+deterministic priority order while capacity remains.
+
+When eligible context reaches its configured threshold, older complete turns
+are compressed into a rolling summary. Summaries are versioned: one version is
+active, replacements supersede it, and provenance links each version to its
+predecessor and newly covered completed generation attempts. The explicit
+lineage, rather than a timestamp alone, determines whether a turn is covered, so
+a late successful retry cannot disappear behind a checkpoint. A summary belongs
+only to its conversation, is deleted with that conversation, and never becomes
+memory merely because it was summarized. An oversized active summary may be
+recompacted from its prior version for a smaller selected model without changing
+its effective source coverage.
+
+Summary failure preserves the last durable summary. Chat may omit optional
+inputs, but it fails before creating a generation attempt or calling a response
+provider when mandatory context cannot fit. ADR 017 defines eligibility and
+budgeting; ADR 018 defines summary ownership, lineage, and failure behavior.
 
 ### Extracted memory
 
 Chat memory captures durable user information that may help across Chat
 conversations. It belongs to the Chat area rather than to one conversation or to
-a Characters identity.
+a Characters identity. Each logical memory has a stable identity and subject and
+retains provenance-aware revisions.
 
-A memory records provenance and lifecycle state. Only active memories are
-eligible for context. Users can inspect the source, correct the interpretation,
-exclude it from future prompts, and permanently delete it. Extraction occurs only
-after a complete user/assistant turn so an incomplete generation cannot create
-memory.
+Persisted memory revisions are active, excluded, or superseded. Only a current
+active revision is context-eligible. Correction creates a user-authored revision
+and atomically supersedes the prior one; later extraction cannot overwrite that
+correction. Exclusion is reversible and cannot be undone by extraction. Hard
+deletion purges the complete logical memory and its provenance, so `deleted` is a
+terminal domain result rather than a retained tombstone.
+
+Extracted provenance identifies the source conversation, complete user/assistant
+turn, and completed generation attempt. Extraction is idempotent per completed
+attempt and runs only after the assistant message commits. The prior prototype
+key/value shape supplies no legacy records to the new model. If a source
+conversation is deleted, the Chat-wide memory remains but its provenance states
+that the source is no longer available; memory deletion is a separate user
+action. ADR 019 defines memory lifecycle and user control, while ADR 020 defines
+completed-turn extraction and conflict handling.
 
 Chat memory never enters Characters context, and Characters memories or
 relationship state never enter Chat context.
