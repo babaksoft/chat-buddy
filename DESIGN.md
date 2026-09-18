@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-09-15
+Last updated: 2026-09-19
 
 ## Purpose
 
@@ -100,6 +100,18 @@ new Chat migrations.
 - Streaming failures remain visible and recoverable without leaving an ambiguous
   half-turn.
 
+Chat conversations are linear. A conversation has at most one pending or
+streaming generation attempt and cannot accept a new user message while its
+final user message lacks a completed assistant response. Only the latest failed
+or interrupted attempt for that unmatched tail is retryable; older terminal
+attempts remain history rather than alternate response branches.
+
+The unmatched tail may be edited while no attempt is open and then retried later.
+Each attempt stores the exact submitted user-content snapshot, so editing the
+visible tail does not rewrite earlier attempt history. A successful retry creates
+one assistant message, closes the turn, and restores the conversation to its
+normal ready state.
+
 ### Context management and summaries
 
 Chat assembles context through separate eligibility, rolling-summary, and token-
@@ -117,14 +129,13 @@ deterministic priority order while capacity remains.
 
 When eligible context reaches its configured threshold, older complete turns
 are compressed into a rolling summary. Summaries are versioned: one version is
-active, replacements supersede it, and provenance links each version to its
-predecessor and newly covered completed generation attempts. The explicit
-lineage, rather than a timestamp alone, determines whether a turn is covered, so
-a late successful retry cannot disappear behind a checkpoint. A summary belongs
-only to its conversation, is deleted with that conversation, and never becomes
-memory merely because it was summarized. An oversized active summary may be
-recompacted from its prior version for a smaller selected model without changing
-its effective source coverage.
+active, replacements supersede it, and provenance identifies the predecessor
+and last covered assistant-message checkpoint. ADR 016's linear turn invariant
+makes that checkpoint authoritative; a conversation cannot complete an older
+turn after advancing to newer turns. A summary belongs only to its conversation,
+is deleted with that conversation, and never becomes memory merely because it
+was summarized. An oversized active summary may be recompacted for a smaller
+selected model without advancing its checkpoint.
 
 Summary failure preserves the last durable summary. Chat may omit optional
 inputs, but it fails before creating a generation attempt or calling a response
@@ -146,13 +157,18 @@ deletion purges the complete logical memory and its provenance, so `deleted` is 
 terminal domain result rather than a retained tombstone.
 
 Extracted provenance identifies the source conversation, complete user/assistant
-turn, and completed generation attempt. Extraction is idempotent per completed
-attempt and runs only after the assistant message commits. The prior prototype
-key/value shape supplies no legacy records to the new model. If a source
-conversation is deleted, the Chat-wide memory remains but its provenance states
-that the source is no longer available; memory deletion is a separate user
-action. ADR 019 defines memory lifecycle and user control, while ADR 020 defines
-completed-turn extraction and conflict handling.
+turn, and completed generation attempt. Extraction runs only after the assistant
+message commits and makes at most three processing attempts. Success, including
+an empty result, or retry exhaustion creates a terminal attempt-level receipt so
+later callbacks do not repeat the work. Exhaustion is logged and never changes
+the completed response. The receipt stores no candidate content and no
+per-memory effect graph.
+
+The prior prototype key/value shape supplies no legacy records to the new model.
+If a source conversation is deleted, the Chat-wide memory remains but its
+provenance states that the source is no longer available; memory deletion is a
+separate user action. ADR 019 defines memory lifecycle and user control, while
+ADR 020 defines bounded completed-turn extraction and conflict handling.
 
 Chat memory never enters Characters context, and Characters memories or
 relationship state never enter Chat context.

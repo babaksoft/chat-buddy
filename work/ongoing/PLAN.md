@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 ## Scope
 
@@ -25,6 +25,11 @@ redesigns and supersedes it:
   assistant response is committed; and
 - context estimation does not reserve the selected model's output allowance or
   define deterministic eligibility and omission rules.
+
+Stage 2's initial recovery model also permits multiple incomplete attempts to
+remain independently actionable. Stage 3 narrows that behavior to a linear Chat
+conversation with one unmatched tail and one current retry target. Historical
+terminal attempts remain inspectable without becoming resumable branches.
 
 Stage 3 replaces those provisional behaviors rather than adding a second context
 or memory path. Chat remains independent of Characters. Cloud response selection
@@ -63,9 +68,9 @@ migration.
 | Slice | Outcome | Database impact |
 |---|---|---|
 | 1 | Freeze automatic-context and memory behavior | None |
-| 2 | Introduce final Chat domain contracts and service seams | None |
-| 3 | Persist summary provenance and memory lifecycle | Chat migration |
-| 4 | Extract memory from completed turns | Chat data writes only |
+| 2 | Revise Chat domain contracts and linear-turn service seams | None |
+| 3 | Persist linear retries, summaries, and memory lifecycle | Chat migration |
+| 4 | Extract memory with bounded completed-turn processing | Chat data writes only |
 | 5 | Add memory-management workflows | Chat data writes only |
 | 6 | Add memory inspection and controls to the Chat UI | None beyond slice 5 |
 | 7 | Persist conversation-scoped rolling summaries | Chat data writes only |
@@ -78,7 +83,8 @@ migration.
 
 **Status: Complete.**
 
-Delivered by accepted ADRs 017–020 and the corresponding Chat design update.
+Delivered by accepted ADRs 017–020, the 2026-09-19 in-place revisions to ADRs
+016–020, and the corresponding Chat design update.
 
 Write and accept focused ADRs before changing persistence or orchestration. The
 ADRs must turn the Stage 3 outcomes into deterministic rules and update the Chat
@@ -86,10 +92,15 @@ sections of `DESIGN.md` when they are accepted.
 
 The recommended decision is:
 
+- Chat history is linear. One attempt may be pending or streaming, and only the
+  latest failed or interrupted attempt for the unmatched final user message is
+  retryable. A new message is rejected until that tail completes. Editing the
+  unmatched tail is allowed while no attempt is open, and every attempt retains
+  its immutable submitted-content snapshot.
 - A rolling summary is conversation-owned and versioned. One version is active;
-  a replacement supersedes it. Its provenance identifies the conversation and
-  the last fully covered message. Only complete user/assistant turns may move
-  that checkpoint.
+  a replacement supersedes it. Its provenance identifies its predecessor and
+  last fully covered assistant message. ADR 016's linear completion order makes
+  that checkpoint authoritative without per-attempt summary-source records.
 - Summary updates consume the prior active summary plus newly eligible complete
   turns. They never consume another conversation's messages, an incomplete
   attempt, partial output, or the current unmatched user message.
@@ -103,9 +114,10 @@ The recommended decision is:
   must reconcile hard deletion with the requested `deleted` lifecycle state—for
   example, by treating deletion as a terminal transition immediately followed
   by purge, rather than retaining a tombstone that contains user data.
-- Extraction is idempotent per completed generation attempt. Repeating a
-  post-completion side effect or successfully retrying an incomplete attempt
-  cannot create duplicate memories for the same completed turn.
+- Extraction is bounded best-effort processing after response completion. It
+  makes at most three processing attempts, then records either `succeeded` or
+  `exhausted`. A terminal attempt-level receipt prevents repeated callbacks from
+  invoking the utility provider again without storing per-memory effect records.
 - The empty prototype key/value table may be altered or replaced by a new Chat
   migration. No prototype rows are converted, backfilled, or preserved.
 - Context eligibility and token budgeting are separate. Eligible inputs are
@@ -123,67 +135,71 @@ The recommended decision is:
 Acceptance:
 
 - The ADRs are Accepted and have examples for a long conversation, a failed and
-  retried response, cross-conversation memory reuse, memory correction and
-  exclusion, hard deletion, an oversized prompt, and summary failure.
+  edited retry, concurrent-send rejection, bounded extraction exhaustion,
+  cross-conversation memory reuse, memory correction and exclusion, hard
+  deletion, an oversized prompt, and summary failure.
 - `DESIGN.md` agrees with the ADRs on summary scope, memory lifecycle, provenance,
   and budget ordering.
 - The schema transition explicitly requires no prototype-data preservation.
 - No implementation-critical policy choice is deferred to a later coding slice.
 - Production behavior and database objects are unchanged.
 
-### Slice 2 — Introduce final Chat domain contracts and service seams
-
-**Status: Complete.**
-
-- Add frozen, slotted Chat domain values for conversation summaries, summary
-  lifecycle/provenance, memory candidates, Chat memories, memory origin, and
-  memory lifecycle.
-- Extend immutable model budget metadata as required by Slice 1 so every model
-  has a deterministic output reserve even when generation configuration omits
-  `max_output_tokens`.
-- Validate identifiers, content, provenance combinations, checkpoints, and legal
-  lifecycle transitions in the domain layer.
-- Replace the provisional key/value repository protocol with explicit summary
-  and memory repository protocols. Express atomic replacement, lifecycle
-  transition, eligible-list, provenance lookup, and extraction-idempotency
-  operations in those contracts.
-- Define narrow application-facing seams for context eligibility, token
-  budgeting, rolling summarization, and completed-turn memory extraction. Keep
-  utility-provider protocols limited to summary generation and memory-candidate
-  extraction.
-- Introduce persistence-neutral context input and assembly result types so
-  eligibility policy does not count tokens and the budgeter does not query a
-  repository.
-- Adapt the existing composition temporarily so the application remains runnable
-  while later slices replace its behavior. Do not add SQLAlchemy or provider
-  types to domain or application contracts.
-
-Acceptance:
-
-- Domain tests cover every valid and invalid summary and memory transition and
-  reject inconsistent provenance.
-- A fake eligibility service can supply inputs without a token counter, and a
-  fake budgeter can assemble supplied inputs without a repository.
-- A fake response provider remains independent of title, summary, and memory
-  capabilities.
-- Chat domain imports no application, infrastructure, UI, or Characters module.
-- Existing visible Chat behavior and the Stage 2 generation lifecycle remain
-  unchanged.
-
-### Slice 3 — Persist summary provenance and memory lifecycle
+### Slice 2 — Revise Chat domain contracts and linear-turn service seams
 
 **Status: Planned.**
 
-- Add Chat SQLAlchemy models for versioned conversation summaries and the final
-  memory representation. Give every mapped field and relationship a concise
-  `doc` description.
-- Persist explicit summary lineage and newly covered completed-attempt sources;
-  treat the checkpoint as an ordering optimization rather than the sole coverage
-  test.
+- Preserve the accepted memory lifecycle, memory origin, context-budget, and
+  provider-capability values that remain valid.
+- Add immutable submitted-user-content provenance to generation attempts and
+  define the singular open and retryable attempt concepts from ADR 016.
+- Replace unresolved-attempt collections with repository operations for one open
+  attempt, one unmatched tail, one latest retry target, and editing that tail
+  only while no attempt is open.
+- Simplify summary provenance to conversation ownership, predecessor, and one
+  authoritative assistant-message checkpoint. Remove `SummarySource` and
+  newly-covered-attempt collections from domain and repository contracts.
+- Replace extraction-effect results with a minimal terminal processing receipt
+  containing the completed attempt, `succeeded` or `exhausted` outcome, attempt
+  count, and completion time.
+- Keep narrow application-facing seams for context eligibility, token budgeting,
+  rolling summarization, and completed-turn memory extraction. Provider
+  contracts remain capability-specific and persistence-neutral.
+- Adapt application and infrastructure compatibility paths enough to keep Chat
+  runnable while Slice 3 implements the final constraints and repositories.
+
+Acceptance:
+
+- Domain tests cover attempt snapshots, summary checkpoint progression, receipt
+  outcomes, memory provenance, and every legal memory lifecycle transition.
+- Contract tests prove plural unresolved retry targets and summary-source graphs
+  no longer exist.
+- Fake repositories prove a conversation exposes at most one open attempt and
+  one latest retry target.
+- A fake eligibility service supplies inputs without a token counter, and a fake
+  budgeter assembles supplied inputs without a repository.
+- Chat domain imports no application, infrastructure, UI, or Characters module.
+- The application remains runnable without introducing final database objects
+  ahead of Slice 3.
+
+### Slice 3 — Persist linear retries, summaries, and memory lifecycle
+
+**Status: Planned.**
+
+- Add immutable submitted-user-content snapshots to generation attempts and a
+  partial unique constraint allowing at most one pending or streaming attempt per
+  conversation.
+- Implement transactional operations for starting a new linear turn, loading the
+  singular open or retryable attempt, editing the unmatched tail, retrying it,
+  and rejecting a new message until it completes.
+- Add Chat SQLAlchemy models for checkpointed versioned summaries, final memory
+  revisions, and minimal terminal extraction receipts. Give every mapped field
+  and relationship a concise `doc` description.
+- Persist summary predecessor lineage and an authoritative assistant-message
+  checkpoint without a summary-source association table.
 - Enforce conversation ownership and source provenance with Chat-schema foreign
   keys only. Add constraints and indexes for one active summary per conversation,
-  legal lifecycle/provenance combinations, deterministic ordering, and
-  completed-attempt extraction idempotency.
+  legal memory lifecycle/provenance combinations, deterministic ordering, and
+  one terminal extraction receipt per completed attempt.
 - Implement summary and memory repository adapters, including atomic summary
   replacement, memory correction/supersession, exclusion/reactivation, eligible
   queries, source inspection, and hard deletion.
@@ -195,18 +211,20 @@ Acceptance:
 
 Acceptance:
 
-- Repository tests cover summary replacement and checkpoint ordering, memory
-  provenance, every lifecycle transition, duplicate extraction, correction
-  races, eligible filtering, and hard deletion.
-- Database constraints reject cross-conversation summary sources and invalid
-  source-message or completed-attempt combinations.
+- Repository tests cover concurrent open-attempt rejection, failed-tail editing,
+  latest-attempt retry selection, successful tail completion, summary replacement
+  and checkpoint ordering, receipt uniqueness, memory provenance, lifecycle
+  transitions, correction races, eligible filtering, and hard deletion.
+- Database constraints reject a second open attempt, cross-conversation summary
+  checkpoints, and invalid memory source-message or completed-attempt
+  combinations.
 - Fresh databases and databases upgraded from the empty prototype schema produce
   the same final Chat objects.
 - Chat upgrade, downgrade, and re-upgrade work on disposable PostgreSQL.
 - Offline migration SQL contains only `chat` objects; the Characters schema and
   migration head are unchanged.
 
-### Slice 4 — Extract memory from completed turns
+### Slice 4 — Extract memory with bounded completed-turn processing
 
 **Status: Planned.**
 
@@ -217,12 +235,15 @@ Acceptance:
   than a pre-completion copy of conversation history.
 - Validate and normalize utility-provider candidates before persistence. Apply
   the accepted duplicate, conflict, and supersession policy transactionally.
-- Make post-completion execution idempotent. A repeated callback, process retry,
-  or generation retry that ultimately completes once produces at most one set of
-  effects for that completed attempt.
-- Treat extraction as a recoverable post-completion side effect: extraction
-  failure is logged and test-visible but never changes a completed assistant
-  response into an incomplete attempt.
+- Attempt the complete extraction process at most three times. Roll back a failed
+  candidate transaction before retrying, then persist an `exhausted` receipt and
+  give up without background or later automatic repair.
+- Persist candidate changes and a `succeeded` receipt atomically, including when
+  the valid candidate set is empty. A repeated callback observes either terminal
+  receipt and performs no utility-provider or repository work.
+- Treat extraction as best-effort post-completion work: failure is logged and
+  test-visible but never changes a completed assistant response into an
+  incomplete attempt.
 - Remove the extraction-interval setting if Slice 1 makes every completed turn
   eligible; otherwise rename and document the accepted trigger policy.
 
@@ -231,9 +252,12 @@ Acceptance:
 - Tests prove extraction receives one exact completed pair including the
   assistant response.
 - Pending, streaming, failed, and interrupted attempts create no memories.
-- Successful retry creates effects only for its completed attempt and does not
-  duplicate the source user message or prior memory effects.
-- Re-running completed-turn processing is idempotent.
+- Successful response retry extracts only from its completed attempt and exact
+  edited user content when applicable.
+- Utility, parsing, validation, and persistence failures stop after three total
+  attempts and persist one exhausted receipt.
+- Re-running completed-turn processing after either terminal outcome is a no-op.
+- No per-memory extraction-effect records are created.
 - A memory extracted in one conversation is returned by the Chat-wide eligible
   query for another conversation, with its original provenance intact.
 
@@ -298,7 +322,7 @@ Acceptance:
   the oldest newly eligible complete turns, retain the required recent turns,
   and atomically persist the replacement summary and new checkpoint.
 - Never summarize the current unmatched user message, partial output, failed or
-  interrupted output, or a message already covered by the active summary.
+  interrupted output, or a turn at or before the active checkpoint.
 - Make repeated invocation at the same checkpoint a no-op and reject checkpoint
   regression.
 - Preserve the prior active summary if utility generation or persistence fails;
@@ -308,7 +332,7 @@ Acceptance:
 
 - Unit tests cover first summary, rolling replacement, no-op invocation,
   checkpoint regression, utility failure, and retry after failure.
-- Integration tests prove summary versions and source messages belong to one
+- Integration tests prove summary versions and checkpoint messages belong to one
   conversation and deletion follows the accepted ownership rule.
 - Resuming a conversation uses its persisted active summary without regenerating
   already covered turns.
@@ -332,7 +356,8 @@ Acceptance:
   Raise a Chat-owned error when mandatory content cannot fit rather than sending
   an oversized provider request.
 - Make synchronous generation, streaming generation, and retry use the same
-  assembly path and exclude incomplete attempt output.
+  assembly path, exclude incomplete output, and include an unmatched retry tail
+  exactly once as current input.
 - Retire memory injection and transient half-history summarization from
   `MemoryService` and `DefaultContextBuilder`. Remove the obsolete combined
   `LLMGateway` compatibility contract once composition uses only
@@ -417,8 +442,9 @@ Acceptance:
 **Status: Planned.**
 
 - Add end-to-end scenarios for long local and cloud-backed conversations,
-  cross-conversation Chat memory reuse, summary isolation, completed-turn-only
-  extraction, correction, exclusion, deletion, and provider switching.
+  failed-tail editing and retry, concurrent-send rejection, cross-conversation
+  Chat memory reuse, summary isolation, bounded completed-turn extraction,
+  correction, exclusion, deletion, and provider switching.
 - Strengthen architecture checks for Chat/Characters import and schema isolation,
   application-to-infrastructure dependency direction, provider SDK isolation,
   and the absence of direct SQLAlchemy access from services and UI.
@@ -454,6 +480,8 @@ Acceptance:
   external vector database. Deterministic filtering and budgeting are sufficient
   for Stage 3.
 - Background workers, scheduled extraction, or asynchronous summary repair.
+- Multiple open attempts, multiple retryable tails, response alternatives, or
+  branching conversation history in Chat.
 - A second cloud provider or cloud implementations of title, summary, or memory
   utility capabilities.
 - Editing the Stage 1 Chat baseline, the Stage 2 generation migration, or any
@@ -465,12 +493,15 @@ Acceptance:
 
 - Every slice above is Complete.
 - The accepted Stage 3 ADRs and `DESIGN.md` describe the implemented behavior.
+- Every conversation has at most one open attempt and one unmatched retryable
+  tail; terminal attempt history never creates response branches.
 - Context eligibility, budgeting, rolling summarization, and memory extraction
   are distinct Chat application responsibilities.
 - Every persisted summary is conversation-scoped and checkpointed.
 - Every new extracted or corrected memory has truthful provenance and a tested
   lifecycle; only active memory is prompt-eligible.
-- Extraction runs only for complete turns and is idempotent.
+- Extraction runs only for complete turns, terminates with a succeeded or
+  exhausted receipt within its fixed attempt limit, and is idempotent afterward.
 - Context always honors the selected model's token counter, context window,
   output reservation, and deterministic priority rules.
 - Both local and cloud response adapters satisfy the shared contract without

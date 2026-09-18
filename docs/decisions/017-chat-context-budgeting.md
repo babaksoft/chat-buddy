@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-18
+- Last revised: 2026-09-19
 - Refines: ADRs 015 and 016
 
 ## Context
@@ -33,14 +34,16 @@ Eligible components are:
 
 A complete turn is the source user message and assistant message linked by a
 completed generation attempt. Pending, streaming, failed, and interrupted
-attempts are ineligible. Partial output is never context. Completed turns are
-ordered by assistant-message creation time with its identifier as a tie-breaker.
+attempts are ineligible. Partial output is never context. Completed turns follow
+the conversation's linear message order under ADR 016.
 
 The current input is supplied separately to context assembly and appears exactly
-once. Context is assembled and validated before a new user message and pending
-attempt are persisted, or before a retry attempt is created. A context failure
-therefore invokes no provider, adds no ordinary history, creates no new attempt,
-and runs no completed-turn side effects.
+once. For a new turn it is unpersisted input; for a retry it is the unmatched
+final user message and is excluded from completed history. Context is assembled
+and validated before a new user message and pending attempt are persisted, or
+before a retry attempt is created. A context failure therefore invokes no
+provider, adds no ordinary history, creates no new attempt, and runs no
+completed-turn side effects.
 
 Each model descriptor supplies a positive default output-token reserve in
 addition to its context-window size and token counter. The request's effective
@@ -112,6 +115,8 @@ conversation or product-area boundary requires an ADR amendment or replacement.
 - An active memory may be eligible but omitted when the selected model lacks
   room after mandatory conversation context.
 - Failed partial output is excluded from both a normal generation and its retry.
+- An edited unmatched tail appears once as retry input while earlier failed
+  attempt snapshots remain ineligible.
 - Switching to a smaller model can trigger summary recompaction under ADR 018.
 - If the current input alone exceeds prompt capacity, Chat creates no attempt and
   calls neither the summary nor response provider.

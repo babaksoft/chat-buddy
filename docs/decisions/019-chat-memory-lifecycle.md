@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-18
+- Last revised: 2026-09-19
 - Refines: ADR 013
 
 ## Context
@@ -33,8 +34,9 @@ revision from excluded to active. Replacing a revision atomically supersedes the
 old revision.
 
 `deleted` is a terminal domain result, not a retained database tombstone. Hard
-deletion purges the logical memory's complete revision lineage, extraction
-observations, and provenance in one transaction. A later conversation may
+deletion purges the logical memory's complete revision lineage and provenance in
+one transaction. ADR 020's attempt-level processing receipt contains no memory
+content and is not part of a logical memory lineage. A later conversation may
 extract the same fact again because deletion leaves no suppression tombstone.
 
 Memory origins are:
