@@ -50,6 +50,7 @@ def build_provider_runtime() -> ProviderRuntime:
             supported_generation_parameters=frozenset(GenerationParameter),
             default_generation_configuration=GenerationConfiguration(),
             token_counter=MistralTokenCounter(),
+            default_output_token_reserve=(settings.MODEL_DEFAULT_OUTPUT_TOKEN_RESERVE),
         )
         for model_name in settings.CHAT_MODELS
     )

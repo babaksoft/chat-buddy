@@ -37,6 +37,7 @@ def _model(token_counter: Mock, context_window: int = 1_000) -> ModelDescriptor:
         supported_generation_parameters=frozenset(),
         default_generation_configuration=GenerationConfiguration(),
         token_counter=token_counter,
+        default_output_token_reserve=100,
     )
 
 

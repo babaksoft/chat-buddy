@@ -133,6 +133,54 @@ def test_model_descriptor_rejects_unsupported_default_parameter() -> None:
             ),
             default_generation_configuration=GenerationConfiguration(temperature=0.5),
             token_counter=FakeTokenCounter(),
+            default_output_token_reserve=1024,
+        )
+
+
+def test_model_descriptor_uses_explicit_or_fallback_output_reserve() -> None:
+    """Every model provides a positive reserve when callers omit a maximum."""
+
+    model = ModelDescriptor(
+        provider_id=ProviderId("local"),
+        id=ModelId("chat-model"),
+        display_name="Chat model",
+        context_window_tokens=8192,
+        supports_streaming=True,
+        supported_generation_parameters=frozenset(
+            {GenerationParameter.MAX_OUTPUT_TOKENS}
+        ),
+        default_generation_configuration=GenerationConfiguration(),
+        token_counter=FakeTokenCounter(),
+        default_output_token_reserve=1024,
+    )
+
+    assert model.output_token_reserve(GenerationConfiguration()) == 1024
+    assert (
+        model.output_token_reserve(GenerationConfiguration(max_output_tokens=256))
+        == 256
+    )
+
+
+@pytest.mark.parametrize("reserve", (0, -1, 8192))
+def test_model_descriptor_rejects_invalid_output_reserve(reserve: int) -> None:
+    """Output reserve must be positive and leave prompt capacity.
+
+    Args:
+        reserve:
+            Invalid reserve under test.
+    """
+
+    with pytest.raises(ValueError, match="output-token reserve"):
+        ModelDescriptor(
+            provider_id=ProviderId("local"),
+            id=ModelId("chat-model"),
+            display_name="Chat model",
+            context_window_tokens=8192,
+            supports_streaming=True,
+            supported_generation_parameters=frozenset(),
+            default_generation_configuration=GenerationConfiguration(),
+            token_counter=FakeTokenCounter(),
+            default_output_token_reserve=reserve,
         )
 
 

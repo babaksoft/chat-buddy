@@ -42,6 +42,7 @@ def _model(*, supports_streaming: bool = True) -> ModelDescriptor:
         supported_generation_parameters=frozenset(),
         default_generation_configuration=GenerationConfiguration(),
         token_counter=Mock(),
+        default_output_token_reserve=512,
     )
 
 
@@ -401,12 +402,25 @@ def test_stream_failure_before_output_marks_attempt_failed() -> None:
 
 
 def test_stream_failure_flushes_partial_output_to_attempt() -> None:
-    """Verify provider failure retains chunks outside completed history."""
+    """Verify provider failure retains chunks outside completed history.
+
+    Raises:
+        RuntimeError:
+            Raised by the fake provider after yielding partial output.
+    """
 
     service, conversations, gateway, _, _, memory_service = _service()
 
     def failing_stream() -> Generator[str, None, None]:
-        """Yield one chunk before simulating a provider failure."""
+        """Yield one chunk before simulating a provider failure.
+
+        Yields:
+            Partial provider-response content.
+
+        Raises:
+            RuntimeError:
+                Always raised after the first partial chunk.
+        """
 
         yield "Partial"
         raise RuntimeError("stream failed")

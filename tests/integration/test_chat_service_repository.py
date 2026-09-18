@@ -171,6 +171,7 @@ def _model(
         supported_generation_parameters=frozenset({GenerationParameter.TEMPERATURE}),
         default_generation_configuration=GenerationConfiguration(temperature=0.2),
         token_counter=Mock(),
+        default_output_token_reserve=512,
     )
 
 
@@ -235,7 +236,12 @@ def _build_service(
 def test_new_conversation_completes_with_default_model_provenance(
     session: Session,
 ) -> None:
-    """Verify a new conversation persists response and immutable provenance."""
+    """Verify a new conversation persists response and immutable provenance.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     gateway = FakeGateway()
     service, conversations, repository = _build_service(session, gateway)
@@ -260,7 +266,12 @@ def test_new_conversation_completes_with_default_model_provenance(
 def test_resumed_conversation_streams_through_persisted_selection(
     session: Session,
 ) -> None:
-    """Verify streaming resumes with persisted model and requested settings."""
+    """Verify streaming resumes with persisted model and requested settings.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     gateway = FakeGateway()
     service, conversations, repository = _build_service(session, gateway)
@@ -289,7 +300,12 @@ def test_resumed_conversation_streams_through_persisted_selection(
 def test_composed_second_provider_is_selectable_and_streams(
     session: Session,
 ) -> None:
-    """Verify a second provider works without changing application services."""
+    """Verify a second provider works without changing application services.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     second_gateway = FakeGateway()
     service, conversations, repository = _build_service(
@@ -324,7 +340,12 @@ def test_composed_second_provider_is_selectable_and_streams(
 def test_model_change_affects_next_attempt_without_rewriting_provenance(
     session: Session,
 ) -> None:
-    """Verify selection changes apply only at the next attempt boundary."""
+    """Verify selection changes apply only at the next attempt boundary.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     service, conversations, repository = _build_service(session, FakeGateway())
     conversation = repository.create_conversation(
@@ -356,7 +377,12 @@ def test_model_change_affects_next_attempt_without_rewriting_provenance(
 def test_title_generation_runs_after_completed_attempt(
     session: Session,
 ) -> None:
-    """Verify successful first exchange retains existing auto-title behavior."""
+    """Verify successful first exchange retains existing auto-title behavior.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     service, _, repository = _build_service(
         session,
@@ -376,7 +402,12 @@ def test_title_generation_runs_after_completed_attempt(
 def test_multiple_completed_turns_remain_normal_conversation_history(
     session: Session,
 ) -> None:
-    """Verify lifecycle routing preserves ordinary multi-turn history."""
+    """Verify lifecycle routing preserves ordinary multi-turn history.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     service, conversations, repository = _build_service(session, FakeGateway())
     conversation = repository.create_conversation()
@@ -396,7 +427,12 @@ def test_multiple_completed_turns_remain_normal_conversation_history(
 def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     session: Session,
 ) -> None:
-    """Verify retry recovery creates one response without duplicate input."""
+    """Verify retry recovery creates one response without duplicate input.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     gateway = RecoveringGateway()
     service, conversations, _ = _build_service(session, gateway)
@@ -429,7 +465,12 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
 
 
 def test_failed_retry_remains_outside_completed_history(session: Session) -> None:
-    """Verify another provider failure creates no assistant message."""
+    """Verify another provider failure creates no assistant message.
+
+    Args:
+        session:
+            Isolated database session.
+    """
 
     gateway = RecoveringGateway()
     service, conversations, _ = _build_service(session, gateway)

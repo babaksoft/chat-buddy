@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from chat_buddy.chat.domain import MemoryRecord
 from chat_buddy.chat.infrastructure.db.models import Memory
+
+
+@dataclass(slots=True, frozen=True)
+class StoredMemory:
+    """Temporary key/value adapter result used until the Stage 3 migration."""
+
+    id: int
+    key: str
+    value: str
 
 
 class MemoryRepository:
@@ -24,7 +34,7 @@ class MemoryRepository:
         self,
         key: str,
         value: str,
-    ) -> MemoryRecord:
+    ) -> StoredMemory:
         """
         Create or update a memory.
 
@@ -58,7 +68,7 @@ class MemoryRepository:
     def get_memory(
         self,
         key: str,
-    ) -> MemoryRecord | None:
+    ) -> StoredMemory | None:
         """
         Retrieve a memory by key.
 
@@ -77,7 +87,7 @@ class MemoryRepository:
 
         return self._to_record(memory)
 
-    def get_memories(self) -> list[MemoryRecord]:
+    def get_memories(self) -> list[StoredMemory]:
         """
         Return all memories.
 
@@ -115,17 +125,33 @@ class MemoryRepository:
         return True
 
     def _get_memory_model(self, key: str) -> Memory | None:
-        """Retrieve the persistence model used for adapter operations."""
+        """Retrieve the persistence model used for adapter operations.
+
+        Args:
+            key:
+                Prototype memory key to retrieve.
+
+        Returns:
+            Matching persistence model, or ``None`` when absent.
+        """
 
         statement = select(Memory).where(Memory.key == key)
 
         return self._session.scalar(statement)
 
     @staticmethod
-    def _to_record(memory: Memory) -> MemoryRecord:
-        """Translate a persistence model into a domain record."""
+    def _to_record(memory: Memory) -> StoredMemory:
+        """Translate a persistence model into a compatibility record.
 
-        return MemoryRecord(
+        Args:
+            memory:
+                Prototype persistence model to translate.
+
+        Returns:
+            Immutable adapter result for the application compatibility seam.
+        """
+
+        return StoredMemory(
             id=memory.id,
             key=memory.key,
             value=memory.value,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
+from typing import Protocol
 
 from chat_buddy.chat.application.config import MemoryConfig
 from chat_buddy.chat.domain import (
@@ -8,11 +10,88 @@ from chat_buddy.chat.domain import (
     ChatRole,
     ExtractedMemory,
     MemoryExtractor,
-    MemoryRepository,
 )
 from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
 
 logger = logging.getLogger(__name__)
+
+
+class _StoredMemory(Protocol):
+    """Shape returned by the temporary key/value persistence adapter."""
+
+    @property
+    def key(self) -> str:
+        """Return the temporary memory key.
+
+        Returns:
+            Stable key of the stored prototype memory.
+        """
+
+        ...
+
+    @property
+    def value(self) -> str:
+        """Return the temporary memory value.
+
+        Returns:
+            Content of the stored prototype memory.
+        """
+
+        ...
+
+
+class _PrototypeMemoryRepository(Protocol):
+    """Application-local compatibility seam removed by later Stage 3 slices."""
+
+    def save_memory(self, key: str, value: str) -> _StoredMemory:
+        """Create or replace one temporary key/value memory.
+
+        Args:
+            key:
+                Stable key of the prototype memory.
+            value:
+                Content to store for the key.
+
+        Returns:
+            Created or updated prototype memory.
+        """
+
+        ...
+
+    def get_memory(self, key: str) -> _StoredMemory | None:
+        """Return one temporary memory by key.
+
+        Args:
+            key:
+                Stable key to retrieve.
+
+        Returns:
+            Matching prototype memory, or ``None`` when absent.
+        """
+
+        ...
+
+    def get_memories(self) -> Sequence[_StoredMemory]:
+        """Return all temporary memories in stable order.
+
+        Returns:
+            Stored prototype memories in deterministic order.
+        """
+
+        ...
+
+    def delete_memory(self, key: str) -> bool:
+        """Delete one temporary memory by key.
+
+        Args:
+            key:
+                Stable key to delete.
+
+        Returns:
+            Whether a matching prototype memory was deleted.
+        """
+
+        ...
 
 
 class MemoryService:
@@ -20,7 +99,7 @@ class MemoryService:
 
     def __init__(
         self,
-        repository: MemoryRepository,
+        repository: _PrototypeMemoryRepository,
         llm_gateway: MemoryExtractor,
         config: MemoryConfig,
     ) -> None:

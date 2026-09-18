@@ -104,6 +104,7 @@ def _model(
             top_p=0.9,
         ),
         token_counter=Mock(),
+        default_output_token_reserve=1024,
     )
 
 
@@ -191,7 +192,12 @@ def test_response_gateway_resolver_uses_provider_identifier() -> None:
 
 @patch("chat_buddy.chat.infrastructure.llm.ollama_gateway.Client")
 def test_configured_runtime_registers_enabled_ollama_models(client_type: Mock) -> None:
-    """Verify settings produce an Ollama registry and matching resolver."""
+    """Verify settings produce an Ollama registry and matching resolver.
+
+    Args:
+        client_type:
+            Patched Ollama client constructor.
+    """
 
     runtime = build_provider_runtime()
     provider_id = ProviderId(settings.OLLAMA_PROVIDER_ID)

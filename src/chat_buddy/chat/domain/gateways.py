@@ -2,7 +2,9 @@ from collections.abc import Iterator
 from typing import Protocol
 
 from chat_buddy.chat.domain.chat import ChatMessage
+from chat_buddy.chat.domain.context import CompletedTurn
 from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
+from chat_buddy.chat.domain.memory import MemoryCandidate
 from chat_buddy.chat.domain.providers import (
     GenerationConfiguration,
     ModelId,
@@ -101,6 +103,46 @@ class MemoryExtractor(Protocol):
 
         Returns:
             Extracted durable memory candidates.
+        """
+
+        ...
+
+
+class MemoryCandidateExtractor(Protocol):
+    """Extract normalized candidates from one exact completed turn."""
+
+    def extract_candidates(self, turn: CompletedTurn) -> tuple[MemoryCandidate, ...]:
+        """Extract candidates supported by the completed turn.
+
+        Args:
+            turn:
+                Exact committed user/assistant pair and its provenance.
+
+        Returns:
+            Normalized memory candidates.
+        """
+
+        ...
+
+
+class RollingSummaryGenerator(Protocol):
+    """Generate summary text without owning persistence or budget policy."""
+
+    def generate_summary(
+        self,
+        prior_summary: str | None,
+        turns: tuple[CompletedTurn, ...],
+    ) -> str:
+        """Summarize prior durable text and newly covered complete turns.
+
+        Args:
+            prior_summary:
+                Existing active summary text, when rolling a replacement.
+            turns:
+                Newly covered complete turns in chronological order.
+
+        Returns:
+            Generated replacement summary text.
         """
 
         ...

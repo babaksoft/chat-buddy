@@ -133,7 +133,7 @@ Acceptance:
 
 ### Slice 2 — Introduce final Chat domain contracts and service seams
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add frozen, slotted Chat domain values for conversation summaries, summary
   lifecycle/provenance, memory candidates, Chat memories, memory origin, and

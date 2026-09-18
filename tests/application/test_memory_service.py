@@ -1,21 +1,45 @@
+from dataclasses import dataclass
 from unittest.mock import Mock
 
 import pytest
 
 from chat_buddy.chat.application.config import MemoryConfig
 from chat_buddy.chat.application.service import MemoryService
-from chat_buddy.chat.domain import ChatMessage, ChatRole, MemoryRecord
+from chat_buddy.chat.domain import ChatMessage, ChatRole
 from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
+
+
+@dataclass(slots=True, frozen=True)
+class StoredMemory:
+    """Temporary in-memory record used by the compatibility service tests."""
+
+    id: int
+    key: str
+    value: str
 
 
 class FakeMemoryRepository:
     """In-memory implementation of the memory repository contract."""
 
     def __init__(self) -> None:
-        self._memories: dict[str, MemoryRecord] = {}
+        """Initialize an empty in-memory prototype store."""
 
-    def save_memory(self, key: str, value: str) -> MemoryRecord:
-        memory = MemoryRecord(
+        self._memories: dict[str, StoredMemory] = {}
+
+    def save_memory(self, key: str, value: str) -> StoredMemory:
+        """Create or replace one prototype memory.
+
+        Args:
+            key:
+                Stable memory key.
+            value:
+                Memory content to store.
+
+        Returns:
+            Created or updated stored memory.
+        """
+
+        memory = StoredMemory(
             id=len(self._memories) + 1,
             key=key,
             value=value,
@@ -23,22 +47,46 @@ class FakeMemoryRepository:
         self._memories[key] = memory
         return memory
 
-    def get_memory(self, key: str) -> MemoryRecord | None:
+    def get_memory(self, key: str) -> StoredMemory | None:
+        """Return one prototype memory by key.
+
+        Args:
+            key:
+                Stable memory key.
+
+        Returns:
+            Matching memory, or ``None`` when absent.
+        """
+
         return self._memories.get(key)
 
-    def get_memories(self) -> list[MemoryRecord]:
+    def get_memories(self) -> list[StoredMemory]:
+        """Return all prototype memories in stable key order.
+
+        Returns:
+            Stored memories ordered by key.
+        """
+
         return [self._memories[key] for key in sorted(self._memories)]
 
     def delete_memory(self, key: str) -> bool:
+        """Delete one prototype memory by key.
+
+        Args:
+            key:
+                Stable memory key.
+
+        Returns:
+            Whether a matching memory was deleted.
+        """
+
         return self._memories.pop(key, None) is not None
 
 
 @pytest.fixture
 def service() -> MemoryService:
-    """
-    Create a memory service instance for testing.
+    """Create a memory service instance for testing.
 
-    Args:
     Returns:
         Configured memory service.
     """
@@ -53,7 +101,12 @@ def service() -> MemoryService:
 def test_inject_memories_returns_original_messages_when_empty(
     service: MemoryService,
 ) -> None:
-    """Verify empty memory store leaves messages unchanged."""
+    """Verify empty memory store leaves messages unchanged.
+
+    Args:
+        service:
+            Memory service under test.
+    """
 
     messages = [
         ChatMessage(
@@ -70,7 +123,12 @@ def test_inject_memories_returns_original_messages_when_empty(
 def test_inject_memories_prepends_system_message(
     service: MemoryService,
 ) -> None:
-    """Verify stored memories are injected as a system message."""
+    """Verify stored memories are injected as a system message.
+
+    Args:
+        service:
+            Memory service under test.
+    """
 
     service.save_memory(
         key="favorite_language",
@@ -96,7 +154,12 @@ def test_inject_memories_prepends_system_message(
 def test_inject_memories_formats_multiple_memories(
     service: MemoryService,
 ) -> None:
-    """Verify multiple memories are included in context."""
+    """Verify multiple memories are included in context.
+
+    Args:
+        service:
+            Memory service under test.
+    """
 
     service.save_memory(
         key="city",
@@ -117,7 +180,12 @@ def test_inject_memories_formats_multiple_memories(
 def test_format_memories_for_context(
     service: MemoryService,
 ) -> None:
-    """Verify private formatter produces expected output."""
+    """Verify private formatter produces expected output.
+
+    Args:
+        service:
+            Memory service under test.
+    """
 
     memory = Mock()
     memory.key = "favorite_language"

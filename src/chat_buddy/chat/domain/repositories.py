@@ -4,12 +4,22 @@ from typing import Protocol
 from uuid import UUID
 
 from chat_buddy.chat.domain.chat import ChatRole
+from chat_buddy.chat.domain.context import CompletedTurn
 from chat_buddy.chat.domain.generation_attempt import GenerationAttemptRecord
+from chat_buddy.chat.domain.memory import (
+    ChatMemory,
+    MemoryCandidate,
+    MemoryDeletionResult,
+    MemoryExtractionResult,
+    MemoryLifecycle,
+    MemoryOrigin,
+)
 from chat_buddy.chat.domain.providers import (
     GenerationConfiguration,
     ModelId,
     ProviderId,
 )
+from chat_buddy.chat.domain.summary import ConversationSummary
 
 
 @dataclass(slots=True, frozen=True)
@@ -33,15 +43,6 @@ class MessageRecord:
     conversation_id: UUID
     role: ChatRole
     content: str
-
-
-@dataclass(slots=True, frozen=True)
-class MemoryRecord:
-    """Persistence-neutral representation of a stored memory."""
-
-    id: int
-    key: str
-    value: str
 
 
 class ConversationRepository(Protocol):
@@ -446,55 +447,273 @@ class ConversationRepository(Protocol):
         ...
 
 
-class MemoryRepository(Protocol):
-    """Persistence operations required by memory services."""
+class SummaryRepository(Protocol):
+    """Persistence contract for conversation-owned summary versions."""
 
-    def save_memory(self, key: str, value: str) -> MemoryRecord:
-        """Create or update a memory.
+    def get_active_summary(self, conversation_id: UUID) -> ConversationSummary | None:
+        """Return the active summary for a conversation, when present.
 
         Args:
-            key:
-                Stable key identifying the memory.
-            value:
-                Memory value to persist.
+            conversation_id:
+                Conversation whose active summary should be retrieved.
 
         Returns:
-            The created or updated memory.
+            Active summary version, or ``None`` when the conversation has none.
         """
 
         ...
 
-    def get_memory(self, key: str) -> MemoryRecord | None:
-        """Retrieve a memory by key.
+    def get_summary(self, summary_id: UUID) -> ConversationSummary | None:
+        """Return one summary version by stable identifier.
 
         Args:
-            key:
-                Key of the memory to retrieve.
+            summary_id:
+                Stable summary-version identifier.
 
         Returns:
-            The matching memory, or ``None`` when it does not exist.
+            Matching summary version, or ``None`` when it does not exist.
         """
 
         ...
 
-    def get_memories(self) -> list[MemoryRecord]:
-        """Retrieve all memories in repository order.
+    def replace_active_summary(
+        self,
+        summary: ConversationSummary,
+        *,
+        expected_active_id: UUID | None,
+    ) -> ConversationSummary:
+        """Atomically activate a version and supersede its predecessor.
+
+        Args:
+            summary:
+                New active summary version to persist.
+            expected_active_id:
+                Identifier of the version expected to be active, or ``None``
+                when creating the first version.
 
         Returns:
-            All persisted memories in repository order.
+            Persisted active summary version.
+
+        Raises:
+            ValueError:
+                If ownership, provenance, or lifecycle values are invalid.
+            RuntimeError:
+                If the expected active version is stale.
         """
 
         ...
 
-    def delete_memory(self, key: str) -> bool:
-        """Delete a memory when it exists.
+    def get_uncovered_completed_turns(
+        self, conversation_id: UUID
+    ) -> tuple[CompletedTurn, ...]:
+        """Return complete turns absent from the active summary lineage.
 
         Args:
-            key:
-                Key of the memory to delete.
+            conversation_id:
+                Conversation whose summary coverage should be inspected.
 
         Returns:
-            Whether the memory was found and deleted.
+            Uncovered complete turns in deterministic chronological order.
+        """
+
+        ...
+
+
+class ChatMemoryRepository(Protocol):
+    """Persistence contract for provenance-aware logical Chat memories."""
+
+    def get_memory(self, memory_id: UUID) -> ChatMemory | None:
+        """Return the current revision of one logical memory.
+
+        Args:
+            memory_id:
+                Stable logical-memory identifier.
+
+        Returns:
+            Current revision, or ``None`` when the memory does not exist.
+        """
+
+        ...
+
+    def get_revision(self, revision_id: UUID) -> ChatMemory | None:
+        """Return a specific memory revision including its provenance.
+
+        Args:
+            revision_id:
+                Stable revision identifier.
+
+        Returns:
+            Matching revision, or ``None`` when it does not exist.
+        """
+
+        ...
+
+    def list_memories(
+        self, lifecycles: frozenset[MemoryLifecycle] | None = None
+    ) -> tuple[ChatMemory, ...]:
+        """Return current memories, optionally filtered by lifecycle.
+
+        Args:
+            lifecycles:
+                Lifecycle states to include, or ``None`` to include all states.
+
+        Returns:
+            Current logical-memory revisions in deterministic order.
+        """
+
+        ...
+
+    def list_eligible_memories(self) -> tuple[ChatMemory, ...]:
+        """Return active current revisions in deterministic context order.
+
+        Returns:
+            Chat-wide prompt-eligible memory revisions.
+        """
+
+        ...
+
+    def find_current_by_subject(self, subject: str) -> ChatMemory | None:
+        """Return the current logical memory with a normalized subject.
+
+        Args:
+            subject:
+                Normalized subject used for conflict detection.
+
+        Returns:
+            Matching current revision, or ``None`` when no subject matches.
+        """
+
+        ...
+
+    def replace_memory(
+        self,
+        replacement: ChatMemory,
+        *,
+        expected_revision_id: UUID,
+    ) -> ChatMemory:
+        """Atomically add a replacement and supersede the expected revision.
+
+        Args:
+            replacement:
+                New current revision to persist.
+            expected_revision_id:
+                Current revision expected before replacement.
+
+        Returns:
+            Persisted replacement revision.
+
+        Raises:
+            ValueError:
+                If the replacement is invalid or conflicts with another lineage.
+            RuntimeError:
+                If the expected current revision is stale.
+        """
+
+        ...
+
+    def transition_memory(
+        self,
+        memory_id: UUID,
+        *,
+        expected_revision_id: UUID,
+        target: MemoryLifecycle,
+        at: datetime,
+    ) -> ChatMemory:
+        """Atomically apply a legal lifecycle transition to a current revision.
+
+        Args:
+            memory_id:
+                Stable logical-memory identifier.
+            expected_revision_id:
+                Current revision expected before the transition.
+            target:
+                Requested target lifecycle state.
+            at:
+                Time at which the transition occurs.
+
+        Returns:
+            Updated current memory revision.
+
+        Raises:
+            ValueError:
+                If the lifecycle transition or timestamp is invalid.
+            RuntimeError:
+                If the expected current revision is stale.
+        """
+
+        ...
+
+    def process_extraction(
+        self,
+        turn: CompletedTurn,
+        candidates: tuple[MemoryCandidate, ...],
+    ) -> MemoryExtractionResult:
+        """Atomically apply candidates once for a completed attempt.
+
+        Args:
+            turn:
+                Exact completed turn and its source provenance.
+            candidates:
+                Normalized candidates produced from the turn.
+
+        Returns:
+            Idempotent processing result and resulting current memories.
+
+        Raises:
+            ValueError:
+                If the turn or a candidate is inconsistent with persistence.
+        """
+
+        ...
+
+    def was_extraction_processed(self, generation_attempt_id: UUID) -> bool:
+        """Return whether an attempt has a successful processing record.
+
+        Args:
+            generation_attempt_id:
+                Completed generation-attempt identifier.
+
+        Returns:
+            Whether extraction already completed, including with no candidates.
+        """
+
+        ...
+
+    def mark_source_unavailable(self, conversation_id: UUID) -> int:
+        """Clear source references owned by a deleted conversation.
+
+        Args:
+            conversation_id:
+                Deleted source-conversation identifier.
+
+        Returns:
+            Number of extracted origins marked unavailable.
+        """
+
+        ...
+
+    def get_origin(self, revision_id: UUID) -> MemoryOrigin | None:
+        """Return the provenance of a memory revision.
+
+        Args:
+            revision_id:
+                Stable revision identifier.
+
+        Returns:
+            Matching origin, or ``None`` when the revision does not exist.
+        """
+
+        ...
+
+    def hard_delete(self, memory_id: UUID) -> MemoryDeletionResult:
+        """Purge a logical memory, revisions, observations, and provenance.
+
+        Args:
+            memory_id:
+                Stable logical-memory identifier to purge.
+
+        Returns:
+            Terminal deletion outcome without retaining a tombstone.
         """
 
         ...

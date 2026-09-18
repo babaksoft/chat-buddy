@@ -156,6 +156,7 @@ class ModelDescriptor:
     supported_generation_parameters: frozenset[GenerationParameter]
     default_generation_configuration: GenerationConfiguration
     token_counter: TokenCounter
+    default_output_token_reserve: int
 
     def __post_init__(self) -> None:
         """Validate model limits, presentation metadata, and defaults.
@@ -171,6 +172,10 @@ class ModelDescriptor:
             raise ValueError("Model display name must be non-empty.")
         if self.context_window_tokens <= 0:
             raise ValueError("Model context window must be greater than 0.")
+        if self.default_output_token_reserve <= 0:
+            raise ValueError("Model output-token reserve must be greater than 0.")
+        if self.default_output_token_reserve >= self.context_window_tokens:
+            raise ValueError("Model output-token reserve must be below its window.")
 
         unsupported_defaults = (
             self.default_generation_configuration.requested_parameters
@@ -181,6 +186,23 @@ class ModelDescriptor:
             raise InvalidGenerationConfigurationError(
                 f"Model defaults contain unsupported parameters: {names}."
             )
+
+    def output_token_reserve(self, configuration: GenerationConfiguration) -> int:
+        """Return the deterministic reserve for one effective generation.
+
+        Args:
+            configuration:
+                Effective generation configuration selected by the registry.
+
+        Returns:
+            Explicit output maximum or this model's positive fallback reserve.
+        """
+
+        return (
+            configuration.max_output_tokens
+            if configuration.max_output_tokens is not None
+            else self.default_output_token_reserve
+        )
 
 
 class ProviderRegistry(Protocol):
