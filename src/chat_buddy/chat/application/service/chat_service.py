@@ -18,6 +18,7 @@ from chat_buddy.chat.application.service.memory_service import MemoryService
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
+    CompletedTurn,
     ContextBuilder,
     ConversationRecord,
     GenerationAttemptRecord,
@@ -25,6 +26,7 @@ from chat_buddy.chat.domain import (
     GenerationConfiguration,
     InvalidGenerationAttemptTransitionError,
     InvalidGenerationConfigurationError,
+    MemoryExtractionProcessor,
     ModelDescriptor,
     ModelId,
     ProviderId,
@@ -54,12 +56,13 @@ class _PreparedGeneration:
 
 
 class ChatService:
-    """Coordinate provider-neutral response generation and completed-turn effects."""
+    """Coordinate provider-neutral response generation and post-response effects."""
 
     def __init__(
         self,
         conversation_service: ConversationService,
         memory_service: MemoryService,
+        memory_extraction_service: MemoryExtractionProcessor,
         context_builder: ContextBuilder,
         provider_registry: ProviderRegistry,
         response_gateway_resolver: ResponseGatewayResolver,
@@ -71,7 +74,9 @@ class ChatService:
             conversation_service:
                 Conversation and generation-attempt persistence service.
             memory_service:
-                Persistent memory service.
+                Temporary memory context and management service.
+            memory_extraction_service:
+                Bounded processor for exact committed turns.
             context_builder:
                 Context window builder.
             provider_registry:
@@ -84,6 +89,7 @@ class ChatService:
 
         self._conversation_service = conversation_service
         self._memory_service = memory_service
+        self._memory_extraction_service = memory_extraction_service
         self._context_builder = context_builder
         self._provider_registry = provider_registry
         self._response_gateway_resolver = response_gateway_resolver
@@ -714,7 +720,7 @@ class ChatService:
         generation: _PreparedGeneration,
         response: str,
     ) -> None:
-        """Commit a response before running completed-turn side effects.
+        """Commit a response before running post-response side effects.
 
         Args:
             generation:
@@ -723,12 +729,32 @@ class ChatService:
                 Complete assistant response.
         """
 
-        self._conversation_service.complete_generation_attempt(
+        completed = self._conversation_service.complete_generation_attempt(
             generation.attempt.id,
             response,
             at=datetime.now(UTC),
         )
-        self._memory_service.extract_memories(generation.messages)
+        if completed.assistant_message_id is None or completed.finished_at is None:
+            raise RuntimeError(
+                "A completed generation attempt needs assistant provenance."
+            )
+        turn = CompletedTurn(
+            conversation_id=completed.conversation_id,
+            attempt_id=completed.id,
+            user_message_id=completed.source_user_message_id,
+            assistant_message_id=completed.assistant_message_id,
+            user_content=completed.submitted_user_content,
+            assistant_content=response,
+            completed_at=completed.finished_at,
+        )
+        try:
+            self._memory_extraction_service.process(turn)
+        except Exception:
+            logger.exception(
+                "Memory extraction could not reach a durable terminal outcome "
+                "for completed generation attempt %s.",
+                completed.id,
+            )
         if generation.is_first_exchange and not generation.conversation_title:
             self._title_conversation(
                 conversation_id=generation.conversation_id,

@@ -2,7 +2,9 @@ from collections.abc import Iterator
 from typing import Protocol
 
 from chat_buddy.chat.domain.chat import ChatMessage
+from chat_buddy.chat.domain.context import CompletedTurn
 from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
+from chat_buddy.chat.domain.memory import MemoryCandidate
 
 
 class LLMGateway(Protocol):
@@ -87,4 +89,18 @@ class LLMGateway(Protocol):
 
         Returns:
             Extracted memories.
+        """
+
+    def extract_candidates(
+        self,
+        turn: CompletedTurn,
+    ) -> tuple[MemoryCandidate, ...]:
+        """Extract normalized candidates from one exact committed exchange.
+
+        Args:
+            turn:
+                Exact committed user/assistant pair and provenance.
+
+        Returns:
+            Normalized candidates in provider order.
         """

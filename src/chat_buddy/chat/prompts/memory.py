@@ -24,8 +24,10 @@ Example:
 
 Rules:
 
+- Extract only durable facts that the user states or clearly confirms.
+- Use the assistant response only as conversational evidence; never store an
+  unsupported assistant assertion as a fact about the user.
 - Ignore temporary information.
-- Ignore assistant messages.
 - Do not explain your answer.
 - Do not wrap the JSON in markdown.
 - Return [] if no memories should be stored."""

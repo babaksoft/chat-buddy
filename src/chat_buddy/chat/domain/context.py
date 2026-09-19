@@ -207,7 +207,7 @@ class RollingSummarizer(Protocol):
         ...
 
 
-class CompletedTurnMemoryExtraction(Protocol):
+class MemoryExtractionProcessor(Protocol):
     """Process one exact completed turn independently of response generation."""
 
     def process(self, turn: CompletedTurn) -> ExtractionReceiptRecord:

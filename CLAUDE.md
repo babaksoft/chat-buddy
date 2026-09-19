@@ -143,7 +143,6 @@ Key configuration:
 - `UTILITY_MODEL` - Utility model for summaries/titles (default: `llama3.2:3b`)
 - `MODEL_CONTEXT_WINDOW` - Token limit (default: 32,768)
 - `SUMMARY_TRIGGER_RATIO` - When to trigger summarization (default: 0.85)
-- `MEMORY_EXTRACTION_INTERVAL` - Extract memories every N messages (default: 10)
 
 Environment variables can be set in `.env` file (already present in repo)
 
@@ -154,7 +153,7 @@ Environment variables can be set in `.env` file (already present in repo)
 2. Context built from conversation history + retrieved memories → `ContextBuilder`
 3. LLM generates response via `OllamaGateway` (implements `LLMGateway` protocol)
 4. Response saved to database via `ConversationRepository`
-5. Periodically, memories extracted via `MemoryService`
+5. Each committed response exchange is processed by bounded memory extraction
 
 ### Context Management
 - Token counting tracks context window usage (`MistralTokenCounter`)
@@ -163,7 +162,7 @@ Environment variables can be set in `.env` file (already present in repo)
 
 ### Memory System
 - Long-term facts extracted from conversations using LLM
-- Stored in `memories` table with timestamps
+- Stored as provenance-aware revisions with terminal attempt receipts
 - Injected into context before conversation context is built
 
 ## Working with Prompts

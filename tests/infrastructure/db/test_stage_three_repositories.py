@@ -345,6 +345,107 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
     assert repository.list_memories() == ()
 
 
+def test_extraction_supersedes_only_current_automatic_memory(
+    session: Session,
+) -> None:
+    """Verify automatic conflicts respect extracted, corrected, and excluded state.
+
+    Args:
+        session:
+            Isolated database session.
+    """
+
+    conversations = ConversationRepository(session)
+    repository = MemoryRepository(session)
+    first_turn = _complete_turn(conversations)
+    first_receipt = ExtractionReceiptRecord(
+        generation_attempt_id=first_turn.attempt_id,
+        outcome=MemoryExtractionOutcome.SUCCEEDED,
+        attempt_count=1,
+        completed_at=first_turn.completed_at + timedelta(seconds=1),
+    )
+    repository.process_extraction(
+        first_turn,
+        (MemoryCandidate(subject="location", content="The user lives in Tehran."),),
+        first_receipt,
+    )
+    first = repository.find_current_by_subject("location")
+    assert first is not None
+
+    second_turn = _complete_turn(conversations)
+    second_receipt = ExtractionReceiptRecord(
+        generation_attempt_id=second_turn.attempt_id,
+        outcome=MemoryExtractionOutcome.SUCCEEDED,
+        attempt_count=1,
+        completed_at=second_turn.completed_at + timedelta(seconds=1),
+    )
+    repository.process_extraction(
+        second_turn,
+        (MemoryCandidate(subject="location", content="The user lives in Shiraz."),),
+        second_receipt,
+    )
+    replaced = repository.find_current_by_subject("location")
+    assert replaced is not None
+    assert replaced.id == first.id
+    assert replaced.revision_id != first.revision_id
+    assert replaced.origin.generation_attempt_id == second_turn.attempt_id
+    superseded = repository.get_revision(first.revision_id)
+    assert superseded is not None
+    assert superseded.lifecycle is MemoryLifecycle.SUPERSEDED
+
+    corrected_at = second_receipt.completed_at + timedelta(seconds=1)
+    correction = MemoryRecord(
+        id=replaced.id,
+        revision_id=uuid4(),
+        subject="location",
+        content="The user lives in Mashhad.",
+        lifecycle=MemoryLifecycle.ACTIVE,
+        origin=MemoryOrigin(
+            kind=MemoryOriginKind.USER_CORRECTION,
+            superseded_revision_id=replaced.revision_id,
+            corrected_at=corrected_at,
+        ),
+        created_at=corrected_at,
+        updated_at=corrected_at,
+    )
+    repository.replace_memory(
+        correction,
+        expected_revision_id=replaced.revision_id,
+    )
+
+    third_turn = _complete_turn(conversations)
+    repository.process_extraction(
+        third_turn,
+        (MemoryCandidate(subject="location", content="The user lives in Isfahan."),),
+        ExtractionReceiptRecord(
+            generation_attempt_id=third_turn.attempt_id,
+            outcome=MemoryExtractionOutcome.SUCCEEDED,
+            attempt_count=1,
+            completed_at=third_turn.completed_at + timedelta(seconds=1),
+        ),
+    )
+    assert repository.find_current_by_subject("location") == correction
+
+    excluded = repository.transition_memory(
+        correction.id,
+        expected_revision_id=correction.revision_id,
+        target=MemoryLifecycle.EXCLUDED,
+        at=corrected_at + timedelta(seconds=1),
+    )
+    fourth_turn = _complete_turn(conversations)
+    repository.process_extraction(
+        fourth_turn,
+        (MemoryCandidate(subject="location", content="The user lives in Tabriz."),),
+        ExtractionReceiptRecord(
+            generation_attempt_id=fourth_turn.attempt_id,
+            outcome=MemoryExtractionOutcome.SUCCEEDED,
+            attempt_count=1,
+            completed_at=fourth_turn.completed_at + timedelta(seconds=1),
+        ),
+    )
+    assert repository.find_current_by_subject("location") == excluded
+
+
 def test_memory_rejects_stale_transition_and_correction(
     session: Session,
 ) -> None:

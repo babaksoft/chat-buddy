@@ -2,12 +2,13 @@
 
 import streamlit as st
 
-from chat_buddy.chat.application.config import ContextBuilderConfig, MemoryConfig
+from chat_buddy.chat.application.config import ContextBuilderConfig
 from chat_buddy.chat.application.context_builder import DefaultContextBuilder
 from chat_buddy.chat.application.llm_summarizer import LLMSummarizer
 from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
+    MemoryExtractionService,
     MemoryService,
 )
 from chat_buddy.chat.infrastructure.config import settings
@@ -31,10 +32,10 @@ def build_services() -> tuple[ChatService, ConversationService]:
     utility_gateway = provider_runtime.utility_gateway
     memory_service = MemoryService(
         repository=memory_repository,
-        llm_gateway=utility_gateway,
-        config=MemoryConfig(
-            extraction_interval=settings.MEMORY_EXTRACTION_INTERVAL,
-        ),
+    )
+    memory_extraction_service = MemoryExtractionService(
+        repository=memory_repository,
+        extractor=utility_gateway,
     )
     conversation_service = ConversationService(
         repository=conversation_repository,
@@ -43,6 +44,7 @@ def build_services() -> tuple[ChatService, ConversationService]:
     chat_service = ChatService(
         conversation_service=conversation_service,
         memory_service=memory_service,
+        memory_extraction_service=memory_extraction_service,
         provider_registry=provider_runtime.registry,
         response_gateway_resolver=provider_runtime.response_gateway_resolver,
         title_generator=utility_gateway,

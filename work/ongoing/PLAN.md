@@ -226,7 +226,7 @@ Acceptance:
 
 ### Slice 4 — Extract memory with bounded completed-turn processing
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Replace interval-based history extraction with a dedicated completed-turn
   extraction service.

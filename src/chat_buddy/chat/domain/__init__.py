@@ -3,11 +3,11 @@
 from chat_buddy.chat.domain.chat import ChatMessage, ChatRole
 from chat_buddy.chat.domain.context import (
     CompletedTurn,
-    CompletedTurnMemoryExtraction,
     ContextAssemblyResult,
     ContextBudgeter,
     ContextEligibility,
     ContextInputs,
+    MemoryExtractionProcessor,
     RollingSummarizer,
 )
 from chat_buddy.chat.domain.context_builder import ContextBuilder
@@ -75,7 +75,6 @@ __all__ = [
     "ChatMessage",
     "ChatRole",
     "CompletedTurn",
-    "CompletedTurnMemoryExtraction",
     "ContextAssemblyResult",
     "ContextBudgeter",
     "ContextBuilder",
@@ -97,6 +96,7 @@ __all__ = [
     "MemoryCandidateExtractor",
     "MemoryDeletionResult",
     "MemoryExtractionOutcome",
+    "MemoryExtractionProcessor",
     "MemoryExtractor",
     "MemoryLifecycle",
     "MemoryOrigin",

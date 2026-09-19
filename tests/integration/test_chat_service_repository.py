@@ -180,6 +180,7 @@ def _build_service(
     gateway: FakeGateway,
     *,
     memory_service: Mock | None = None,
+    memory_extraction_service: Mock | None = None,
     second_provider_gateway: FakeGateway | None = None,
 ) -> tuple[ChatService, ConversationService, ConversationRepository]:
     """Compose provider-neutral Chat services around a real repository.
@@ -191,6 +192,8 @@ def _build_service(
             Fake response and title adapter.
         memory_service:
             Optional memory-service test double.
+        memory_extraction_service:
+            Optional memory-extraction test double.
         second_provider_gateway:
             Optional independently composed second response provider.
 
@@ -217,12 +220,14 @@ def _build_service(
     conversation_service = ConversationService(repository)
     memories = memory_service or Mock()
     memories.inject_memories.side_effect = lambda messages: messages
+    extraction = memory_extraction_service or Mock()
     context_builder = Mock()
     context_builder.build_context.side_effect = lambda messages, model: messages
     return (
         ChatService(
             conversation_service=conversation_service,
             memory_service=memories,
+            memory_extraction_service=extraction,
             context_builder=context_builder,
             provider_registry=registry,
             response_gateway_resolver=resolver,
@@ -435,7 +440,12 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     """
 
     gateway = RecoveringGateway()
-    service, conversations, _ = _build_service(session, gateway)
+    extraction = Mock()
+    service, conversations, _ = _build_service(
+        session,
+        gateway,
+        memory_extraction_service=extraction,
+    )
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.chat(ChatRequest(None, "Recover this turn"))
@@ -443,6 +453,10 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     assert failed is not None
     assert failed.status is GenerationAttemptStatus.FAILED
 
+    conversations.edit_unmatched_user_message(
+        failed.conversation_id,
+        "Recover this edited turn",
+    )
     gateway.should_fail = False
     response = service.retry(failed.id)
 
@@ -456,12 +470,19 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
         ChatRole.USER,
         ChatRole.ASSISTANT,
     ]
-    assert [message.content for message in messages].count("Recover this turn") == 1
+    assert [message.content for message in messages].count(
+        "Recover this edited turn"
+    ) == 1
     assert [attempt.status for attempt in attempts] == [
         GenerationAttemptStatus.FAILED,
         GenerationAttemptStatus.COMPLETED,
     ]
     assert attempts[0].source_user_message_id == attempts[1].source_user_message_id
+    extraction.process.assert_called_once()
+    extracted_turn = extraction.process.call_args.args[0]
+    assert extracted_turn.attempt_id == attempts[1].id
+    assert extracted_turn.user_content == "Recover this edited turn"
+    assert extracted_turn.assistant_content == f"Response from {FIRST_MODEL_ID}."
 
 
 def test_failed_retry_remains_outside_completed_history(session: Session) -> None:

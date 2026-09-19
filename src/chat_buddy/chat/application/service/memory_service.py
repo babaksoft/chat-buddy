@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from typing import Protocol
 
-from chat_buddy.chat.application.config import MemoryConfig
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     ExtractedMemory,
-    MemoryExtractor,
 )
 from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
-
-logger = logging.getLogger(__name__)
 
 
 class _StoredMemory(Protocol):
@@ -100,8 +95,6 @@ class MemoryService:
     def __init__(
         self,
         repository: _PrototypeMemoryRepository,
-        llm_gateway: MemoryExtractor,
-        config: MemoryConfig,
     ) -> None:
         """
         Initialize the memory service.
@@ -110,16 +103,9 @@ class MemoryService:
             repository:
                 Repository for persistent memories.
 
-            llm_gateway:
-                LLM Gateway used for memory extraction.
-
-            config:
-                Persistent memory configuration.
         """
 
         self._repository = repository
-        self._llm_gateway = llm_gateway
-        self._config = config
 
     def save_memory(
         self,
@@ -206,34 +192,6 @@ class MemoryService:
 
         return self._repository.delete_memory(key)
 
-    def extract_memories(
-        self,
-        messages: list[ChatMessage],
-    ) -> None:
-        """
-        Extract and persist long-term memories.
-
-        Args:
-            messages:
-                Conversation history.
-        """
-
-        if not self._should_extract_memories(messages):
-            return
-
-        memories = self._llm_gateway.extract_memories(messages)
-        for memory in memories:
-            self.save_memory(
-                key=memory.key,
-                value=memory.value,
-            )
-
-        logger.info(
-            "Memory extraction completed: extracted=%d persisted=%d",
-            len(memories),
-            len(memories),
-        )
-
     def inject_memories(
         self,
         messages: list[ChatMessage],
@@ -281,22 +239,3 @@ class MemoryService:
         lines = [f"- {memory.key}: {memory.value}" for memory in memories]
 
         return f"{MEMORY_CONTEXT_HEADER}\n\n" + "\n".join(lines)
-
-    def _should_extract_memories(
-        self,
-        messages: list[ChatMessage],
-    ) -> bool:
-        """
-        Determine whether memories should be extracted.
-
-        Args:
-            messages:
-                Conversation history.
-
-        Returns:
-            True if memory extraction should be performed.
-        """
-
-        user_turns = sum(1 for message in messages if message.role is ChatRole.USER)
-
-        return user_turns > 0 and user_turns % self._config.extraction_interval == 0

@@ -7,10 +7,14 @@ from ollama import Client, RequestError, ResponseError
 
 from chat_buddy.chat.domain import (
     ChatMessage,
+    CompletedTurn,
     ExtractedMemory,
     GenerationConfiguration,
+    MemoryCandidate,
     ModelId,
     ProviderInvocationError,
+    normalize_memory_subject,
+    normalize_memory_text,
 )
 from chat_buddy.chat.infrastructure.config import settings
 from chat_buddy.chat.prompts import (
@@ -322,6 +326,70 @@ class OllamaGateway:
         )
 
         return memories
+
+    def extract_candidates(
+        self,
+        turn: CompletedTurn,
+    ) -> tuple[MemoryCandidate, ...]:
+        """Extract normalized candidates from one exact committed exchange.
+
+        Args:
+            turn:
+                Exact committed user/assistant pair and provenance.
+
+        Returns:
+            Parsed and normalized candidate values in provider order.
+
+        Raises:
+            TypeError:
+                If the parsed JSON has an invalid container or field type.
+            ValueError:
+                If the provider response is not the required candidate array.
+        """
+
+        logger.debug(
+            "Extracting memories for completed generation attempt '%s'.",
+            turn.attempt_id,
+        )
+        conversation = "\n".join(
+            f"{message.role.value}: {message.content}" for message in turn.messages
+        )
+        response = self._chat(
+            messages=[
+                {"role": "system", "content": EXTRACT_MEMORY_PROMPT},
+                {"role": "user", "content": conversation},
+            ],
+            model_name=self._utility_model,
+        )
+        try:
+            payload = json.loads(response)
+        except json.JSONDecodeError as error:
+            raise ValueError("Memory extraction returned invalid JSON.") from error
+        if not isinstance(payload, list):
+            raise TypeError("Memory extraction must return a JSON array.")
+
+        candidates: list[MemoryCandidate] = []
+        for item in payload:
+            if not isinstance(item, dict) or set(item) != {"key", "value"}:
+                raise ValueError(
+                    "Every memory candidate must contain exactly key and value."
+                )
+            key = item["key"]
+            value = item["value"]
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise TypeError("Memory candidate key and value must be strings.")
+            candidates.append(
+                MemoryCandidate(
+                    subject=normalize_memory_subject(key),
+                    content=normalize_memory_text(value),
+                )
+            )
+
+        logger.info(
+            "Memory candidate extraction completed: extracted=%d",
+            len(candidates),
+        )
+        return tuple(candidates)
 
     def _chat(
         self,

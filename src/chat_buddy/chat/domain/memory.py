@@ -65,7 +65,7 @@ class MemoryDeletionResult(str, Enum):
 
 
 class MemoryExtractionOutcome(str, Enum):
-    """Terminal outcome of bounded completed-turn memory processing."""
+    """Terminal outcome of memory processing."""
 
     SUCCEEDED = "succeeded"
     EXHAUSTED = "exhausted"

@@ -255,16 +255,16 @@ class MemoryRepository:
                 If turn, receipt, or candidate data is inconsistent.
         """
 
-        existing = self.get_extraction_receipt(turn.attempt_id)
-        if existing is not None:
-            return existing
-        if receipt.generation_attempt_id != turn.attempt_id:
-            raise ValueError("Extraction receipt must identify the completed turn.")
-        if receipt.outcome.value == "exhausted" and candidates:
-            raise ValueError("An exhausted extraction cannot persist candidates.")
-        self._validate_completed_turn(turn)
-
         try:
+            existing = self.get_extraction_receipt(turn.attempt_id)
+            if existing is not None:
+                return existing
+            if receipt.generation_attempt_id != turn.attempt_id:
+                raise ValueError("Extraction receipt must identify the completed turn.")
+            if receipt.outcome.value == "exhausted" and candidates:
+                raise ValueError("An exhausted extraction cannot persist candidates.")
+            self._validate_completed_turn(turn)
+
             for candidate in candidates:
                 current = self._current_by_subject(candidate.subject, lock=True)
                 if current is not None:

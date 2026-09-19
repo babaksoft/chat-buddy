@@ -3,7 +3,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from chat_buddy.chat.application.config import MemoryConfig
 from chat_buddy.chat.application.service import MemoryService
 from chat_buddy.chat.domain import ChatMessage, ChatRole
 from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
@@ -93,8 +92,6 @@ def service() -> MemoryService:
 
     return MemoryService(
         repository=FakeMemoryRepository(),
-        llm_gateway=Mock(),
-        config=MemoryConfig(extraction_interval=10),
     )
 
 

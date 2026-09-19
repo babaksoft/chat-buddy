@@ -7,10 +7,3 @@ class ContextBuilderConfig:
 
     prompt_overhead_tokens: int
     summary_trigger_ratio: float
-
-
-@dataclass(slots=True, frozen=True)
-class MemoryConfig:
-    """Configuration required by persistent memory services."""
-
-    extraction_interval: int
