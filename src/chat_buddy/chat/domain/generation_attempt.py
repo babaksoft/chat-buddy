@@ -38,6 +38,32 @@ class GenerationAttemptStatus(str, Enum):
             GenerationAttemptStatus.INTERRUPTED,
         }
 
+    @property
+    def is_open(self) -> bool:
+        """Return whether the attempt can still produce a response.
+
+        Returns:
+            ``True`` for pending or streaming attempts; otherwise ``False``.
+        """
+
+        return self in {
+            GenerationAttemptStatus.PENDING,
+            GenerationAttemptStatus.STREAMING,
+        }
+
+    @property
+    def is_retryable(self) -> bool:
+        """Return whether the terminal outcome can seed a retry.
+
+        Returns:
+            ``True`` for failed or interrupted attempts; otherwise ``False``.
+        """
+
+        return self in {
+            GenerationAttemptStatus.FAILED,
+            GenerationAttemptStatus.INTERRUPTED,
+        }
+
 
 @dataclass(slots=True, frozen=True)
 class GenerationAttemptRecord:
@@ -46,6 +72,7 @@ class GenerationAttemptRecord:
     id: UUID
     conversation_id: UUID
     source_user_message_id: UUID
+    submitted_user_content: str
     provider_id: ProviderId
     model_id: ModelId
     effective_configuration: GenerationConfiguration
@@ -71,6 +98,8 @@ class GenerationAttemptRecord:
 
         if self.created_at.tzinfo is None:
             raise ValueError("Generation attempt timestamps must be timezone-aware.")
+        if not self.submitted_user_content.strip():
+            raise ValueError("Submitted user content must be non-empty.")
         for timestamp in (self.started_at, self.finished_at):
             if timestamp is not None and timestamp.tzinfo is None:
                 raise ValueError(

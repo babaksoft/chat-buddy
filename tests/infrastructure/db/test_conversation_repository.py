@@ -370,6 +370,7 @@ def test_retry_generation_attempt_reuses_source_user_message(
         error_code="provider_error",
         at=original.created_at,
     )
+    edited = repository.edit_unmatched_user_message(conversation.id, "Edited hello")
 
     retry = repository.retry_generation_attempt(
         failed.id,
@@ -381,16 +382,19 @@ def test_retry_generation_attempt_reuses_source_user_message(
     assert retry.status is GenerationAttemptStatus.PENDING
     assert retry.id != failed.id
     assert retry.source_user_message_id == failed.source_user_message_id
+    assert failed.submitted_user_content == "Hello"
+    assert retry.submitted_user_content == "Edited hello"
+    assert edited.content == "Edited hello"
     assert retry.model_id == ModelId("new-model")
     assert [
         message.content for message in repository.get_messages(conversation.id)
-    ] == ["Hello"]
+    ] == ["Edited hello"]
 
 
-def test_unresolved_attempt_query_excludes_terminal_attempts(
+def test_open_attempt_query_returns_one_scalar_and_excludes_terminal_attempts(
     repository: ConversationRepository,
 ) -> None:
-    """Verify recovery queries return only pending and streaming attempts.
+    """Verify recovery exposes one open attempt rather than a collection.
 
     Args:
         repository:
@@ -398,21 +402,6 @@ def test_unresolved_attempt_query_excludes_terminal_attempts(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
-        conversation.id,
-        "Pending",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    streaming = repository.start_generation_attempt(
-        conversation.id,
-        "Streaming",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    repository.begin_generation_attempt(streaming.id, at=streaming.created_at)
     failed = repository.start_generation_attempt(
         conversation.id,
         "Failed",
@@ -426,10 +415,48 @@ def test_unresolved_attempt_query_excludes_terminal_attempts(
         error_code="provider_error",
         at=failed.created_at,
     )
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Pending",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
 
-    unresolved = repository.get_unresolved_generation_attempts(conversation.id)
+    open_attempt = repository.get_open_generation_attempt(conversation.id)
 
-    assert {attempt.id for attempt in unresolved} == {pending.id, streaming.id}
+    assert open_attempt == pending
+
+
+def test_unmatched_tail_cannot_be_edited_while_attempt_is_open(
+    repository: ConversationRepository,
+) -> None:
+    """Verify editing is limited to an unmatched tail with no open attempt.
+
+    Args:
+        repository:
+            Repository connected to the test database.
+    """
+
+    conversation = repository.create_conversation()
+    pending = repository.start_generation_attempt(
+        conversation.id,
+        "Original",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+
+    assert repository.get_unmatched_user_message(conversation.id) is not None
+    with pytest.raises(InvalidGenerationAttemptTransitionError, match="open"):
+        repository.edit_unmatched_user_message(conversation.id, "Edited")
+
+    repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
+
+    edited = repository.edit_unmatched_user_message(conversation.id, "Edited")
+
+    assert edited.content == "Edited"
 
 
 def test_generation_attempt_query_includes_terminal_recovery_states(

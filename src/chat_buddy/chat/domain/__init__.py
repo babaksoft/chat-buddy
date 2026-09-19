@@ -38,7 +38,8 @@ from chat_buddy.chat.domain.memory import (
     ChatMemory,
     MemoryCandidate,
     MemoryDeletionResult,
-    MemoryExtractionResult,
+    MemoryExtractionOutcome,
+    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
     MemoryOriginKind,
@@ -66,7 +67,6 @@ from chat_buddy.chat.domain.summary import (
     ConversationSummary,
     SummaryLifecycle,
     SummaryProvenance,
-    SummarySource,
 )
 from chat_buddy.chat.domain.tokenizer import TokenCounter, TokenUsage
 
@@ -97,7 +97,8 @@ __all__ = [
     "MemoryCandidate",
     "MemoryCandidateExtractor",
     "MemoryDeletionResult",
-    "MemoryExtractionResult",
+    "MemoryExtractionOutcome",
+    "MemoryExtractionReceipt",
     "MemoryExtractor",
     "MemoryLifecycle",
     "MemoryOrigin",
@@ -118,7 +119,6 @@ __all__ = [
     "SummaryLifecycle",
     "SummaryProvenance",
     "SummaryRepository",
-    "SummarySource",
     "TitleGenerator",
     "TokenCounter",
     "TokenUsage",

@@ -63,6 +63,7 @@ def _attempt(conversation_id: UUID, model: ModelDescriptor) -> GenerationAttempt
         id=uuid4(),
         conversation_id=conversation_id,
         source_user_message_id=uuid4(),
+        submitted_user_content="Hello",
         provider_id=model.provider_id,
         model_id=model.id,
         effective_configuration=GenerationConfiguration(),
@@ -104,7 +105,8 @@ def _service(
     conversation_service.get_messages.return_value = [
         ChatMessage(ChatRole.USER, "Hello")
     ]
-    conversation_service.get_unresolved_generation_attempts.return_value = []
+    conversation_service.get_open_generation_attempt.return_value = None
+    conversation_service.get_latest_retryable_generation_attempt.return_value = None
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from the model."
@@ -283,33 +285,19 @@ def test_generation_selection_change_is_validated_then_persisted() -> None:
     assert updated_id == conversation.id
 
 
-def test_recoverable_attempts_are_deduplicated_and_exclude_completions() -> None:
-    """Verify recovery cards use the latest incomplete attempt per source."""
+def test_recoverable_attempts_expose_only_the_singular_latest_retry_target() -> None:
+    """Verify recovery exposes at most one actionable linear-tail attempt."""
 
     service, conversations, _, registry, _, _ = _service()
     model = registry.get_model.return_value
     conversation_id = uuid4()
     source_id = uuid4()
-    other_source_id = uuid4()
-    first = _attempt(conversation_id, model)
-    first = GenerationAttemptRecord(
-        id=first.id,
-        conversation_id=conversation_id,
-        source_user_message_id=source_id,
-        provider_id=model.provider_id,
-        model_id=model.id,
-        effective_configuration=GenerationConfiguration(),
-        status=GenerationAttemptStatus.PENDING,
-        created_at=first.created_at,
-    )
-    failed = first.start(at=first.created_at).fail(
-        error_code="provider_error", at=first.created_at
-    )
     retry = _attempt(conversation_id, model)
     retry = GenerationAttemptRecord(
         id=retry.id,
         conversation_id=conversation_id,
         source_user_message_id=source_id,
+        submitted_user_content="Edited",
         provider_id=model.provider_id,
         model_id=model.id,
         effective_configuration=GenerationConfiguration(),
@@ -317,25 +305,7 @@ def test_recoverable_attempts_are_deduplicated_and_exclude_completions() -> None
         created_at=retry.created_at,
     )
     interrupted = retry.start(at=retry.created_at).interrupt(at=retry.created_at)
-    completed_pending = _attempt(conversation_id, model)
-    completed_pending = GenerationAttemptRecord(
-        id=completed_pending.id,
-        conversation_id=conversation_id,
-        source_user_message_id=other_source_id,
-        provider_id=model.provider_id,
-        model_id=model.id,
-        effective_configuration=GenerationConfiguration(),
-        status=GenerationAttemptStatus.PENDING,
-        created_at=completed_pending.created_at,
-    )
-    completed = completed_pending.start(at=completed_pending.created_at).complete(
-        assistant_message_id=uuid4(), at=completed_pending.created_at
-    )
-    conversations.get_generation_attempts.return_value = [
-        failed,
-        interrupted,
-        completed,
-    ]
+    conversations.get_latest_retryable_generation_attempt.return_value = interrupted
 
     recoverable = service.get_recoverable_generation_attempts(conversation_id)
 
@@ -473,7 +443,7 @@ def test_stale_streaming_attempt_is_reconciled_as_interrupted() -> None:
     stale = _attempt(conversation.id, registry.get_model.return_value).start(
         at=datetime.now(UTC)
     )
-    conversations.get_unresolved_generation_attempts.return_value = [stale]
+    conversations.get_open_generation_attempt.return_value = stale
 
     service.reconcile_generation_attempts(conversation.id)
 

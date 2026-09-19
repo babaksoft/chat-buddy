@@ -146,7 +146,7 @@ Acceptance:
 
 ### Slice 2 — Revise Chat domain contracts and linear-turn service seams
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Preserve the accepted memory lifecycle, memory origin, context-budget, and
   provider-capability values that remain valid.

@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ def _pending_attempt() -> GenerationAttemptRecord:
         id=uuid4(),
         conversation_id=uuid4(),
         source_user_message_id=uuid4(),
+        submitted_user_content="Original question",
         provider_id=ProviderId("ollama"),
         model_id=ModelId("mistral"),
         effective_configuration=GenerationConfiguration(temperature=0.5),
@@ -118,6 +119,7 @@ def test_attempt_requires_timezone_aware_timestamps() -> None:
             id=uuid4(),
             conversation_id=uuid4(),
             source_user_message_id=uuid4(),
+            submitted_user_content="Question",
             provider_id=ProviderId("ollama"),
             model_id=ModelId("mistral"),
             effective_configuration=GenerationConfiguration(),
@@ -133,3 +135,49 @@ def test_attempt_is_immutable() -> None:
 
     with pytest.raises(FrozenInstanceError):
         attempt.status = GenerationAttemptStatus.STREAMING  # type: ignore[misc]
+
+
+def test_attempt_preserves_immutable_submitted_user_content() -> None:
+    """Verify each attempt owns a validated immutable input snapshot."""
+
+    attempt = _pending_attempt()
+
+    assert attempt.submitted_user_content == "Original question"
+    with pytest.raises(FrozenInstanceError):
+        attempt.submitted_user_content = "Edited"  # type: ignore[misc]
+
+
+def test_attempt_rejects_blank_submitted_user_content() -> None:
+    """Verify an attempt cannot omit its submitted-content provenance."""
+
+    attempt = _pending_attempt()
+    with pytest.raises(ValueError, match="Submitted user content"):
+        replace(attempt, submitted_user_content="  ")
+
+
+@pytest.mark.parametrize(
+    ("status", "is_open", "is_retryable"),
+    [
+        (GenerationAttemptStatus.PENDING, True, False),
+        (GenerationAttemptStatus.STREAMING, True, False),
+        (GenerationAttemptStatus.COMPLETED, False, False),
+        (GenerationAttemptStatus.FAILED, False, True),
+        (GenerationAttemptStatus.INTERRUPTED, False, True),
+    ],
+)
+def test_attempt_status_defines_open_and_retryable_concepts(
+    status: GenerationAttemptStatus, is_open: bool, is_retryable: bool
+) -> None:
+    """Verify linear-turn status categories are singular and explicit.
+
+    Args:
+        status:
+            Lifecycle state to classify.
+        is_open:
+            Expected open-state classification.
+        is_retryable:
+            Expected retryable-state classification.
+    """
+
+    assert status.is_open is is_open
+    assert status.is_retryable is is_retryable

@@ -291,6 +291,7 @@ def test_incomplete_attempt_is_separate_from_history_and_can_be_retried(
         id=uuid4(),
         conversation_id=conversation_id,
         source_user_message_id=uuid4(),
+        submitted_user_content="Question",
         provider_id=ProviderId("local"),
         model_id=ModelId("main"),
         effective_configuration=GenerationConfiguration(),

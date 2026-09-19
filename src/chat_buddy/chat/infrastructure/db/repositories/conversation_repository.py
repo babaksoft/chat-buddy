@@ -406,6 +406,7 @@ class ConversationRepository:
             id=uuid4(),
             conversation_id=conversation_id,
             source_user_message_id=message_id,
+            submitted_user_content=user_content,
             provider_id=provider_id,
             model_id=model_id,
             effective_configuration=effective_configuration,
@@ -474,11 +475,25 @@ class ConversationRepository:
             raise InvalidGenerationAttemptTransitionError(
                 "Only a failed or interrupted attempt can be retried."
             )
+        latest_retryable = self.get_latest_retryable_generation_attempt(
+            source.conversation_id
+        )
+        if latest_retryable is None or latest_retryable.id != source.id:
+            raise InvalidGenerationAttemptTransitionError(
+                "Only the latest attempt for the unmatched tail can be retried."
+            )
+
+        source_message = self._session.get(Message, source.source_user_message_id)
+        if source_message is None:
+            raise LookupError(
+                f"Source message {source.source_user_message_id} does not exist."
+            )
 
         retry = GenerationAttemptRecord(
             id=uuid4(),
             conversation_id=source.conversation_id,
             source_user_message_id=source.source_user_message_id,
+            submitted_user_content=source_message.content,
             provider_id=provider_id,
             model_id=model_id,
             effective_configuration=effective_configuration,
@@ -696,17 +711,21 @@ class ConversationRepository:
         model = self._session.get(GenerationAttempt, attempt_id)
         return self._to_generation_attempt(model) if model is not None else None
 
-    def get_unresolved_generation_attempts(
+    def get_open_generation_attempt(
         self, conversation_id: UUID
-    ) -> list[GenerationAttemptRecord]:
-        """Retrieve pending and streaming attempts for a conversation.
+    ) -> GenerationAttemptRecord | None:
+        """Return the singular pending or streaming attempt for a conversation.
 
         Args:
             conversation_id:
                 Identifier of the conversation to inspect.
 
         Returns:
-            Unresolved attempts ordered from oldest to newest.
+            Open attempt, or ``None`` when no invocation is active.
+
+        Raises:
+            RuntimeError:
+                If provisional persistence contains multiple open attempts.
         """
 
         statement = (
@@ -720,12 +739,125 @@ class ConversationRepository:
                     )
                 ),
             )
-            .order_by(GenerationAttempt.created_at.asc())
+            .order_by(GenerationAttempt.created_at.desc(), GenerationAttempt.id.desc())
+            .limit(2)
         )
-        return [
-            self._to_generation_attempt(model)
-            for model in self._session.scalars(statement)
-        ]
+        models = list(self._session.scalars(statement))
+        if len(models) > 1:
+            raise RuntimeError(
+                f"Conversation {conversation_id} has multiple open attempts."
+            )
+        return self._to_generation_attempt(models[0]) if models else None
+
+    def get_unmatched_user_message(self, conversation_id: UUID) -> MessageRecord | None:
+        """Return the unanswered final user message, when present.
+
+        Args:
+            conversation_id:
+                Conversation whose linear tail should be inspected.
+
+        Returns:
+            Unmatched user-message tail, or ``None`` when the final turn closed.
+        """
+
+        statement = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+        message = self._session.scalar(statement)
+        if message is None or message.role is not ChatRole.USER:
+            return None
+        return self._to_message_record(message)
+
+    def edit_unmatched_user_message(
+        self, conversation_id: UUID, content: str
+    ) -> MessageRecord:
+        """Edit the unmatched final user message while no attempt is open.
+
+        Args:
+            conversation_id:
+                Conversation containing the editable tail.
+            content:
+                Replacement nonblank user content.
+
+        Returns:
+            Updated unmatched user message.
+
+        Raises:
+            LookupError:
+                If no unmatched user-message tail exists.
+            InvalidGenerationAttemptTransitionError:
+                If a generation attempt is open.
+            ValueError:
+                If replacement content is blank.
+        """
+
+        if not content.strip():
+            raise ValueError("User message content must be non-empty.")
+        if self.get_open_generation_attempt(conversation_id) is not None:
+            raise InvalidGenerationAttemptTransitionError(
+                "Cannot edit an unmatched user message while an attempt is open."
+            )
+
+        tail = self.get_unmatched_user_message(conversation_id)
+        if tail is None:
+            raise LookupError(
+                f"Conversation {conversation_id} has no unmatched user message."
+            )
+
+        model = self._session.get(Message, tail.id)
+        if model is None:
+            raise LookupError(f"Message {tail.id} does not exist.")
+
+        model.content = content
+        try:
+            self._session.commit()
+        except SQLAlchemyError:
+            self._session.rollback()
+            logger.exception("Failed to edit unmatched message %s.", tail.id)
+            raise
+
+        return self._to_message_record(model)
+
+    def get_latest_retryable_generation_attempt(
+        self, conversation_id: UUID
+    ) -> GenerationAttemptRecord | None:
+        """Return the latest retry target for the unmatched final user message.
+
+        Args:
+            conversation_id:
+                Conversation whose linear tail should be inspected.
+
+        Returns:
+            Latest retryable attempt, or ``None`` when none is actionable.
+        """
+
+        if self.get_open_generation_attempt(conversation_id) is not None:
+            return None
+
+        tail = self.get_unmatched_user_message(conversation_id)
+        if tail is None:
+            return None
+
+        statement = (
+            select(GenerationAttempt)
+            .where(
+                GenerationAttempt.conversation_id == conversation_id,
+                GenerationAttempt.source_user_message_id == tail.id,
+                GenerationAttempt.status.in_(
+                    (
+                        GenerationAttemptStatus.FAILED,
+                        GenerationAttemptStatus.INTERRUPTED,
+                    )
+                ),
+            )
+            .order_by(GenerationAttempt.created_at.desc(), GenerationAttempt.id.desc())
+            .limit(1)
+        )
+        model = self._session.scalar(statement)
+        return self._to_generation_attempt(model) if model is not None else None
 
     def get_generation_attempts(
         self, conversation_id: UUID
@@ -905,8 +1037,8 @@ class ConversationRepository:
             finished_at=attempt.finished_at,
         )
 
-    @staticmethod
     def _to_generation_attempt(
+        self,
         model: GenerationAttempt,
     ) -> GenerationAttemptRecord:
         """Translate a persistence model into an immutable domain attempt.
@@ -932,6 +1064,7 @@ class ConversationRepository:
             id=model.id,
             conversation_id=model.conversation_id,
             source_user_message_id=model.source_user_message_id,
+            submitted_user_content=model.source_user_message.content,
             provider_id=ProviderId(model.provider_id),
             model_id=ModelId(model.model_id),
             effective_configuration=ConversationRepository._configuration_from_dict(

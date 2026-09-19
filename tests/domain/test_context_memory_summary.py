@@ -16,13 +16,14 @@ from chat_buddy.chat.domain import (
     ConversationSummary,
     GenerationConfiguration,
     MemoryCandidate,
+    MemoryExtractionOutcome,
+    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
     MemoryOriginKind,
     ModelDescriptor,
     SummaryLifecycle,
     SummaryProvenance,
-    SummarySource,
 )
 
 NOW = datetime(2026, 9, 18, tzinfo=UTC)
@@ -158,12 +159,6 @@ def _summary(
     """
 
     summary_id = uuid4()
-    source = SummarySource(
-        conversation_id=conversation_id,
-        generation_attempt_id=uuid4(),
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
     return ConversationSummary(
         id=summary_id,
         conversation_id=conversation_id,
@@ -172,8 +167,7 @@ def _summary(
         lifecycle=lifecycle,
         provenance=SummaryProvenance(
             conversation_id=conversation_id,
-            checkpoint_message_id=source.assistant_message_id,
-            newly_covered_sources=(source,),
+            checkpoint_message_id=uuid4(),
             predecessor_id=predecessor_id,
         ),
     )
@@ -212,12 +206,6 @@ def test_summary_rejects_invalid_values(
     """
 
     conversation_id = uuid4()
-    source = SummarySource(
-        conversation_id=conversation_id,
-        generation_attempt_id=uuid4(),
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
     values: dict[str, object] = {
         "id": uuid4(),
         "conversation_id": conversation_id,
@@ -226,8 +214,7 @@ def test_summary_rejects_invalid_values(
         "lifecycle": SummaryLifecycle.ACTIVE,
         "provenance": SummaryProvenance(
             conversation_id=conversation_id,
-            checkpoint_message_id=source.assistant_message_id,
-            newly_covered_sources=(source,),
+            checkpoint_message_id=uuid4(),
         ),
     }
     values.update(changes)
@@ -236,71 +223,13 @@ def test_summary_rejects_invalid_values(
         ConversationSummary(**values)  # type: ignore[arg-type]
 
 
-def test_summary_rejects_duplicate_coverage_and_invalid_first_compaction() -> None:
-    """Summary provenance requires unique coverage or a predecessor."""
+def test_summary_provenance_rejects_cross_conversation_ownership() -> None:
+    """Summary ownership must agree with its compact checkpoint provenance."""
 
     conversation_id = uuid4()
-    attempt_id = uuid4()
-    first_source = SummarySource(
-        conversation_id=conversation_id,
-        generation_attempt_id=attempt_id,
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
-    second_source = SummarySource(
-        conversation_id=conversation_id,
-        generation_attempt_id=attempt_id,
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
-    with pytest.raises(ValueError, match="unique"):
-        SummaryProvenance(
-            conversation_id=conversation_id,
-            checkpoint_message_id=second_source.assistant_message_id,
-            newly_covered_sources=(first_source, second_source),
-        )
-    with pytest.raises(ValueError, match="first summary"):
-        SummaryProvenance(
-            conversation_id=conversation_id,
-            checkpoint_message_id=uuid4(),
-            newly_covered_sources=(),
-        )
-
-
-def test_summary_provenance_rejects_cross_conversation_and_wrong_checkpoint() -> None:
-    """Summary source ownership and newest-source checkpoint must be consistent."""
-
-    conversation_id = uuid4()
-    source = SummarySource(
-        conversation_id=uuid4(),
-        generation_attempt_id=uuid4(),
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
-    with pytest.raises(ValueError, match="belong"):
-        SummaryProvenance(
-            conversation_id=conversation_id,
-            checkpoint_message_id=source.assistant_message_id,
-            newly_covered_sources=(source,),
-        )
-
-    source = SummarySource(
-        conversation_id=conversation_id,
-        generation_attempt_id=uuid4(),
-        assistant_message_id=uuid4(),
-        completed_at=NOW,
-    )
-    with pytest.raises(ValueError, match="checkpoint"):
-        SummaryProvenance(
-            conversation_id=conversation_id,
-            checkpoint_message_id=uuid4(),
-            newly_covered_sources=(source,),
-        )
-
     valid_provenance = SummaryProvenance(
         conversation_id=conversation_id,
-        checkpoint_message_id=source.assistant_message_id,
-        newly_covered_sources=(source,),
+        checkpoint_message_id=uuid4(),
     )
     with pytest.raises(ValueError, match="another conversation"):
         ConversationSummary(
@@ -313,17 +242,72 @@ def test_summary_provenance_rejects_cross_conversation_and_wrong_checkpoint() ->
         )
 
 
-def test_summary_provenance_allows_successor_compaction_without_new_sources() -> None:
-    """A successor may compact inherited coverage without adding a new turn."""
+def test_summary_provenance_tracks_checkpoint_progression_without_source_graph() -> (
+    None
+):
+    """Successors carry only predecessor and authoritative assistant checkpoint."""
 
+    predecessor_id = uuid4()
+    checkpoint_id = uuid4()
     provenance = SummaryProvenance(
         conversation_id=uuid4(),
-        checkpoint_message_id=uuid4(),
-        newly_covered_sources=(),
-        predecessor_id=uuid4(),
+        checkpoint_message_id=checkpoint_id,
+        predecessor_id=predecessor_id,
     )
 
-    assert provenance.newly_covered_sources == ()
+    assert provenance.predecessor_id == predecessor_id
+    assert provenance.checkpoint_message_id == checkpoint_id
+    assert not hasattr(provenance, "newly_covered_sources")
+
+
+@pytest.mark.parametrize(
+    ("outcome", "attempt_count"),
+    [
+        (MemoryExtractionOutcome.SUCCEEDED, 1),
+        (MemoryExtractionOutcome.SUCCEEDED, 3),
+        (MemoryExtractionOutcome.EXHAUSTED, 3),
+    ],
+)
+def test_extraction_receipt_accepts_terminal_bounded_outcomes(
+    outcome: MemoryExtractionOutcome, attempt_count: int
+) -> None:
+    """Receipts represent only bounded succeeded or exhausted processing.
+
+    Args:
+        outcome:
+            Terminal processing outcome.
+        attempt_count:
+            Number of complete processing attempts consumed.
+    """
+
+    receipt = MemoryExtractionReceipt(uuid4(), outcome, attempt_count, NOW)
+
+    assert receipt.outcome is outcome
+    assert receipt.attempt_count == attempt_count
+
+
+@pytest.mark.parametrize(
+    ("outcome", "attempt_count"),
+    [
+        (MemoryExtractionOutcome.SUCCEEDED, 0),
+        (MemoryExtractionOutcome.SUCCEEDED, 4),
+        (MemoryExtractionOutcome.EXHAUSTED, 2),
+    ],
+)
+def test_extraction_receipt_rejects_invalid_attempt_counts(
+    outcome: MemoryExtractionOutcome, attempt_count: int
+) -> None:
+    """Receipts enforce the three-attempt processing bound.
+
+    Args:
+        outcome:
+            Terminal processing outcome.
+        attempt_count:
+            Invalid processing count.
+    """
+
+    with pytest.raises(ValueError, match="attempt"):
+        MemoryExtractionReceipt(uuid4(), outcome, attempt_count, NOW)
 
 
 def test_memory_candidate_requires_normalized_subject_and_content() -> None:

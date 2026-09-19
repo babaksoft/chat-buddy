@@ -10,7 +10,7 @@ from chat_buddy.chat.domain.memory import (
     ChatMemory,
     MemoryCandidate,
     MemoryDeletionResult,
-    MemoryExtractionResult,
+    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
 )
@@ -199,6 +199,42 @@ class ConversationRepository(Protocol):
 
         Returns:
             The matching message, or ``None`` when it does not exist.
+        """
+
+        ...
+
+    def get_unmatched_user_message(self, conversation_id: UUID) -> MessageRecord | None:
+        """Return the singular unanswered final user message, when present.
+
+        Args:
+            conversation_id:
+                Conversation whose linear tail should be inspected.
+
+        Returns:
+            Unmatched final user message, or ``None`` for a closed turn.
+        """
+
+        ...
+
+    def edit_unmatched_user_message(
+        self, conversation_id: UUID, content: str
+    ) -> MessageRecord:
+        """Edit the unmatched tail while no generation attempt is open.
+
+        Args:
+            conversation_id:
+                Conversation containing the editable tail.
+            content:
+                Replacement user content.
+
+        Returns:
+            Updated unmatched user message.
+
+        Raises:
+            LookupError:
+                If the conversation has no unmatched user-message tail.
+            InvalidGenerationAttemptTransitionError:
+                If an attempt is currently open.
         """
 
         ...
@@ -416,17 +452,37 @@ class ConversationRepository(Protocol):
 
         ...
 
-    def get_unresolved_generation_attempts(
+    def get_open_generation_attempt(
         self, conversation_id: UUID
-    ) -> list[GenerationAttemptRecord]:
-        """Retrieve pending and streaming attempts for a conversation.
+    ) -> GenerationAttemptRecord | None:
+        """Return the singular pending or streaming attempt, when present.
 
         Args:
             conversation_id:
                 Identifier of the conversation to inspect.
 
         Returns:
-            Unresolved attempts ordered from oldest to newest.
+            Open attempt, or ``None`` when no invocation is active.
+
+        Raises:
+            RuntimeError:
+                If provisional persistence contains multiple open attempts.
+        """
+
+        ...
+
+    def get_latest_retryable_generation_attempt(
+        self, conversation_id: UUID
+    ) -> GenerationAttemptRecord | None:
+        """Return the latest retry target for the unmatched tail, when present.
+
+        Args:
+            conversation_id:
+                Conversation whose linear tail should be inspected.
+
+        Returns:
+            Latest failed or interrupted attempt for the unmatched final user
+            message, or ``None`` when the tail is closed or an attempt is open.
         """
 
         ...
@@ -647,17 +703,20 @@ class ChatMemoryRepository(Protocol):
         self,
         turn: CompletedTurn,
         candidates: tuple[MemoryCandidate, ...],
-    ) -> MemoryExtractionResult:
-        """Atomically apply candidates once for a completed attempt.
+        receipt: MemoryExtractionReceipt,
+    ) -> MemoryExtractionReceipt:
+        """Atomically apply candidates and store one terminal receipt.
 
         Args:
             turn:
                 Exact completed turn and its source provenance.
             candidates:
                 Normalized candidates produced from the turn.
+            receipt:
+                Terminal processing receipt for the completed attempt.
 
         Returns:
-            Idempotent processing result and resulting current memories.
+            Persisted terminal receipt.
 
         Raises:
             ValueError:
@@ -666,15 +725,17 @@ class ChatMemoryRepository(Protocol):
 
         ...
 
-    def was_extraction_processed(self, generation_attempt_id: UUID) -> bool:
-        """Return whether an attempt has a successful processing record.
+    def get_extraction_receipt(
+        self, generation_attempt_id: UUID
+    ) -> MemoryExtractionReceipt | None:
+        """Return an attempt's terminal extraction receipt, when present.
 
         Args:
             generation_attempt_id:
                 Completed generation-attempt identifier.
 
         Returns:
-            Whether extraction already completed, including with no candidates.
+            Succeeded or exhausted receipt, or ``None`` when unprocessed.
         """
 
         ...

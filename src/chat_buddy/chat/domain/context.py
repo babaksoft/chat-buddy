@@ -4,7 +4,11 @@ from typing import Protocol
 from uuid import UUID
 
 from chat_buddy.chat.domain.chat import ChatMessage, ChatRole
-from chat_buddy.chat.domain.memory import ChatMemory, MemoryCandidate, MemoryLifecycle
+from chat_buddy.chat.domain.memory import (
+    ChatMemory,
+    MemoryExtractionReceipt,
+    MemoryLifecycle,
+)
 from chat_buddy.chat.domain.providers import GenerationConfiguration, ModelDescriptor
 from chat_buddy.chat.domain.summary import ConversationSummary, SummaryLifecycle
 
@@ -206,15 +210,15 @@ class RollingSummarizer(Protocol):
 class CompletedTurnMemoryExtraction(Protocol):
     """Process one exact completed turn independently of response generation."""
 
-    def extract(self, turn: CompletedTurn) -> tuple[MemoryCandidate, ...]:
-        """Extract and persist normalized candidates for a completed turn.
+    def process(self, turn: CompletedTurn) -> MemoryExtractionReceipt:
+        """Process one turn to a durable terminal receipt.
 
         Args:
             turn:
                 Exact completed turn and source provenance to process.
 
         Returns:
-            Normalized candidates produced for the completed attempt.
+            Succeeded or exhausted bounded-processing receipt.
         """
 
         ...

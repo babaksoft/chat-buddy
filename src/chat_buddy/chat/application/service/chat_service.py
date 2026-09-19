@@ -171,35 +171,35 @@ class ChatService:
                 Identifier of the resumed conversation.
         """
 
-        for attempt in self._conversation_service.get_unresolved_generation_attempts(
+        attempt = self._conversation_service.get_open_generation_attempt(
             conversation_id
-        ):
-            if attempt.id in self._active_attempt_ids:
-                continue
+        )
+        if attempt is None or attempt.id in self._active_attempt_ids:
+            return
 
-            reconciled_at = max(
-                timestamp
-                for timestamp in (
-                    datetime.now(UTC),
-                    attempt.created_at,
-                    attempt.started_at,
-                )
-                if timestamp is not None
+        reconciled_at = max(
+            timestamp
+            for timestamp in (
+                datetime.now(UTC),
+                attempt.created_at,
+                attempt.started_at,
             )
-            if attempt.status is GenerationAttemptStatus.PENDING:
-                self._conversation_service.begin_generation_attempt(
-                    attempt.id,
-                    at=reconciled_at,
-                )
-            self._conversation_service.interrupt_generation_attempt(
+            if timestamp is not None
+        )
+        if attempt.status is GenerationAttemptStatus.PENDING:
+            self._conversation_service.begin_generation_attempt(
                 attempt.id,
                 at=reconciled_at,
-                partial_content=attempt.partial_content,
             )
-            logger.info(
-                "Reconciled stale generation attempt %s as interrupted.",
-                attempt.id,
-            )
+        self._conversation_service.interrupt_generation_attempt(
+            attempt.id,
+            at=reconciled_at,
+            partial_content=attempt.partial_content,
+        )
+        logger.info(
+            "Reconciled stale generation attempt %s as interrupted.",
+            attempt.id,
+        )
 
     def get_generation_selection(
         self, conversation_id: UUID | None
@@ -306,35 +306,21 @@ class ChatService:
     def get_recoverable_generation_attempts(
         self, conversation_id: UUID
     ) -> tuple[GenerationAttemptRecord, ...]:
-        """Return latest incomplete attempts that have no successful retry.
+        """Return the conversation's singular actionable retry target.
 
         Args:
             conversation_id:
                 Identifier of the resumed conversation.
 
         Returns:
-            Latest failed or interrupted attempt for each unresolved user message.
+            Zero or one failed or interrupted attempt for the unmatched tail.
         """
 
         self.reconcile_generation_attempts(conversation_id)
-        attempts = self._conversation_service.get_generation_attempts(conversation_id)
-        completed_sources = {
-            attempt.source_user_message_id
-            for attempt in attempts
-            if attempt.status is GenerationAttemptStatus.COMPLETED
-        }
-        recoverable_by_source: dict[UUID, GenerationAttemptRecord] = {}
-        for attempt in attempts:
-            if (
-                attempt.source_user_message_id not in completed_sources
-                and attempt.status
-                in {
-                    GenerationAttemptStatus.FAILED,
-                    GenerationAttemptStatus.INTERRUPTED,
-                }
-            ):
-                recoverable_by_source[attempt.source_user_message_id] = attempt
-        return tuple(recoverable_by_source.values())
+        attempt = self._conversation_service.get_latest_retryable_generation_attempt(
+            conversation_id
+        )
+        return (attempt,) if attempt is not None else ()
 
     def _stream_generation(
         self, generation: _PreparedGeneration
@@ -526,7 +512,7 @@ class ChatService:
 
         Raises:
             LookupError:
-                If the attempt, conversation, or source message does not exist.
+                If the attempt or conversation does not exist.
             InvalidGenerationAttemptTransitionError:
                 If the attempt is not failed or interrupted.
         """
@@ -542,18 +528,20 @@ class ChatService:
                 "Only a failed or interrupted attempt can be retried."
             )
         self.reconcile_generation_attempts(source.conversation_id)
+        latest_retryable = (
+            self._conversation_service.get_latest_retryable_generation_attempt(
+                source.conversation_id
+            )
+        )
+        if latest_retryable is None or latest_retryable.id != source.id:
+            raise InvalidGenerationAttemptTransitionError(
+                "Only the latest attempt for the unmatched tail can be retried."
+            )
         conversation = self._conversation_service.get_conversation(
             source.conversation_id
         )
         if conversation is None:
             raise LookupError(f"Conversation {source.conversation_id} does not exist.")
-        source_message = self._conversation_service.get_message(
-            source.source_user_message_id
-        )
-        if source_message is None:
-            raise LookupError(
-                f"Source message {source.source_user_message_id} does not exist."
-            )
         model, configuration, gateway = self._resolve_generation_defaults(
             conversation, require_streaming=require_streaming
         )
@@ -566,7 +554,7 @@ class ChatService:
         return self._build_prepared_generation(
             conversation_id=conversation.id,
             conversation_title=conversation.title,
-            user_message=source_message.content,
+            user_message=retry.submitted_user_content,
             attempt=retry,
             model=model,
             configuration=configuration,

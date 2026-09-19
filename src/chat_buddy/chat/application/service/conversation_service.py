@@ -380,20 +380,69 @@ class ConversationService:
 
         return self._repository.get_generation_attempt(attempt_id)
 
-    def get_unresolved_generation_attempts(
+    def get_open_generation_attempt(
         self, conversation_id: UUID
-    ) -> list[GenerationAttemptRecord]:
-        """Retrieve pending and streaming attempts for a conversation.
+    ) -> GenerationAttemptRecord | None:
+        """Return the singular pending or streaming attempt, when present.
 
         Args:
             conversation_id:
                 Identifier of the conversation to inspect.
 
         Returns:
-            Unresolved attempts ordered from oldest to newest.
+            Open attempt, or ``None`` when the conversation has none.
         """
 
-        return self._repository.get_unresolved_generation_attempts(conversation_id)
+        return self._repository.get_open_generation_attempt(conversation_id)
+
+    def get_latest_retryable_generation_attempt(
+        self, conversation_id: UUID
+    ) -> GenerationAttemptRecord | None:
+        """Return the singular latest retry target, when present.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Latest retryable tail attempt, or ``None`` when none is actionable.
+        """
+
+        return self._repository.get_latest_retryable_generation_attempt(conversation_id)
+
+    def get_unmatched_user_message(self, conversation_id: UUID) -> ChatMessage | None:
+        """Return the conversation's unmatched final user message, when present.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation to inspect.
+
+        Returns:
+            Unmatched user message, or ``None`` for a closed turn.
+        """
+
+        message = self._repository.get_unmatched_user_message(conversation_id)
+        if message is None:
+            return None
+        return ChatMessage(role=message.role, content=message.content)
+
+    def edit_unmatched_user_message(
+        self, conversation_id: UUID, content: str
+    ) -> ChatMessage:
+        """Edit the unmatched tail while no generation attempt is open.
+
+        Args:
+            conversation_id:
+                Identifier of the conversation containing the tail.
+            content:
+                Replacement user content.
+
+        Returns:
+            Updated user message.
+        """
+
+        message = self._repository.edit_unmatched_user_message(conversation_id, content)
+        return ChatMessage(role=message.role, content=message.content)
 
     def get_generation_attempts(
         self, conversation_id: UUID

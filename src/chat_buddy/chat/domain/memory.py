@@ -64,28 +64,43 @@ class MemoryDeletionResult(str, Enum):
     NOT_FOUND = "not_found"
 
 
+class MemoryExtractionOutcome(str, Enum):
+    """Terminal outcome of bounded completed-turn memory processing."""
+
+    SUCCEEDED = "succeeded"
+    EXHAUSTED = "exhausted"
+
+
 @dataclass(slots=True, frozen=True)
-class MemoryExtractionResult:
-    """Atomic result of processing one completed generation attempt."""
+class MemoryExtractionReceipt:
+    """Minimal terminal receipt for one completed attempt's processing."""
 
     generation_attempt_id: UUID
-    processed: bool
-    current_memories: tuple[ChatMemory, ...] = ()
+    outcome: MemoryExtractionOutcome
+    attempt_count: int
+    completed_at: datetime
 
     def __post_init__(self) -> None:
-        """Validate extraction result identity and uniqueness.
+        """Validate terminal processing identity, bound, and completion time.
 
         Raises:
             ValueError:
-                If the attempt identifier is nil or results are duplicated.
+                If the receipt is malformed or violates the retry bound.
         """
 
         if self.generation_attempt_id.int == 0:
             raise ValueError("Extraction attempt identifier must not be nil.")
 
-        revision_ids = [memory.revision_id for memory in self.current_memories]
-        if len(set(revision_ids)) != len(revision_ids):
-            raise ValueError("Extraction results must contain unique revisions.")
+        if not 1 <= self.attempt_count <= 3:
+            raise ValueError("Extraction attempt count must be between one and three.")
+        if (
+            self.outcome is MemoryExtractionOutcome.EXHAUSTED
+            and self.attempt_count != 3
+        ):
+            raise ValueError("Exhausted extraction must record three attempts.")
+
+        if self.completed_at.tzinfo is None:
+            raise ValueError("Extraction completion time must be timezone-aware.")
 
 
 @dataclass(slots=True, frozen=True)
@@ -193,16 +208,17 @@ class ChatMemory:
 
         if self.id.int == 0 or self.revision_id.int == 0:
             raise ValueError("Memory identifiers must not be nil UUIDs.")
+
         if self.subject != normalize_memory_subject(self.subject):
             raise ValueError("Memory subject must be normalized.")
-
         if self.content != normalize_memory_text(self.content):
             raise ValueError("Memory content must be normalized.")
+
         if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
             raise ValueError("Memory timestamps must be timezone-aware.")
-
         if self.updated_at < self.created_at:
             raise ValueError("Memory cannot be updated before it is created.")
+
         if (
             self.origin.kind is MemoryOriginKind.USER_CORRECTION
             and self.origin.superseded_revision_id == self.revision_id
