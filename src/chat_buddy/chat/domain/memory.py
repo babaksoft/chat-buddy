@@ -72,7 +72,7 @@ class MemoryExtractionOutcome(str, Enum):
 
 
 @dataclass(slots=True, frozen=True)
-class MemoryExtractionReceipt:
+class ExtractionReceiptRecord:
     """Minimal terminal receipt for one completed attempt's processing."""
 
     generation_attempt_id: UUID
@@ -186,7 +186,7 @@ class MemoryOrigin:
 
 
 @dataclass(slots=True, frozen=True)
-class ChatMemory:
+class MemoryRecord:
     """Immutable snapshot of one revision in a logical Chat memory lineage."""
 
     id: UUID
@@ -225,7 +225,7 @@ class ChatMemory:
         ):
             raise ValueError("A correction cannot supersede itself.")
 
-    def transition(self, lifecycle: MemoryLifecycle, *, at: datetime) -> ChatMemory:
+    def transition(self, lifecycle: MemoryLifecycle, *, at: datetime) -> MemoryRecord:
         """Apply a legal persisted lifecycle transition.
 
         Args:

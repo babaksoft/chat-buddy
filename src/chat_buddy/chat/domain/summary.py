@@ -36,7 +36,7 @@ class SummaryProvenance:
 
 
 @dataclass(slots=True, frozen=True)
-class ConversationSummary:
+class SummaryRecord:
     """Immutable conversation-owned rolling-summary version."""
 
     id: UUID
@@ -91,7 +91,7 @@ class ConversationSummary:
 
         return self.provenance.checkpoint_message_id
 
-    def supersede(self) -> ConversationSummary:
+    def supersede(self) -> SummaryRecord:
         """Return this active summary in its terminal persisted state.
 
         Returns:

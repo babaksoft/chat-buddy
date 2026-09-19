@@ -7,19 +7,19 @@ from chat_buddy.chat.domain.chat import ChatRole
 from chat_buddy.chat.domain.context import CompletedTurn
 from chat_buddy.chat.domain.generation_attempt import GenerationAttemptRecord
 from chat_buddy.chat.domain.memory import (
-    ChatMemory,
+    ExtractionReceiptRecord,
     MemoryCandidate,
     MemoryDeletionResult,
-    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
+    MemoryRecord,
 )
 from chat_buddy.chat.domain.providers import (
     GenerationConfiguration,
     ModelId,
     ProviderId,
 )
-from chat_buddy.chat.domain.summary import ConversationSummary
+from chat_buddy.chat.domain.summary import SummaryRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -506,7 +506,7 @@ class ConversationRepository(Protocol):
 class SummaryRepository(Protocol):
     """Persistence contract for conversation-owned summary versions."""
 
-    def get_active_summary(self, conversation_id: UUID) -> ConversationSummary | None:
+    def get_active_summary(self, conversation_id: UUID) -> SummaryRecord | None:
         """Return the active summary for a conversation, when present.
 
         Args:
@@ -519,7 +519,7 @@ class SummaryRepository(Protocol):
 
         ...
 
-    def get_summary(self, summary_id: UUID) -> ConversationSummary | None:
+    def get_summary(self, summary_id: UUID) -> SummaryRecord | None:
         """Return one summary version by stable identifier.
 
         Args:
@@ -534,10 +534,10 @@ class SummaryRepository(Protocol):
 
     def replace_active_summary(
         self,
-        summary: ConversationSummary,
+        summary: SummaryRecord,
         *,
         expected_active_id: UUID | None,
-    ) -> ConversationSummary:
+    ) -> SummaryRecord:
         """Atomically activate a version and supersede its predecessor.
 
         Args:
@@ -578,7 +578,7 @@ class SummaryRepository(Protocol):
 class ChatMemoryRepository(Protocol):
     """Persistence contract for provenance-aware logical Chat memories."""
 
-    def get_memory(self, memory_id: UUID) -> ChatMemory | None:
+    def get_memory(self, memory_id: UUID) -> MemoryRecord | None:
         """Return the current revision of one logical memory.
 
         Args:
@@ -591,7 +591,7 @@ class ChatMemoryRepository(Protocol):
 
         ...
 
-    def get_revision(self, revision_id: UUID) -> ChatMemory | None:
+    def get_revision(self, revision_id: UUID) -> MemoryRecord | None:
         """Return a specific memory revision including its provenance.
 
         Args:
@@ -606,7 +606,7 @@ class ChatMemoryRepository(Protocol):
 
     def list_memories(
         self, lifecycles: frozenset[MemoryLifecycle] | None = None
-    ) -> tuple[ChatMemory, ...]:
+    ) -> tuple[MemoryRecord, ...]:
         """Return current memories, optionally filtered by lifecycle.
 
         Args:
@@ -619,7 +619,7 @@ class ChatMemoryRepository(Protocol):
 
         ...
 
-    def list_eligible_memories(self) -> tuple[ChatMemory, ...]:
+    def list_eligible_memories(self) -> tuple[MemoryRecord, ...]:
         """Return active current revisions in deterministic context order.
 
         Returns:
@@ -628,7 +628,7 @@ class ChatMemoryRepository(Protocol):
 
         ...
 
-    def find_current_by_subject(self, subject: str) -> ChatMemory | None:
+    def find_current_by_subject(self, subject: str) -> MemoryRecord | None:
         """Return the current logical memory with a normalized subject.
 
         Args:
@@ -643,10 +643,10 @@ class ChatMemoryRepository(Protocol):
 
     def replace_memory(
         self,
-        replacement: ChatMemory,
+        replacement: MemoryRecord,
         *,
         expected_revision_id: UUID,
-    ) -> ChatMemory:
+    ) -> MemoryRecord:
         """Atomically add a replacement and supersede the expected revision.
 
         Args:
@@ -674,7 +674,7 @@ class ChatMemoryRepository(Protocol):
         expected_revision_id: UUID,
         target: MemoryLifecycle,
         at: datetime,
-    ) -> ChatMemory:
+    ) -> MemoryRecord:
         """Atomically apply a legal lifecycle transition to a current revision.
 
         Args:
@@ -703,8 +703,8 @@ class ChatMemoryRepository(Protocol):
         self,
         turn: CompletedTurn,
         candidates: tuple[MemoryCandidate, ...],
-        receipt: MemoryExtractionReceipt,
-    ) -> MemoryExtractionReceipt:
+        receipt: ExtractionReceiptRecord,
+    ) -> ExtractionReceiptRecord:
         """Atomically apply candidates and store one terminal receipt.
 
         Args:
@@ -727,7 +727,7 @@ class ChatMemoryRepository(Protocol):
 
     def get_extraction_receipt(
         self, generation_attempt_id: UUID
-    ) -> MemoryExtractionReceipt | None:
+    ) -> ExtractionReceiptRecord | None:
         """Return an attempt's terminal extraction receipt, when present.
 
         Args:

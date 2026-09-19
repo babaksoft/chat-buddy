@@ -415,9 +415,8 @@ def test_open_attempt_query_returns_one_scalar_and_excludes_terminal_attempts(
         error_code="provider_error",
         at=failed.created_at,
     )
-    pending = repository.start_generation_attempt(
-        conversation.id,
-        "Pending",
+    pending = repository.retry_generation_attempt(
+        failed.id,
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),

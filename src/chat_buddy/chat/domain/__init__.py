@@ -35,14 +35,14 @@ from chat_buddy.chat.domain.generation_attempt import (
 )
 from chat_buddy.chat.domain.llm_gateway import LLMGateway
 from chat_buddy.chat.domain.memory import (
-    ChatMemory,
+    ExtractionReceiptRecord,
     MemoryCandidate,
     MemoryDeletionResult,
     MemoryExtractionOutcome,
-    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
     MemoryOriginKind,
+    MemoryRecord,
     normalize_memory_subject,
     normalize_memory_text,
 )
@@ -64,14 +64,13 @@ from chat_buddy.chat.domain.repositories import (
 )
 from chat_buddy.chat.domain.summarizer import Summarizer
 from chat_buddy.chat.domain.summary import (
-    ConversationSummary,
     SummaryLifecycle,
     SummaryProvenance,
+    SummaryRecord,
 )
 from chat_buddy.chat.domain.tokenizer import TokenCounter, TokenUsage
 
 __all__ = [
-    "ChatMemory",
     "ChatMemoryRepository",
     "ChatMessage",
     "ChatRole",
@@ -85,8 +84,8 @@ __all__ = [
     "ContextWindowExceededError",
     "ConversationRecord",
     "ConversationRepository",
-    "ConversationSummary",
     "ExtractedMemory",
+    "ExtractionReceiptRecord",
     "GenerationAttemptRecord",
     "GenerationAttemptStatus",
     "GenerationConfiguration",
@@ -98,11 +97,11 @@ __all__ = [
     "MemoryCandidateExtractor",
     "MemoryDeletionResult",
     "MemoryExtractionOutcome",
-    "MemoryExtractionReceipt",
     "MemoryExtractor",
     "MemoryLifecycle",
     "MemoryOrigin",
     "MemoryOriginKind",
+    "MemoryRecord",
     "MessageRecord",
     "ModelDescriptor",
     "ModelId",
@@ -118,6 +117,7 @@ __all__ = [
     "SummaryGenerator",
     "SummaryLifecycle",
     "SummaryProvenance",
+    "SummaryRecord",
     "SummaryRepository",
     "TitleGenerator",
     "TokenCounter",

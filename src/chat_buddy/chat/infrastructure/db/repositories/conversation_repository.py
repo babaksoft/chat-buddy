@@ -399,6 +399,10 @@ class ConversationRepository:
 
         if self._session.get(Conversation, conversation_id) is None:
             raise LookupError(f"Conversation {conversation_id} does not exist.")
+        if self.get_unmatched_user_message(conversation_id) is not None:
+            raise InvalidGenerationAttemptTransitionError(
+                "Cannot start a new turn until the unmatched tail completes."
+            )
 
         created_at = datetime.now(UTC)
         message_id = uuid4()
@@ -423,7 +427,9 @@ class ConversationRepository:
         attempt_model = self._from_generation_attempt(attempt)
 
         try:
-            self._session.add_all((message, attempt_model))
+            self._session.add(message)
+            self._session.flush()
+            self._session.add(attempt_model)
             self._session.commit()
             return attempt
 
@@ -602,10 +608,10 @@ class ConversationRepository:
             content=assistant_content,
             created_at=at,
         )
-        self._apply_attempt(model, updated)
-
         try:
             self._session.add(message)
+            self._session.flush()
+            self._apply_attempt(model, updated)
             self._session.commit()
             return updated
 
@@ -1022,6 +1028,7 @@ class ConversationRepository:
             id=attempt.id,
             conversation_id=attempt.conversation_id,
             source_user_message_id=attempt.source_user_message_id,
+            submitted_user_content=attempt.submitted_user_content,
             provider_id=str(attempt.provider_id),
             model_id=str(attempt.model_id),
             effective_configuration=ConversationRepository._configuration_to_dict(
@@ -1064,7 +1071,7 @@ class ConversationRepository:
             id=model.id,
             conversation_id=model.conversation_id,
             source_user_message_id=model.source_user_message_id,
-            submitted_user_content=model.source_user_message.content,
+            submitted_user_content=model.submitted_user_content,
             provider_id=ProviderId(model.provider_id),
             model_id=ModelId(model.model_id),
             effective_configuration=ConversationRepository._configuration_from_dict(

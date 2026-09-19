@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.chat.domain import ChatRole
@@ -20,6 +20,13 @@ class Message(ChatBase):
     """Represents a persisted message within conversation history."""
 
     __tablename__ = "messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "conversation_id",
+            name="uq_message_id_conversation",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,

@@ -183,7 +183,7 @@ Acceptance:
 
 ### Slice 3 — Persist linear retries, summaries, and memory lifecycle
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add immutable submitted-user-content snapshots to generation attempts and a
   partial unique constraint allowing at most one pending or streaming attempt per

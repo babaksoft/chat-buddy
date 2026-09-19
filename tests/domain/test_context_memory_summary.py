@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 import pytest
 
 from chat_buddy.chat.domain import (
-    ChatMemory,
     ChatMessage,
     ChatRole,
     CompletedTurn,
@@ -13,17 +12,18 @@ from chat_buddy.chat.domain import (
     ContextBudgeter,
     ContextEligibility,
     ContextInputs,
-    ConversationSummary,
+    ExtractionReceiptRecord,
     GenerationConfiguration,
     MemoryCandidate,
     MemoryExtractionOutcome,
-    MemoryExtractionReceipt,
     MemoryLifecycle,
     MemoryOrigin,
     MemoryOriginKind,
+    MemoryRecord,
     ModelDescriptor,
     SummaryLifecycle,
     SummaryProvenance,
+    SummaryRecord,
 )
 
 NOW = datetime(2026, 9, 18, tzinfo=UTC)
@@ -94,7 +94,7 @@ def _extracted_origin() -> MemoryOrigin:
 
 def _memory(
     lifecycle: MemoryLifecycle = MemoryLifecycle.ACTIVE,
-) -> ChatMemory:
+) -> MemoryRecord:
     """Create a valid memory revision for tests.
 
     Args:
@@ -105,7 +105,7 @@ def _memory(
         Valid memory revision.
     """
 
-    return ChatMemory(
+    return MemoryRecord(
         id=uuid4(),
         revision_id=uuid4(),
         subject="favorite language",
@@ -143,7 +143,7 @@ def _summary(
     conversation_id: UUID,
     lifecycle: SummaryLifecycle = SummaryLifecycle.ACTIVE,
     predecessor_id: UUID | None = None,
-) -> ConversationSummary:
+) -> SummaryRecord:
     """Create a valid summary version for tests.
 
     Args:
@@ -159,7 +159,7 @@ def _summary(
     """
 
     summary_id = uuid4()
-    return ConversationSummary(
+    return SummaryRecord(
         id=summary_id,
         conversation_id=conversation_id,
         content="Earlier conversation",
@@ -220,7 +220,7 @@ def test_summary_rejects_invalid_values(
     values.update(changes)
 
     with pytest.raises(ValueError, match=message):
-        ConversationSummary(**values)  # type: ignore[arg-type]
+        SummaryRecord(**values)  # type: ignore[arg-type]
 
 
 def test_summary_provenance_rejects_cross_conversation_ownership() -> None:
@@ -232,7 +232,7 @@ def test_summary_provenance_rejects_cross_conversation_ownership() -> None:
         checkpoint_message_id=uuid4(),
     )
     with pytest.raises(ValueError, match="another conversation"):
-        ConversationSummary(
+        SummaryRecord(
             id=uuid4(),
             conversation_id=uuid4(),
             content="Summary",
@@ -280,7 +280,7 @@ def test_extraction_receipt_accepts_terminal_bounded_outcomes(
             Number of complete processing attempts consumed.
     """
 
-    receipt = MemoryExtractionReceipt(uuid4(), outcome, attempt_count, NOW)
+    receipt = ExtractionReceiptRecord(uuid4(), outcome, attempt_count, NOW)
 
     assert receipt.outcome is outcome
     assert receipt.attempt_count == attempt_count
@@ -307,7 +307,7 @@ def test_extraction_receipt_rejects_invalid_attempt_counts(
     """
 
     with pytest.raises(ValueError, match="attempt"):
-        MemoryExtractionReceipt(uuid4(), outcome, attempt_count, NOW)
+        ExtractionReceiptRecord(uuid4(), outcome, attempt_count, NOW)
 
 
 def test_memory_candidate_requires_normalized_subject_and_content() -> None:
@@ -432,7 +432,7 @@ def test_memory_rejects_invalid_values_and_transition_time() -> None:
         "updated_at": NOW,
     }
     with pytest.raises(ValueError, match="subject"):
-        ChatMemory(**values)  # type: ignore[arg-type]
+        MemoryRecord(**values)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="last update"):
         _memory().transition(
             MemoryLifecycle.EXCLUDED,

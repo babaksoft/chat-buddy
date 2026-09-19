@@ -1,9 +1,9 @@
 # Remaining tasks in current stage
 
-Stage 3 is in progress. Slices 1–2 are complete; Slices 3–11 remain Planned in
+Stage 3 is in progress. Slices 1–3 are complete; Slices 4–11 remain Planned in
 `work/ongoing/PLAN.md`.
 
-Next: Slice 3 — Persist linear retries, summaries, and memory lifecycle.
+Next: Slice 4 — Extract memory with bounded completed-turn processing.
 
 ## Focused refactoring backlog
 

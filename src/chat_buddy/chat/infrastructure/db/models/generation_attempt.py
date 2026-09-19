@@ -4,9 +4,21 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+)
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import (
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.chat.domain import GenerationAttemptStatus
@@ -14,7 +26,6 @@ from chat_buddy.chat.infrastructure.db.base import CHAT_SCHEMA, ChatBase
 
 if TYPE_CHECKING:
     from chat_buddy.chat.infrastructure.db.models.conversation import Conversation
-    from chat_buddy.chat.infrastructure.db.models.message import Message
 
 
 class GenerationAttempt(ChatBase):
@@ -22,6 +33,36 @@ class GenerationAttempt(ChatBase):
 
     __tablename__ = "generation_attempts"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_user_message_id", "conversation_id"],
+            [f"{CHAT_SCHEMA}.messages.id", f"{CHAT_SCHEMA}.messages.conversation_id"],
+            name="fk_generation_attempt_source_conversation",
+        ),
+        ForeignKeyConstraint(
+            ["assistant_message_id", "conversation_id"],
+            [f"{CHAT_SCHEMA}.messages.id", f"{CHAT_SCHEMA}.messages.conversation_id"],
+            name="fk_generation_attempt_assistant_conversation",
+        ),
+        UniqueConstraint(
+            "id",
+            "status",
+            name="uq_generation_attempt_id_status",
+        ),
+        UniqueConstraint(
+            "id",
+            "conversation_id",
+            "source_user_message_id",
+            "assistant_message_id",
+            "status",
+            name="uq_generation_attempt_memory_source",
+        ),
+        Index(
+            "uq_generation_attempt_open_conversation",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'streaming')"),
+            sqlite_where=text("status IN ('pending', 'streaming')"),
+        ),
         CheckConstraint(
             "(status = 'pending' AND started_at IS NULL AND finished_at IS NULL) "
             "OR (status = 'streaming' AND started_at IS NOT NULL "
@@ -54,10 +95,14 @@ class GenerationAttempt(ChatBase):
         doc="Identifier of the conversation that owns the attempt.",
     )
     source_user_message_id: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{CHAT_SCHEMA}.messages.id"),
         nullable=False,
         index=True,
         doc="Identifier of the user message that prompted the attempt.",
+    )
+    submitted_user_content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        doc="Immutable user content submitted for this invocation.",
     )
     provider_id: Mapped[str] = mapped_column(
         String(255),
@@ -100,7 +145,6 @@ class GenerationAttempt(ChatBase):
         doc="Optional safe user-facing detail for a failed attempt.",
     )
     assistant_message_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey(f"{CHAT_SCHEMA}.messages.id"),
         nullable=True,
         unique=True,
         doc="Identifier of the assistant message produced on completion.",
@@ -125,12 +169,4 @@ class GenerationAttempt(ChatBase):
     conversation: Mapped[Conversation] = relationship(
         back_populates="attempts",
         doc="Conversation that owns the attempt.",
-    )
-    source_user_message: Mapped[Message] = relationship(
-        foreign_keys=[source_user_message_id],
-        doc="User message that prompted the attempt.",
-    )
-    assistant_message: Mapped[Message | None] = relationship(
-        foreign_keys=[assistant_message_id],
-        doc="Assistant message produced by a completed attempt.",
     )

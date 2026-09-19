@@ -49,7 +49,9 @@ def test_chat_metadata_uses_the_chat_schema() -> None:
         "chat.conversations",
         "chat.generation_attempts",
         "chat.memories",
+        "chat.memory_extraction_receipts",
         "chat.messages",
+        "chat.summaries",
     }
     assert all(
         table.schema == CHAT_SCHEMA for table in ChatBase.metadata.tables.values()
@@ -62,6 +64,7 @@ def test_chat_metadata_uses_the_chat_schema() -> None:
         key.target_fullname for key in GenerationAttempt.__table__.foreign_keys
     } == {
         "chat.conversations.id",
+        "chat.messages.conversation_id",
         "chat.messages.id",
     }
 
@@ -82,7 +85,7 @@ def test_chat_persistence_fields_have_descriptions() -> None:
 
 
 def test_chat_generation_migration_isolated_from_characters() -> None:
-    """Verify the Slice 4 migration owns only Chat schema objects."""
+    """Verify the Stage 2 generation migration owns only Chat objects."""
 
     migration = (
         Path(__file__).parents[2]
@@ -90,6 +93,21 @@ def test_chat_generation_migration_isolated_from_characters() -> None:
         / "chat"
         / "versions"
         / "82e6c4f63a91_add_generation_persistence.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'CHAT_SCHEMA = "chat"' in migration
+    assert "characters" not in migration.lower()
+
+
+def test_stage_three_persistence_migration_isolated_from_characters() -> None:
+    """Verify the Slice 3 migration owns only Chat schema objects."""
+
+    migration = (
+        Path(__file__).parents[2]
+        / "alembic"
+        / "chat"
+        / "versions"
+        / "d4a9f12c6b30_persist_summary_and_memory_lifecycle.py"
     ).read_text(encoding="utf-8")
 
     assert 'CHAT_SCHEMA = "chat"' in migration

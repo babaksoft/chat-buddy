@@ -5,12 +5,12 @@ from uuid import UUID
 
 from chat_buddy.chat.domain.chat import ChatMessage, ChatRole
 from chat_buddy.chat.domain.memory import (
-    ChatMemory,
-    MemoryExtractionReceipt,
+    ExtractionReceiptRecord,
     MemoryLifecycle,
+    MemoryRecord,
 )
 from chat_buddy.chat.domain.providers import GenerationConfiguration, ModelDescriptor
-from chat_buddy.chat.domain.summary import ConversationSummary, SummaryLifecycle
+from chat_buddy.chat.domain.summary import SummaryLifecycle, SummaryRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,8 +66,8 @@ class ContextInputs:
 
     conversation_id: UUID
     current_input: ChatMessage
-    memories: tuple[ChatMemory, ...] = ()
-    summary: ConversationSummary | None = None
+    memories: tuple[MemoryRecord, ...] = ()
+    summary: SummaryRecord | None = None
     uncovered_turns: tuple[CompletedTurn, ...] = ()
 
     def __post_init__(self) -> None:
@@ -191,7 +191,7 @@ class RollingSummarizer(Protocol):
 
     def update_summary(
         self, inputs: ContextInputs, model: ModelDescriptor
-    ) -> ConversationSummary | None:
+    ) -> SummaryRecord | None:
         """Return the active summary after any required rolling update.
 
         Args:
@@ -210,7 +210,7 @@ class RollingSummarizer(Protocol):
 class CompletedTurnMemoryExtraction(Protocol):
     """Process one exact completed turn independently of response generation."""
 
-    def process(self, turn: CompletedTurn) -> MemoryExtractionReceipt:
+    def process(self, turn: CompletedTurn) -> ExtractionReceiptRecord:
         """Process one turn to a durable terminal receipt.
 
         Args:

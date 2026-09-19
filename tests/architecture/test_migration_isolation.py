@@ -45,6 +45,8 @@ def test_chat_migrations_own_only_chat_schema_objects() -> None:
     assert 'create schema if not exists "chat"' in sql
     assert "create table chat.alembic_version" in sql
     assert "create table chat.generation_attempts" in sql
+    assert "create table chat.summaries" in sql
+    assert "create table chat.memory_extraction_receipts" in sql
     assert "characters" not in sql
 
 
