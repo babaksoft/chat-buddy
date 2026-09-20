@@ -766,12 +766,20 @@ class ChatMemoryRepository(Protocol):
 
         ...
 
-    def hard_delete(self, memory_id: UUID) -> MemoryDeletionResult:
+    def hard_delete(
+        self,
+        memory_id: UUID,
+        *,
+        expected_revision_id: UUID | None = None,
+    ) -> MemoryDeletionResult:
         """Purge a logical memory, revisions, observations, and provenance.
 
         Args:
             memory_id:
                 Stable logical-memory identifier to purge.
+            expected_revision_id:
+                Current revision expected before deletion. When omitted, delete
+                the current lineage without stale-write detection.
 
         Returns:
             Terminal deletion outcome without retaining a tombstone.

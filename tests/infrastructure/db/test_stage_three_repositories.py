@@ -446,10 +446,10 @@ def test_extraction_supersedes_only_current_automatic_memory(
     assert repository.find_current_by_subject("location") == excluded
 
 
-def test_memory_rejects_stale_transition_and_correction(
+def test_memory_rejects_stale_management_writes(
     session: Session,
 ) -> None:
-    """Verify stale revision identifiers cannot partially change memory.
+    """Verify stale revision identifiers cannot partially change or delete memory.
 
     Args:
         session:
@@ -495,7 +495,12 @@ def test_memory_rejects_stale_transition_and_correction(
             target=MemoryLifecycle.EXCLUDED,
             at=receipt.completed_at + timedelta(seconds=1),
         )
+    deletion = repository.hard_delete(
+        current.id,
+        expected_revision_id=uuid4(),
+    )
 
+    assert deletion is MemoryDeletionResult.STALE
     assert repository.get_memory(current.id) == current
 
 

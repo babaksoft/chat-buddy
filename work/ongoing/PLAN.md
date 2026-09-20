@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 ## Scope
 
@@ -263,7 +263,7 @@ Acceptance:
 
 ### Slice 5 — Add memory-management workflows
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add application schemas and a dedicated memory-management service for listing
   memories, inspecting provenance, correcting content, excluding and

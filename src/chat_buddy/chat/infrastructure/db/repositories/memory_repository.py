@@ -376,19 +376,35 @@ class MemoryRepository:
         model = self._session.get(Memory, revision_id)
         return self._origin(model) if model is not None else None
 
-    def hard_delete(self, memory_id: UUID) -> MemoryDeletionResult:
+    def hard_delete(
+        self,
+        memory_id: UUID,
+        *,
+        expected_revision_id: UUID | None = None,
+    ) -> MemoryDeletionResult:
         """Permanently delete a logical memory and its entire lineage.
 
         Args:
             memory_id:
                 Stable logical-memory identifier.
+            expected_revision_id:
+                Current revision expected before deletion. When omitted, delete
+                the current lineage without stale-write detection.
 
         Returns:
             Whether a logical memory was deleted.
         """
 
-        if self._current_by_memory_id(memory_id) is None:
+        current = self._lock_current(memory_id)
+        if current is None:
             return MemoryDeletionResult.NOT_FOUND
+
+        if (
+            expected_revision_id is not None
+            and current.revision_id != expected_revision_id
+        ):
+            return MemoryDeletionResult.STALE
+
         try:
             self._session.execute(delete(Memory).where(Memory.memory_id == memory_id))
             self._session.commit()

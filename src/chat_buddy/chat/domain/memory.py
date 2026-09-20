@@ -62,6 +62,7 @@ class MemoryDeletionResult(str, Enum):
 
     DELETED = "deleted"
     NOT_FOUND = "not_found"
+    STALE = "stale"
 
 
 class MemoryExtractionOutcome(str, Enum):
