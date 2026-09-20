@@ -289,7 +289,7 @@ Acceptance:
 
 ### Slice 6 — Add memory inspection and controls to the Chat UI
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add a Chat-owned memory-management view reachable without selecting a
   conversation.

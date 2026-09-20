@@ -1,5 +1,6 @@
 from collections.abc import Generator
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
@@ -10,10 +11,19 @@ from streamlit.util import calc_hash
 from chat_buddy.chat.application.schemas import (
     ChatRequest,
     GenerationSelection,
+    ManagedMemory,
+    MemoryManagementOutcome,
+    MemoryManagementResult,
+    MemoryProvenance,
+    MemorySource,
     ModelOption,
     ProviderOption,
 )
-from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.application.service import (
+    ChatService,
+    ConversationService,
+    MemoryManagementService,
+)
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
@@ -22,6 +32,8 @@ from chat_buddy.chat.domain import (
     GenerationAttemptStatus,
     GenerationConfiguration,
     GenerationParameter,
+    MemoryLifecycle,
+    MemoryOriginKind,
     ModelId,
     ProviderId,
 )
@@ -50,6 +62,7 @@ def conversation_id() -> UUID:
 def services(conversation_id: UUID) -> Generator[Mock, None, None]:
     chat = Mock(spec=ChatService)
     conversations = Mock(spec=ConversationService)
+    memories = Mock(spec=MemoryManagementService)
     provider_id = ProviderId("local")
     model_id = ModelId("main")
     chat.get_generation_selection.return_value = GenerationSelection(
@@ -74,8 +87,9 @@ def services(conversation_id: UUID) -> Generator[Mock, None, None]:
         ChatMessage(role=ChatRole.USER, content="Hello"),
         ChatMessage(role=ChatRole.ASSISTANT, content="Welcome back"),
     ]
+    memories.list_memories.return_value = ()
     with patch.object(
-        chat_page, "build_services", return_value=(chat, conversations)
+        chat_page, "build_services", return_value=(chat, conversations, memories)
     ) as factory:
         yield factory
 
@@ -157,7 +171,7 @@ def test_new_chat_clears_selection_and_editor(
 def test_chat_streams_and_selects_resulting_conversation(
     app: AppTest, services: Mock, conversation_id: UUID, resume: bool
 ) -> None:
-    chat, conversations = services.return_value
+    chat, conversations, _ = services.return_value
     if resume:
         app.button(key=f"chat_select_{conversation_id}").click().run()
     chunks: list[str] = []
@@ -189,7 +203,7 @@ def test_new_chat_model_switch_is_persisted_for_next_generation(
 ) -> None:
     """Verify a new-chat model selection is applied through ChatService."""
 
-    chat, _ = services.return_value
+    chat, _, _ = services.return_value
     initial = chat.get_generation_selection.return_value
     other_model = ModelOption(
         provider_id=initial.provider_id,
@@ -237,7 +251,7 @@ def test_resumed_conversation_restores_persisted_model(
 ) -> None:
     """Verify selecting a conversation restores its application-owned defaults."""
 
-    chat, _ = services.return_value
+    chat, _, _ = services.return_value
     initial = chat.get_generation_selection.return_value
     resumed_model = ModelOption(
         provider_id=initial.provider_id,
@@ -285,7 +299,7 @@ def test_incomplete_attempt_is_separate_from_history_and_can_be_retried(
 ) -> None:
     """Verify failure recovery does not turn partial output into history."""
 
-    chat, _ = services.return_value
+    chat, _, _ = services.return_value
     now = datetime.now(UTC)
     attempt = GenerationAttemptRecord(
         id=uuid4(),
@@ -332,7 +346,7 @@ def test_incomplete_attempt_is_separate_from_history_and_can_be_retried(
 def test_rename_controls(
     app: AppTest, services: Mock, conversation_id: UUID, action: str
 ) -> None:
-    _, conversations = services.return_value
+    _, conversations, _ = services.return_value
     app.button(key=f"chat_rename_{conversation_id}").click().run()
     app.text_input[0].set_value("   " if action == "blank" else " Updated title ")
     button = "cancel" if action == "cancel" else "save"
@@ -367,7 +381,7 @@ def test_rename_controls(
 def test_delete_requires_confirmation(
     app: AppTest, services: Mock, conversation_id: UUID, confirm: bool
 ) -> None:
-    _, conversations = services.return_value
+    _, conversations, _ = services.return_value
     app.button(key=f"chat_select_{conversation_id}").click().run()
     app.button(key=f"chat_delete_{conversation_id}").click().run()
     conversations.delete_conversation.assert_not_called()
@@ -395,3 +409,272 @@ def test_delete_requires_confirmation(
         conversations.delete_conversation.assert_not_called()
         assert app.session_state["chat_conversation_id"] == conversation_id
         assert len(app.chat_message) == 2
+
+
+def _managed_memory(
+    *,
+    lifecycle: MemoryLifecycle = MemoryLifecycle.ACTIVE,
+    origin: MemoryOriginKind = MemoryOriginKind.EXTRACTED,
+    source_available: bool = True,
+) -> ManagedMemory:
+    """Create a memory read model for Streamlit tests.
+
+    Args:
+        lifecycle:
+            Current memory state.
+        origin:
+            Provenance kind displayed by the view.
+        source_available:
+            Whether extracted source details remain available.
+
+    Returns:
+        Complete persistence-neutral memory read model.
+    """
+
+    now = datetime(2026, 9, 20, 8, 30, tzinfo=UTC)
+    source = (
+        MemorySource(
+            conversation_id=uuid4(),
+            conversation_title="Travel plans",
+            user_message_id=uuid4(),
+            user_message_content="I prefer train travel.",
+            assistant_message_id=uuid4(),
+            assistant_message_content="I will remember that.",
+            generation_attempt_id=uuid4(),
+        )
+        if origin is MemoryOriginKind.EXTRACTED and source_available
+        else None
+    )
+    return ManagedMemory(
+        id=uuid4(),
+        revision_id=uuid4(),
+        subject="travel preference",
+        content="The user prefers train travel.",
+        lifecycle=lifecycle,
+        provenance=MemoryProvenance(
+            kind=origin,
+            source_available=source_available,
+            source=source,
+            superseded_revision_id=(
+                uuid4() if origin is MemoryOriginKind.USER_CORRECTION else None
+            ),
+            corrected_at=(now if origin is MemoryOriginKind.USER_CORRECTION else None),
+        ),
+        created_at=now - timedelta(days=1),
+        updated_at=now,
+    )
+
+
+def _open_memory(app: AppTest) -> AppTest:
+    """Open the Chat-owned memory view.
+
+    Args:
+        app:
+            Running Streamlit test application.
+
+    Returns:
+        Rerun application displaying memory management.
+    """
+
+    return app.button(key="chat_memory").click().run()
+
+
+def test_memory_view_is_reachable_without_a_conversation_and_has_empty_state(
+    app: AppTest,
+    services: Mock,
+) -> None:
+    """Verify memory inspection is independent of conversation selection."""
+
+    _, _, memories = services.return_value
+
+    _open_memory(app)
+
+    assert not app.exception
+    assert app.session_state["chat_conversation_id"] is None
+    assert app.title[0].value == "🧠 Memory"
+    assert app.info[0].value == "No Chat memories have been saved yet."
+    assert not app.chat_input
+    memories.list_memories.assert_called_with()
+
+
+def test_selected_conversation_can_be_reopened_from_memory(
+    app: AppTest,
+    conversation_id: UUID,
+) -> None:
+    """Verify the selected conversation row exits the memory view."""
+
+    app.button(key=f"chat_select_{conversation_id}").click().run()
+    _open_memory(app)
+
+    app.button(key=f"chat_select_{conversation_id}").click().run()
+
+    assert not app.exception
+    assert app.title[0].value == "💬 Chat"
+    assert app.session_state["chat_conversation_id"] == conversation_id
+    assert len(app.chat_message) == 2
+
+
+@pytest.mark.parametrize(
+    ("origin", "source_available", "expected_copy"),
+    [
+        (
+            MemoryOriginKind.EXTRACTED,
+            True,
+            "Origin: extracted from a completed Chat turn",
+        ),
+        (MemoryOriginKind.USER_CORRECTION, True, "Origin: corrected by you"),
+        (
+            MemoryOriginKind.EXTRACTED,
+            False,
+            "The source conversation or turn is no longer available.",
+        ),
+    ],
+)
+def test_memory_view_shows_provenance(
+    app: AppTest,
+    services: Mock,
+    origin: MemoryOriginKind,
+    source_available: bool,
+    expected_copy: str,
+) -> None:
+    """Verify extracted, corrected, and unavailable origins are inspectable."""
+
+    _, _, memories = services.return_value
+    memory = _managed_memory(origin=origin, source_available=source_available)
+    memories.list_memories.return_value = (memory,)
+
+    _open_memory(app)
+
+    visible_copy = [element.value for element in (*app.caption, *app.info)]
+    assert expected_copy in visible_copy
+    assert memory.content in [element.value for element in app.markdown]
+    if origin is MemoryOriginKind.EXTRACTED and source_available:
+        assert app.expander[0].label == "Source turn"
+        assert "Conversation: Travel plans" in [item.value for item in app.caption]
+
+
+def test_memory_can_be_corrected(
+    app: AppTest,
+    services: Mock,
+) -> None:
+    """Verify correction inputs call only the application service and refresh."""
+
+    _, _, memories = services.return_value
+    memory = _managed_memory()
+    corrected = replace(
+        memory,
+        revision_id=uuid4(),
+        subject="preferred transport",
+        content="The user prefers sleeper trains.",
+        provenance=replace(
+            memory.provenance,
+            kind=MemoryOriginKind.USER_CORRECTION,
+            source=None,
+            superseded_revision_id=memory.revision_id,
+            corrected_at=memory.updated_at,
+        ),
+    )
+    memories.list_memories.return_value = (memory,)
+
+    def correct(*args: object, **kwargs: object) -> MemoryManagementResult:
+        memories.list_memories.return_value = (corrected,)
+        return MemoryManagementResult(MemoryManagementOutcome.UPDATED, corrected)
+
+    memories.correct_memory.side_effect = correct
+    _open_memory(app)
+    app.button(key=f"chat_memory_edit_{memory.id}").click().run()
+    app.text_input(key=f"chat_memory_subject_{memory.id}").set_value(
+        " Preferred Transport "
+    )
+    app.text_area(key=f"chat_memory_content_{memory.id}").set_value(
+        "The user prefers sleeper trains."
+    )
+    app.button(key=f"chat_memory_save_{memory.id}").click().run()
+
+    assert not app.exception
+    memories.correct_memory.assert_called_once_with(
+        memory.id,
+        expected_revision_id=memory.revision_id,
+        subject=" Preferred Transport ",
+        content="The user prefers sleeper trains.",
+    )
+    assert corrected.content in [element.value for element in app.markdown]
+
+
+def test_memory_can_be_excluded_and_reactivated(
+    app: AppTest,
+    services: Mock,
+) -> None:
+    """Verify lifecycle controls refresh eligibility at the next boundary."""
+
+    _, _, memories = services.return_value
+    active = _managed_memory()
+    excluded = replace(active, lifecycle=MemoryLifecycle.EXCLUDED)
+    memories.list_memories.return_value = (active,)
+
+    def exclude(*args: object, **kwargs: object) -> MemoryManagementResult:
+        memories.list_memories.return_value = (excluded,)
+        return MemoryManagementResult(MemoryManagementOutcome.UPDATED, excluded)
+
+    def reactivate(*args: object, **kwargs: object) -> MemoryManagementResult:
+        memories.list_memories.return_value = (active,)
+        return MemoryManagementResult(MemoryManagementOutcome.UPDATED, active)
+
+    memories.exclude_memory.side_effect = exclude
+    memories.reactivate_memory.side_effect = reactivate
+    _open_memory(app)
+    app.button(key=f"chat_memory_exclude_{active.id}").click().run()
+
+    memories.exclude_memory.assert_called_once_with(
+        active.id,
+        expected_revision_id=active.revision_id,
+    )
+    assert "State: excluded" in [item.value for item in app.caption]
+
+    app.button(key=f"chat_memory_reactivate_{active.id}").click().run()
+
+    memories.reactivate_memory.assert_called_once_with(
+        active.id,
+        expected_revision_id=active.revision_id,
+    )
+    assert "State: active" in [item.value for item in app.caption]
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+def test_memory_deletion_requires_confirmation(
+    app: AppTest,
+    services: Mock,
+    confirm: bool,
+) -> None:
+    """Verify permanent deletion is explicit, warned, and cancellable."""
+
+    _, _, memories = services.return_value
+    memory = _managed_memory()
+    memories.list_memories.return_value = (memory,)
+
+    def delete(*args: object, **kwargs: object) -> MemoryManagementResult:
+        memories.list_memories.return_value = ()
+        return MemoryManagementResult(MemoryManagementOutcome.UPDATED)
+
+    memories.delete_memory.side_effect = delete
+    _open_memory(app)
+    app.button(key=f"chat_memory_delete_{memory.id}").click().run()
+
+    assert "This action is irreversible." in app.warning[0].value
+    memories.delete_memory.assert_not_called()
+    if confirm:
+        button_key = f"chat_memory_confirm_delete_{memory.id}"
+    else:
+        button_key = f"chat_memory_cancel_delete_{memory.id}"
+    app.button(key=button_key).click().run()
+
+    assert not app.exception
+    if confirm:
+        memories.delete_memory.assert_called_once_with(
+            memory.id,
+            expected_revision_id=memory.revision_id,
+        )
+        assert app.info[0].value == "No Chat memories have been saved yet."
+    else:
+        memories.delete_memory.assert_not_called()
+        assert app.button(key=f"chat_memory_delete_{memory.id}")

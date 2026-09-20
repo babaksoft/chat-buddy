@@ -9,6 +9,7 @@ from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
     MemoryExtractionService,
+    MemoryManagementService,
     MemoryService,
 )
 from chat_buddy.chat.infrastructure.config import settings
@@ -21,7 +22,11 @@ from chat_buddy.chat.infrastructure.llm import build_provider_runtime
 
 
 @st.cache_resource
-def build_services() -> tuple[ChatService, ConversationService]:
+def build_services() -> tuple[
+    ChatService,
+    ConversationService,
+    MemoryManagementService,
+]:
     """Create the application services used by the Chat page."""
 
     session = ChatSessionLocal()
@@ -40,6 +45,10 @@ def build_services() -> tuple[ChatService, ConversationService]:
     conversation_service = ConversationService(
         repository=conversation_repository,
     )
+    memory_management_service = MemoryManagementService(
+        memory_repository=memory_repository,
+        conversation_repository=conversation_repository,
+    )
 
     chat_service = ChatService(
         conversation_service=conversation_service,
@@ -57,4 +66,4 @@ def build_services() -> tuple[ChatService, ConversationService]:
         ),
     )
 
-    return chat_service, conversation_service
+    return chat_service, conversation_service, memory_management_service

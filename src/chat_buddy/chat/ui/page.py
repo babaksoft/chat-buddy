@@ -6,7 +6,11 @@ from uuid import UUID
 import streamlit as st
 
 from chat_buddy.chat.application.schemas import ChatRequest
-from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.application.service import (
+    ChatService,
+    ConversationService,
+    MemoryManagementService,
+)
 from chat_buddy.chat.domain import (
     ConversationRecord,
     GenerationAttemptRecord,
@@ -18,6 +22,7 @@ from chat_buddy.chat.domain import (
     ProviderInvocationError,
 )
 from chat_buddy.chat.ui.composition import build_services
+from chat_buddy.chat.ui.memory_page import render as render_memory
 
 
 def render_conversation_editor(
@@ -120,14 +125,12 @@ def render_conversation_row(
     with col_title:
         label = f"👉 {title}" if is_selected else title
 
-        if (
-            st.button(
-                label,
-                key=f"chat_select_{conversation.id}",
-                width="stretch",
-            )
-            and not is_selected
-        ):
+        if st.button(
+            label,
+            key=f"chat_select_{conversation.id}",
+            width="stretch",
+        ) and (not is_selected or st.session_state.get("chat_view") != "conversation"):
+            st.session_state.chat_view = "conversation"
             st.session_state.chat_conversation_id = conversation.id
             st.rerun()
 
@@ -152,7 +155,12 @@ def render_sidebar(conversation_service: ConversationService) -> None:
     with st.sidebar:
         st.header("Conversations")
 
+        if st.button("🧠 Memory", key="chat_memory", width="stretch"):
+            st.session_state.chat_view = "memory"
+            st.rerun()
+
         if st.button("+ New Chat", key="chat_new", width="stretch"):
+            st.session_state.chat_view = "conversation"
             st.session_state.chat_conversation_id = None
             st.session_state.chat_editing_conversation_id = None
             st.session_state.chat_confirming_delete_conversation_id = None
@@ -430,21 +438,31 @@ def render_conversation(
 
 def render(
     service_factory: (
-        Callable[[], tuple[ChatService, ConversationService]] | None
+        Callable[
+            [],
+            tuple[ChatService, ConversationService, MemoryManagementService],
+        ]
+        | None
     ) = None,
 ) -> None:
     """Render Chat, creating its services only when this area is selected."""
 
-    st.title("💬 Chat")
-
     if "chat_conversation_id" not in st.session_state:
         st.session_state.chat_conversation_id = None
+    if "chat_view" not in st.session_state:
+        st.session_state.chat_view = "conversation"
 
     if service_factory is None:
         service_factory = build_services
 
-    chat_service, conversation_service = service_factory()
+    chat_service, conversation_service, memory_management_service = service_factory()
     render_sidebar(conversation_service=conversation_service)
+
+    if st.session_state.chat_view == "memory":
+        render_memory(memory_management_service)
+        return
+
+    st.title("💬 Chat")
 
     conversation_id = st.session_state.chat_conversation_id
     conversation_id = render_generation_selection(
