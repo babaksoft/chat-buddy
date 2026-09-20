@@ -186,6 +186,35 @@ class ContextBudgeter(Protocol):
         ...
 
 
+class ContextAssembler(Protocol):
+    """Prepare one response context through the shared Stage 3 policy."""
+
+    def assemble(
+        self,
+        conversation_id: UUID,
+        current_input: ChatMessage,
+        model: ModelDescriptor,
+        configuration: GenerationConfiguration,
+    ) -> ContextAssemblyResult:
+        """Load, summarize, reload, and budget one response context.
+
+        Args:
+            conversation_id:
+                Selected conversation identifier.
+            current_input:
+                New or retry user input, supplied exactly once.
+            model:
+                Selected model capabilities.
+            configuration:
+                Effective generation settings.
+
+        Returns:
+            Validated context within the model prompt capacity.
+        """
+
+        ...
+
+
 class RollingSummarizer(Protocol):
     """Update durable conversation summaries independently of context budgeting."""
 

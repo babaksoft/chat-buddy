@@ -10,6 +10,8 @@ from chat_buddy.chat.application.service import ChatService
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
+    ContextAssemblyResult,
+    ContextWindowExceededError,
     ConversationRecord,
     GenerationAttemptRecord,
     GenerationAttemptStatus,
@@ -109,9 +111,7 @@ def _service(
             at=pending_attempt.created_at,
         )
     )
-    conversation_service.get_messages.return_value = [
-        ChatMessage(ChatRole.USER, "Hello")
-    ]
+    conversation_service.get_messages.return_value = []
     conversation_service.get_open_generation_attempt.return_value = None
     conversation_service.get_latest_retryable_generation_attempt.return_value = None
 
@@ -127,19 +127,21 @@ def _service(
     registry.get_default_model.return_value = selected_model
     registry.resolve_generation_configuration.return_value = effective
 
-    context_builder = Mock()
-    context_builder.build_context.side_effect = lambda messages, selected: messages
-    memory_service = Mock()
-    memory_service.inject_memories.side_effect = lambda messages: messages
+    context_assembler = Mock()
+    assembled_messages = (ChatMessage(ChatRole.USER, "Hello"),)
+    context_assembler.assemble.return_value = ContextAssemblyResult(
+        messages=assembled_messages,
+        prompt_tokens=1,
+        prompt_capacity=100,
+    )
     memory_extraction_service = Mock()
     title_generator = Mock()
     title_generator.generate_title.return_value = title
 
     service = ChatService(
         conversation_service=conversation_service,
-        memory_service=memory_service,
         memory_extraction_service=memory_extraction_service,
-        context_builder=context_builder,
+        context_assembler=context_assembler,
         provider_registry=registry,
         response_gateway_resolver=resolver,
         title_generator=title_generator,
@@ -149,7 +151,7 @@ def _service(
         conversation_service,
         gateway,
         registry,
-        context_builder,
+        context_assembler,
         memory_extraction_service,
     )
 
@@ -157,7 +159,7 @@ def _service(
 def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None:
     """Verify synchronous generation uses one validated lifecycle."""
 
-    service, conversations, gateway, registry, context_builder, _ = _service()
+    service, conversations, gateway, registry, context_assembler, _ = _service()
 
     response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
@@ -171,12 +173,14 @@ def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None
         effective,
     )
     conversations.begin_generation_attempt.assert_called_once()
-    context_builder.build_context.assert_called_once_with(
-        conversations.get_messages.return_value,
+    context_assembler.assemble.assert_called_once_with(
+        response.conversation_id,
+        ChatMessage(ChatRole.USER, "Hello"),
         model,
+        effective,
     )
     gateway.generate.assert_called_once_with(
-        conversations.get_messages.return_value,
+        list(context_assembler.assemble.return_value.messages),
         model.id,
         effective,
     )
@@ -187,14 +191,14 @@ def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None
 def test_stream_chat_uses_the_same_attempt_lifecycle() -> None:
     """Verify streaming begins and completes the prepared attempt."""
 
-    service, conversations, gateway, registry, _, _ = _service()
+    service, conversations, gateway, registry, context_assembler, _ = _service()
 
     _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
     chunks = list(stream)
 
     assert chunks == ["Hello ", "from the model."]
     gateway.generate_stream.assert_called_once_with(
-        conversations.get_messages.return_value,
+        list(context_assembler.assemble.return_value.messages),
         registry.get_model.return_value.id,
         registry.resolve_generation_configuration.return_value,
     )
@@ -332,6 +336,22 @@ def test_streaming_capability_is_validated_before_attempt_is_started() -> None:
         service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
 
     conversations.start_generation_attempt.assert_not_called()
+
+
+def test_context_failure_creates_no_attempt_and_invokes_no_provider() -> None:
+    """Verify mandatory budget failure occurs before durable turn creation."""
+
+    service, conversations, gateway, _, context_assembler, _ = _service()
+    context_assembler.assemble.side_effect = ContextWindowExceededError(
+        "mandatory context is too large"
+    )
+
+    with pytest.raises(ContextWindowExceededError):
+        service.chat(ChatRequest(conversation_id=None, message="Hello"))
+
+    conversations.start_generation_attempt.assert_not_called()
+    gateway.generate.assert_not_called()
+    gateway.generate_stream.assert_not_called()
 
 
 def test_post_response_effects_run_after_atomic_completion() -> None:

@@ -3,6 +3,7 @@
 from chat_buddy.chat.domain.chat import ChatMessage, ChatRole
 from chat_buddy.chat.domain.context import (
     CompletedTurn,
+    ContextAssembler,
     ContextAssemblyResult,
     ContextBudgeter,
     ContextEligibility,
@@ -10,7 +11,6 @@ from chat_buddy.chat.domain.context import (
     MemoryExtractionProcessor,
     RollingSummarizer,
 )
-from chat_buddy.chat.domain.context_builder import ContextBuilder
 from chat_buddy.chat.domain.exceptions import (
     ContextWindowExceededError,
     InvalidGenerationAttemptTransitionError,
@@ -33,7 +33,6 @@ from chat_buddy.chat.domain.generation_attempt import (
     GenerationAttemptRecord,
     GenerationAttemptStatus,
 )
-from chat_buddy.chat.domain.llm_gateway import LLMGateway
 from chat_buddy.chat.domain.memory import (
     ExtractionReceiptRecord,
     MemoryCandidate,
@@ -75,9 +74,9 @@ __all__ = [
     "ChatMessage",
     "ChatRole",
     "CompletedTurn",
+    "ContextAssembler",
     "ContextAssemblyResult",
     "ContextBudgeter",
-    "ContextBuilder",
     "ContextEligibility",
     "ContextInputs",
     "ContextWindowExceededError",
@@ -91,7 +90,6 @@ __all__ = [
     "GenerationParameter",
     "InvalidGenerationAttemptTransitionError",
     "InvalidGenerationConfigurationError",
-    "LLMGateway",
     "MemoryCandidate",
     "MemoryCandidateExtractor",
     "MemoryDeletionResult",

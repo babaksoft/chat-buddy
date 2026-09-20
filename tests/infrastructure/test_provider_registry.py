@@ -210,6 +210,8 @@ def test_configured_runtime_registers_enabled_ollama_models(client_type: Mock) -
     )
     assert runtime.registry.get_default_model().id == ModelId(settings.CHAT_MODEL)
     assert runtime.response_gateway_resolver.resolve(provider_id) is (
-        runtime.utility_gateway
+        runtime.title_generator
     )
+    assert runtime.summary_generator is runtime.title_generator
+    assert runtime.memory_candidate_extractor is runtime.title_generator
     client_type.assert_called_once_with(host=settings.OLLAMA_ENDPOINT_URL)

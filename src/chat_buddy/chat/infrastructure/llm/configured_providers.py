@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from chat_buddy.chat.domain import (
     GenerationConfiguration,
     GenerationParameter,
-    LLMGateway,
+    MemoryCandidateExtractor,
     ModelDescriptor,
     ModelId,
     ProviderDescriptor,
     ProviderId,
     ProviderRegistry,
     ResponseGatewayResolver,
+    SummaryGenerator,
+    TitleGenerator,
 )
 from chat_buddy.chat.infrastructure.config import settings
 from chat_buddy.chat.infrastructure.llm.ollama_gateway import OllamaGateway
@@ -28,7 +30,9 @@ class ProviderRuntime:
 
     registry: ProviderRegistry
     response_gateway_resolver: ResponseGatewayResolver
-    utility_gateway: LLMGateway
+    title_generator: TitleGenerator
+    summary_generator: SummaryGenerator
+    memory_candidate_extractor: MemoryCandidateExtractor
 
 
 def build_provider_runtime() -> ProviderRuntime:
@@ -69,5 +73,7 @@ def build_provider_runtime() -> ProviderRuntime:
     return ProviderRuntime(
         registry=registry,
         response_gateway_resolver=resolver,
-        utility_gateway=gateway,
+        title_generator=gateway,
+        summary_generator=gateway,
+        memory_candidate_extractor=gateway,
     )

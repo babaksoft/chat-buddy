@@ -14,12 +14,11 @@ from chat_buddy.chat.application.schemas import (
     ProviderOption,
 )
 from chat_buddy.chat.application.service.conversation_service import ConversationService
-from chat_buddy.chat.application.service.memory_service import MemoryService
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
     CompletedTurn,
-    ContextBuilder,
+    ContextAssembler,
     ConversationRecord,
     GenerationAttemptRecord,
     GenerationAttemptStatus,
@@ -50,7 +49,6 @@ class _PreparedGeneration:
     model: ModelDescriptor
     configuration: GenerationConfiguration
     gateway: ResponseGenerator
-    messages: list[ChatMessage]
     context: list[ChatMessage]
     is_first_exchange: bool
 
@@ -61,9 +59,8 @@ class ChatService:
     def __init__(
         self,
         conversation_service: ConversationService,
-        memory_service: MemoryService,
         memory_extraction_service: MemoryExtractionProcessor,
-        context_builder: ContextBuilder,
+        context_assembler: ContextAssembler,
         provider_registry: ProviderRegistry,
         response_gateway_resolver: ResponseGatewayResolver,
         title_generator: TitleGenerator,
@@ -73,12 +70,10 @@ class ChatService:
         Args:
             conversation_service:
                 Conversation and generation-attempt persistence service.
-            memory_service:
-                Temporary memory context and management service.
             memory_extraction_service:
                 Bounded processor for exact committed turns.
-            context_builder:
-                Context window builder.
+            context_assembler:
+                Shared eligibility, summary, and budget assembly boundary.
             provider_registry:
                 Registry used to resolve models and effective configuration.
             response_gateway_resolver:
@@ -88,9 +83,8 @@ class ChatService:
         """
 
         self._conversation_service = conversation_service
-        self._memory_service = memory_service
         self._memory_extraction_service = memory_extraction_service
-        self._context_builder = context_builder
+        self._context_assembler = context_assembler
         self._provider_registry = provider_registry
         self._response_gateway_resolver = response_gateway_resolver
         self._title_generator = title_generator
@@ -424,6 +418,13 @@ class ChatService:
         model, configuration, gateway = self._resolve_generation_defaults(
             conversation, require_streaming=require_streaming
         )
+        existing_messages = self._conversation_service.get_messages(conversation.id)
+        context = self._context_assembler.assemble(
+            conversation.id,
+            ChatMessage(ChatRole.USER, request.message),
+            model,
+            configuration,
+        )
         attempt = self._conversation_service.start_generation_attempt(
             conversation.id,
             request.message,
@@ -431,6 +432,7 @@ class ChatService:
             model.id,
             configuration,
         )
+
         return self._build_prepared_generation(
             conversation_id=conversation.id,
             conversation_title=conversation.title,
@@ -439,6 +441,8 @@ class ChatService:
             model=model,
             configuration=configuration,
             gateway=gateway,
+            context=list(context.messages),
+            is_first_exchange=not existing_messages,
         )
 
     def _resolve_generation_defaults(
@@ -551,6 +555,20 @@ class ChatService:
         model, configuration, gateway = self._resolve_generation_defaults(
             conversation, require_streaming=require_streaming
         )
+        existing_messages = self._conversation_service.get_messages(conversation.id)
+        unmatched = self._conversation_service.get_unmatched_user_message(
+            conversation.id
+        )
+        if unmatched is None:
+            raise InvalidGenerationAttemptTransitionError(
+                "A retry requires an unmatched final user message."
+            )
+        context = self._context_assembler.assemble(
+            conversation.id,
+            unmatched,
+            model,
+            configuration,
+        )
         retry = self._conversation_service.retry_generation_attempt(
             source.id,
             model.provider_id,
@@ -565,6 +583,8 @@ class ChatService:
             model=model,
             configuration=configuration,
             gateway=gateway,
+            context=list(context.messages),
+            is_first_exchange=len(existing_messages) == 1,
         )
 
     def _build_prepared_generation(
@@ -577,6 +597,8 @@ class ChatService:
         model: ModelDescriptor,
         configuration: GenerationConfiguration,
         gateway: ResponseGenerator,
+        context: list[ChatMessage],
+        is_first_exchange: bool,
     ) -> _PreparedGeneration:
         """Build provider context and shared immutable generation state.
 
@@ -595,15 +617,14 @@ class ChatService:
                 Effective provider-neutral generation configuration.
             gateway:
                 Resolved response adapter.
+            context:
+                Assembled provider context proven to fit the selected model.
+            is_first_exchange:
+                Whether this attempt can establish the conversation title.
 
         Returns:
             Prepared generation state.
         """
-
-        messages = self._conversation_service.get_messages(conversation_id)
-        is_first_exchange = len(messages) == 1
-        messages_with_memories = self._memory_service.inject_memories(messages)
-        context = self._context_builder.build_context(messages_with_memories, model)
 
         logger.info(
             "Prepared generation attempt %s for conversation %s with %s/%s.",
@@ -612,6 +633,7 @@ class ChatService:
             model.provider_id,
             model.id,
         )
+
         return _PreparedGeneration(
             conversation_id=conversation_id,
             conversation_title=conversation_title,
@@ -620,7 +642,6 @@ class ChatService:
             model=model,
             configuration=configuration,
             gateway=gateway,
-            messages=messages,
             context=context,
             is_first_exchange=is_first_exchange,
         )

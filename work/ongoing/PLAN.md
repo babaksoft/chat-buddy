@@ -340,7 +340,7 @@ Acceptance:
 
 ### Slice 8 — Assemble eligible context within the selected model budget
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Implement a context-eligibility service that retrieves active Chat-wide
   memories, the selected conversation's active summary, and uncovered messages

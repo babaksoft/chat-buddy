@@ -116,7 +116,12 @@ class MemoryRepository:
             Chat-wide eligible memory records.
         """
 
-        return self.list_memories(frozenset({MemoryLifecycle.ACTIVE}))
+        statement = (
+            select(Memory)
+            .where(Memory.lifecycle == MemoryLifecycle.ACTIVE)
+            .order_by(Memory.updated_at.desc(), Memory.memory_id)
+        )
+        return tuple(self._to_record(item) for item in self._session.scalars(statement))
 
     def find_current_by_subject(self, subject: str) -> MemoryRecord | None:
         """Return the current revision for a normalized subject.

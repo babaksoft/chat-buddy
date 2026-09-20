@@ -1,9 +1,9 @@
 # Remaining tasks in current stage
 
-Stage 3 is in progress. Slices 1–7 are complete; Slices 8–11 remain Planned in
+Stage 3 is in progress. Slices 1–8 are complete; Slices 9–11 remain Planned in
 `work/ongoing/PLAN.md`.
 
-Next: Slice 8 — Assemble eligible context within the selected model budget.
+Next: Slice 9 — Select the first cloud provider.
 
 ## Focused refactoring backlog
 

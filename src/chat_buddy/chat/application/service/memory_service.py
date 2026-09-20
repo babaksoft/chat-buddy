@@ -3,12 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from chat_buddy.chat.domain import (
-    ChatMessage,
-    ChatRole,
-    ExtractedMemory,
-)
-from chat_buddy.chat.prompts.memory import MEMORY_CONTEXT_HEADER
+from chat_buddy.chat.domain import ExtractedMemory
 
 
 class _StoredMemory(Protocol):
@@ -191,51 +186,3 @@ class MemoryService:
         """
 
         return self._repository.delete_memory(key)
-
-    def inject_memories(
-        self,
-        messages: list[ChatMessage],
-    ) -> list[ChatMessage]:
-        """
-        Prepend persisted memories to conversation messages.
-
-        Args:
-            messages:
-                Conversation history.
-
-        Returns:
-            Messages with a leading system message when
-            memories exist; otherwise the original list.
-        """
-
-        memories = self.list_memories()
-
-        if not memories:
-            return messages
-
-        return [
-            ChatMessage(
-                role=ChatRole.SYSTEM,
-                content=self._format_memories_for_context(memories),
-            ),
-            *messages,
-        ]
-
-    def _format_memories_for_context(
-        self,
-        memories: list[ExtractedMemory],
-    ) -> str:
-        """
-        Format persisted memories for model context.
-
-        Args:
-            memories:
-                Stored memories.
-
-        Returns:
-            Formatted memory context.
-        """
-
-        lines = [f"- {memory.key}: {memory.value}" for memory in memories]
-
-        return f"{MEMORY_CONTEXT_HEADER}\n\n" + "\n".join(lines)
