@@ -1,9 +1,9 @@
 # Remaining tasks in current stage
 
-Stage 3 is in progress. Slices 1–6 are complete; Slices 7–11 remain Planned in
+Stage 3 is in progress. Slices 1–7 are complete; Slices 8–11 remain Planned in
 `work/ongoing/PLAN.md`.
 
-Next: Slice 7 — Persist conversation-scoped rolling summaries.
+Next: Slice 8 — Assemble eligible context within the selected model budget.
 
 ## Focused refactoring backlog
 

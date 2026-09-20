@@ -314,7 +314,7 @@ Acceptance:
 
 ### Slice 7 — Persist conversation-scoped rolling summaries
 
-**Status: Planned.**
+**Status: Complete.**
 
 - Add a rolling-summary service that loads only the selected conversation's
   active summary and complete turns after its checkpoint.

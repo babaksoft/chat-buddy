@@ -190,7 +190,10 @@ class RollingSummarizer(Protocol):
     """Update durable conversation summaries independently of context budgeting."""
 
     def update_summary(
-        self, inputs: ContextInputs, model: ModelDescriptor
+        self,
+        inputs: ContextInputs,
+        model: ModelDescriptor,
+        configuration: GenerationConfiguration,
     ) -> SummaryRecord | None:
         """Return the active summary after any required rolling update.
 
@@ -199,6 +202,8 @@ class RollingSummarizer(Protocol):
                 Eligible conversation inputs considered for summarization.
             model:
                 Selected model whose capacity may trigger an update.
+            configuration:
+                Effective generation settings used to reserve output capacity.
 
         Returns:
             Active durable summary, or ``None`` when none exists or is required.
