@@ -95,8 +95,11 @@ new Chat migrations.
   for its responses.
 - Provider selection supports local and cloud LLMs through a Chat-owned gateway
   protocol.
-- Ollama remains the initial local adapter. Cloud providers are added as
-  independent adapters without changing conversation or context services.
+- Ollama remains the initial local adapter. ADR 021 selects OpenAI's Responses
+  API with curated GPT-5.6 Luna, Terra, and Sol choices plus a pinned GPT-4.1
+  non-reasoning baseline for the first opt-in, response-only cloud adapter.
+  Reasoning is disabled and title, summary, and memory utilities remain local
+  through Ollama. Cloud adapters do not change conversation or context services.
 - Streaming failures remain visible and recoverable without leaving an ambiguous
   half-turn.
 
@@ -457,7 +460,6 @@ Characters is ready to become a standalone application when:
 
 The following details will be refined when their implementation stage begins:
 
-- Specific cloud LLM vendors and authentication configuration.
 - Exact response-style controls and defaults.
 - Whether cosmetic fields on a frozen identity remain editable.
 - The complete vocabulary for current relationship dynamics.

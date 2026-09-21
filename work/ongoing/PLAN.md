@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 ## Scope
 
@@ -379,7 +379,14 @@ Acceptance:
 
 ### Slice 9 — Select the first cloud provider
 
-**Status: Planned.**
+**Status: Complete.**
+
+Delivered by accepted ADR 021, which selects OpenAI's Responses API with curated
+GPT-5.6 Luna, Terra, and Sol choices plus a pinned GPT-4.1 non-reasoning baseline
+for Chat's first opt-in, response-only cloud adapter. It fixes credential
+discovery, registration, model metadata, offline token counting, request mapping,
+streaming, timeouts, error normalization, test boundaries, and data-handling
+policy without changing production code or provider registration.
 
 Create and accept the focused cloud-provider ADR required by ADR 014. Do not
 infer a vendor merely from a currently installed dependency.

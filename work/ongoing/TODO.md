@@ -1,9 +1,9 @@
 # Remaining tasks in current stage
 
-Stage 3 is in progress. Slices 1–8 are complete; Slices 9–11 remain Planned in
+Stage 3 is in progress. Slices 1–9 are complete; Slices 10–11 remain Planned in
 `work/ongoing/PLAN.md`.
 
-Next: Slice 9 — Select the first cloud provider.
+Next: Slice 10 — Add the selected OpenAI cloud response adapter.
 
 ## Focused refactoring backlog
 
