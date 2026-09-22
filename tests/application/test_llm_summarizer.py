@@ -12,35 +12,6 @@ from chat_buddy.chat.domain.chat import (
 from chat_buddy.chat.domain.context import CompletedTurn
 
 
-def test_summarize_delegates_to_gateway() -> None:
-    """
-    Verify that summarization is delegated to
-    the language model gateway.
-    """
-
-    gateway = Mock()
-    gateway.summarize.return_value = "Conversation summary."
-
-    summarizer = LLMSummarizer(
-        gateway=gateway,
-    )
-
-    messages = [
-        ChatMessage(
-            role=ChatRole.USER,
-            content="Hello.",
-        ),
-    ]
-
-    summary = summarizer.summarize(messages)
-
-    assert summary == "Conversation summary."
-
-    gateway.summarize.assert_called_once_with(
-        messages,
-    )
-
-
 def test_generate_summary_includes_prior_summary_and_exact_completed_turns() -> None:
     """Rolling generation formats durable prior state and exact new turns."""
 

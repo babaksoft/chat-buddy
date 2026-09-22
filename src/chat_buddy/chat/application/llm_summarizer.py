@@ -25,23 +25,6 @@ class LLMSummarizer:
 
         self._gateway = gateway
 
-    def summarize(
-        self,
-        messages: list[ChatMessage],
-    ) -> str:
-        """
-        Produce a summary using the language model.
-
-        Args:
-            messages:
-                Conversation messages.
-
-        Returns:
-            Conversation summary.
-        """
-
-        return self._gateway.summarize(messages)
-
     def generate_summary(
         self,
         prior_summary: str | None,

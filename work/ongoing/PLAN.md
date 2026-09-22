@@ -1,8 +1,8 @@
 # Stage 3 Execution Plan
 
-Status: In progress
+Status: Complete
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 
 ## Scope
 
@@ -453,7 +453,15 @@ Acceptance:
 
 ### Slice 11 — Prove the Stage 3 milestone and remove provisional paths
 
-**Status: Planned.**
+**Status: Complete.**
+
+Completed on 2026-09-22. Milestone coverage now exercises long-context rolling
+for local and cloud model selections, and the full suite covers linear retry,
+concurrent-send rejection, memory reuse and lifecycle controls, summary and area
+isolation, bounded extraction, provider switching, shared adapter contracts, and
+migration isolation. Architecture guards prohibit SQLAlchemy in services and UI
+and prevent the removed key/value memory and transient summary paths from
+returning. Operator guidance is consolidated in `README.md`.
 
 - Add end-to-end scenarios for long local and cloud-backed conversations,
   failed-tail editing and retry, concurrent-send rejection, cross-conversation

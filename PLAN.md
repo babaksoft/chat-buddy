@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-09-18
+Last updated: 2026-09-22
 
 ## How to use this plan
 
@@ -113,6 +113,8 @@ and a second test provider can be registered without changing Chat application
 services.
 
 ## Stage 3 — Deliver automatic Chat context and memory
+
+**Status: Complete.**
 
 - Define the final Chat-owned summary and memory domain contracts, including
   provenance and lifecycle state.

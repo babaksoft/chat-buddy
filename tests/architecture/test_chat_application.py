@@ -6,6 +6,11 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
 APPLICATION_ROOT = PACKAGE_ROOT / "chat" / "application"
 UI_ROOTS = (PACKAGE_ROOT / "chat" / "ui", PACKAGE_ROOT / "ui")
+PROVISIONAL_PATHS = (
+    APPLICATION_ROOT / "service" / "memory_service.py",
+    PACKAGE_ROOT / "chat" / "domain" / "extracted_memory.py",
+    PACKAGE_ROOT / "chat" / "domain" / "summarizer.py",
+)
 ALLOWED_CHAT_DEPENDENCIES = (
     "chat_buddy.chat.application",
     "chat_buddy.chat.domain",
@@ -64,6 +69,32 @@ def test_application_and_ui_do_not_import_provider_sdks_or_adapters() -> None:
 
     assert violations == []
     assert adapter_name_violations == []
+
+
+def test_application_and_ui_do_not_access_sqlalchemy_directly() -> None:
+    """Keep persistence access behind Chat-owned repository contracts."""
+
+    roots = (APPLICATION_ROOT, *UI_ROOTS)
+    violations = [
+        f"{path.relative_to(PACKAGE_ROOT)} imports {imported_module}"
+        for root in roots
+        for path in sorted(root.rglob("*.py"))
+        for imported_module in sorted(_imports(path))
+        if imported_module == "sqlalchemy" or imported_module.startswith("sqlalchemy.")
+    ]
+
+    assert violations == []
+
+
+def test_stage_three_provisional_paths_are_removed() -> None:
+    """Prevent compatibility APIs from bypassing lifecycle and provenance."""
+
+    from chat_buddy.chat.infrastructure.db.repositories import MemoryRepository
+
+    assert [path for path in PROVISIONAL_PATHS if path.exists()] == []
+    assert not hasattr(MemoryRepository, "save_memory")
+    assert not hasattr(MemoryRepository, "get_memories")
+    assert not hasattr(MemoryRepository, "delete_memory")
 
 
 def test_chat_ui_views_do_not_import_infrastructure() -> None:

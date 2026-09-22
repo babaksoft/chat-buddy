@@ -3,6 +3,7 @@
 from datetime import timedelta
 from uuid import UUID
 
+import pytest
 from sqlalchemy.orm import Session
 
 from chat_buddy.chat.application.config import ContextBudgetConfig, RollingSummaryConfig
@@ -71,7 +72,7 @@ class StableSummaryGenerator:
         return "compact summary"
 
 
-def _model() -> ModelDescriptor:
+def _model(provider_id: ProviderId, model_id: ModelId) -> ModelDescriptor:
     """Create the constrained model used to force rolling checkpoints.
 
     Returns:
@@ -79,8 +80,8 @@ def _model() -> ModelDescriptor:
     """
 
     return ModelDescriptor(
-        provider_id=ProviderId("test"),
-        id=ModelId("small"),
+        provider_id=provider_id,
+        id=model_id,
         display_name="Small model",
         context_window_tokens=80,
         supports_streaming=True,
@@ -95,6 +96,8 @@ def _complete_turn(
     repository: ConversationRepository,
     conversation_id: UUID,
     number: int,
+    provider_id: ProviderId,
+    model_id: ModelId,
 ) -> CompletedTurn:
     """Persist and return one completed linear turn.
 
@@ -105,6 +108,10 @@ def _complete_turn(
             Owning conversation identifier.
         number:
             Stable content suffix and time offset.
+        provider_id:
+            Response provider recorded for the attempt.
+        model_id:
+            Provider-local model recorded for the attempt.
 
     Returns:
         Exact completed turn.
@@ -113,8 +120,8 @@ def _complete_turn(
     pending = repository.start_generation_attempt(
         conversation_id,
         f"question {number}",
-        ProviderId("test"),
-        ModelId("small"),
+        provider_id,
+        model_id,
         GenerationConfiguration(),
     )
     repository.begin_generation_attempt(pending.id, at=pending.created_at)
@@ -172,24 +179,35 @@ def _assembler(
     )
 
 
-def test_long_context_rolls_multiple_local_checkpoints_and_reuses_global_memory(
-    session: Session,
+@pytest.mark.parametrize(
+    ("provider_id", "model_id"),
+    [
+        pytest.param(ProviderId("ollama"), ModelId("local-small"), id="local"),
+        pytest.param(ProviderId("openai"), ModelId("cloud-small"), id="cloud"),
+    ],
+)
+def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
+    session: Session, provider_id: ProviderId, model_id: ModelId
 ) -> None:
-    """Long local history stays bounded while active memory crosses conversations.
+    """Long provider-backed history stays bounded across Chat conversations.
 
     Args:
         session:
             Isolated database session.
+        provider_id:
+            Local or cloud response-provider identifier.
+        model_id:
+            Selected provider-local model identifier.
     """
 
     conversations = ConversationRepository(session)
     memories = MemoryRepository(session)
     summaries = SummaryRepository(session)
     assembler = _assembler(memories, summaries)
-    model = _model()
+    model = _model(provider_id, model_id)
     configuration = GenerationConfiguration()
     conversation_a = conversations.create_conversation()
-    first = _complete_turn(conversations, conversation_a.id, 1)
+    first = _complete_turn(conversations, conversation_a.id, 1, provider_id, model_id)
     memories.process_extraction(
         first,
         (MemoryCandidate("city", "The user lives in Tehran."),),
@@ -200,8 +218,8 @@ def test_long_context_rolls_multiple_local_checkpoints_and_reuses_global_memory(
             completed_at=first.completed_at + timedelta(seconds=1),
         ),
     )
-    second = _complete_turn(conversations, conversation_a.id, 2)
-    third = _complete_turn(conversations, conversation_a.id, 3)
+    second = _complete_turn(conversations, conversation_a.id, 2, provider_id, model_id)
+    third = _complete_turn(conversations, conversation_a.id, 3, provider_id, model_id)
 
     first_result = assembler.assemble(
         conversation_a.id,
@@ -218,7 +236,7 @@ def test_long_context_rolls_multiple_local_checkpoints_and_reuses_global_memory(
         third.attempt_id,
     )
 
-    fourth = _complete_turn(conversations, conversation_a.id, 4)
+    fourth = _complete_turn(conversations, conversation_a.id, 4, provider_id, model_id)
     second_result = assembler.assemble(
         conversation_a.id,
         ChatMessage(ChatRole.USER, "question 5"),

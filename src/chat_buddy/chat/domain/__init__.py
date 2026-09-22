@@ -19,10 +19,8 @@ from chat_buddy.chat.domain.exceptions import (
     UnknownModelError,
     UnknownProviderError,
 )
-from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
 from chat_buddy.chat.domain.gateways import (
     MemoryCandidateExtractor,
-    MemoryExtractor,
     ResponseGatewayResolver,
     ResponseGenerator,
     RollingSummaryGenerator,
@@ -61,7 +59,6 @@ from chat_buddy.chat.domain.repositories import (
     MessageRecord,
     SummaryRepository,
 )
-from chat_buddy.chat.domain.summarizer import Summarizer
 from chat_buddy.chat.domain.summary import (
     SummaryLifecycle,
     SummaryProvenance,
@@ -82,7 +79,6 @@ __all__ = [
     "ContextWindowExceededError",
     "ConversationRecord",
     "ConversationRepository",
-    "ExtractedMemory",
     "ExtractionReceiptRecord",
     "GenerationAttemptRecord",
     "GenerationAttemptStatus",
@@ -95,7 +91,6 @@ __all__ = [
     "MemoryDeletionResult",
     "MemoryExtractionOutcome",
     "MemoryExtractionProcessor",
-    "MemoryExtractor",
     "MemoryLifecycle",
     "MemoryOrigin",
     "MemoryOriginKind",
@@ -111,7 +106,6 @@ __all__ = [
     "ResponseGenerator",
     "RollingSummarizer",
     "RollingSummaryGenerator",
-    "Summarizer",
     "SummaryGenerator",
     "SummaryLifecycle",
     "SummaryProvenance",

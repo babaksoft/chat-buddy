@@ -10,9 +10,6 @@ from chat_buddy.chat.application.service.memory_extraction_service import (
 from chat_buddy.chat.application.service.memory_management_service import (
     MemoryManagementService,
 )
-from chat_buddy.chat.application.service.memory_service import (
-    MemoryService,
-)
 from chat_buddy.chat.application.service.rolling_summary_service import (
     RollingSummaryService,
 )
@@ -22,6 +19,5 @@ __all__ = [
     "ConversationService",
     "MemoryExtractionService",
     "MemoryManagementService",
-    "MemoryService",
     "RollingSummaryService",
 ]

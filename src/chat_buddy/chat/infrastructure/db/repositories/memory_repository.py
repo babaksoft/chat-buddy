@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast, overload
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select, update
@@ -21,7 +20,6 @@ from chat_buddy.chat.domain import (
     MemoryOriginKind,
     MemoryRecord,
     normalize_memory_subject,
-    normalize_memory_text,
 )
 from chat_buddy.chat.infrastructure.db.models import (
     ExtractionReceipt,
@@ -29,15 +27,6 @@ from chat_buddy.chat.infrastructure.db.models import (
     Memory,
     Message,
 )
-
-
-@dataclass(slots=True, frozen=True)
-class StoredMemory:
-    """Compatibility result for the provisional key/value application path."""
-
-    id: UUID
-    key: str
-    value: str
 
 
 class MemoryRepository:
@@ -53,26 +42,17 @@ class MemoryRepository:
 
         self._session = session
 
-    @overload
-    def get_memory(self, memory_id: UUID) -> MemoryRecord | None: ...
-
-    @overload
-    def get_memory(self, memory_id: str) -> StoredMemory | None: ...
-
-    def get_memory(self, memory_id: UUID | str) -> MemoryRecord | StoredMemory | None:
-        """Return a logical memory or a provisional subject-key lookup.
+    def get_memory(self, memory_id: UUID) -> MemoryRecord | None:
+        """Return a logical memory.
 
         Args:
             memory_id:
-                Logical UUID, or a provisional normalized subject key.
+                Logical memory identifier.
 
         Returns:
-            Current domain record or compatibility result when found.
+            Current domain record when found.
         """
 
-        if isinstance(memory_id, str):
-            model = self._current_by_subject(normalize_memory_subject(memory_id))
-            return self._to_stored(model) if model is not None else None
         model = self._current_by_memory_id(memory_id)
         return self._to_record(model) if model is not None else None
 
@@ -418,77 +398,6 @@ class MemoryRepository:
             self._session.rollback()
             raise
 
-    def save_memory(self, key: str, value: str) -> StoredMemory:
-        """Persist through the provisional key/value compatibility path.
-
-        Args:
-            key:
-                Prototype memory key, treated as a normalized subject.
-            value:
-                Prototype memory value, treated as normalized content.
-
-        Returns:
-            Stored compatibility result.
-        """
-
-        subject = normalize_memory_subject(key)
-        content = normalize_memory_text(value)
-        current = self._current_by_subject(subject)
-        at = datetime.now(UTC)
-        if current is None:
-            model = Memory(
-                revision_id=uuid4(),
-                memory_id=uuid4(),
-                subject=subject,
-                content=content,
-                lifecycle=MemoryLifecycle.ACTIVE,
-                origin_kind=MemoryOriginKind.EXTRACTED,
-                source_available=False,
-                created_at=at,
-                updated_at=at,
-            )
-        else:
-            current.content = content
-            current.updated_at = at
-            model = current
-        try:
-            self._session.add(model)
-            self._session.commit()
-            return self._to_stored(model)
-        except SQLAlchemyError:
-            self._session.rollback()
-            raise
-
-    def get_memories(self) -> list[StoredMemory]:
-        """Return current memories through the compatibility shape.
-
-        Returns:
-            Current memories ordered by subject.
-        """
-
-        statement = (
-            select(Memory)
-            .where(Memory.lifecycle != MemoryLifecycle.SUPERSEDED)
-            .order_by(Memory.subject)
-        )
-        return [self._to_stored(item) for item in self._session.scalars(statement)]
-
-    def delete_memory(self, key: str) -> bool:
-        """Delete one compatibility memory by normalized subject.
-
-        Args:
-            key:
-                Prototype subject key.
-
-        Returns:
-            Whether a matching logical memory was deleted.
-        """
-
-        current = self._current_by_subject(normalize_memory_subject(key))
-        if current is None:
-            return False
-        return self.hard_delete(current.memory_id) is MemoryDeletionResult.DELETED
-
     def _validate_completed_turn(self, turn: CompletedTurn) -> None:
         """Verify exact turn provenance against committed persistence.
 
@@ -702,20 +611,6 @@ class MemoryRepository:
                 else None
             ),
         )
-
-    @staticmethod
-    def _to_stored(model: Memory) -> StoredMemory:
-        """Translate an entity into the provisional compatibility shape.
-
-        Args:
-            model:
-                Persisted memory entity.
-
-        Returns:
-            Compatibility memory result.
-        """
-
-        return StoredMemory(id=model.memory_id, key=model.subject, value=model.content)
 
     @staticmethod
     def _aware(value: datetime) -> datetime:

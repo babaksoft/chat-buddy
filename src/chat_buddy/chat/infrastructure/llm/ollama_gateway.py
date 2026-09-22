@@ -8,7 +8,6 @@ from ollama import Client, RequestError, ResponseError
 from chat_buddy.chat.domain import (
     ChatMessage,
     CompletedTurn,
-    ExtractedMemory,
     GenerationConfiguration,
     MemoryCandidate,
     ModelId,
@@ -258,74 +257,6 @@ class OllamaGateway:
         )
 
         return response
-
-    def extract_memories(
-        self,
-        messages: list[ChatMessage],
-    ) -> list[ExtractedMemory]:
-        """
-        Extract long-term user memories from a conversation.
-
-        Args:
-            messages:
-                Conversation messages.
-
-        Returns:
-            Extracted memories.
-        """
-
-        logger.debug(
-            "Extracting memories using model '%s'.",
-            self._utility_model,
-        )
-
-        conversation = "\n".join(
-            f"{message.role.value}: {message.content}"
-            for message in messages
-            if message.role.value != "assistant"
-        )
-
-        response = self._chat(
-            messages=[
-                {
-                    "role": "system",
-                    "content": EXTRACT_MEMORY_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": conversation,
-                },
-            ],
-            model_name=self._utility_model,
-        )
-
-        try:
-            payload = json.loads(response)
-
-            memories = [
-                ExtractedMemory(
-                    key=item["key"],
-                    value=item["value"],
-                )
-                for item in payload
-            ]
-
-        except (
-            json.JSONDecodeError,
-            KeyError,
-            TypeError,
-        ):
-            logger.warning(
-                "Failed to parse extracted memories.",
-            )
-            return []
-
-        logger.info(
-            "Memory extraction completed: extracted=%d",
-            len(memories),
-        )
-
-        return memories
 
     def extract_candidates(
         self,

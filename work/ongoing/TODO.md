@@ -1,9 +1,10 @@
-# Remaining tasks in current stage
+# Ongoing status
 
-Stage 3 is in progress. Slices 1–10 are complete; Slice 11 remains Planned in
-`work/ongoing/PLAN.md`.
+Stage 3 is complete. All 11 slices and the master plan completion criteria are
+satisfied. The final quality suite passes with 242 tests passed and the optional
+networked OpenAI smoke test skipped by default.
 
-Next: Slice 11 — Prove the Stage 3 milestone and remove provisional paths.
+Next: Stage 4 — Build Characters foundations and Ongoing mode.
 
 ## Focused refactoring backlog
 

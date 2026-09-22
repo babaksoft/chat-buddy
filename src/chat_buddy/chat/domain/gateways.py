@@ -3,7 +3,6 @@ from typing import Protocol
 
 from chat_buddy.chat.domain.chat import ChatMessage
 from chat_buddy.chat.domain.context import CompletedTurn
-from chat_buddy.chat.domain.extracted_memory import ExtractedMemory
 from chat_buddy.chat.domain.memory import MemoryCandidate
 from chat_buddy.chat.domain.providers import (
     GenerationConfiguration,
@@ -87,22 +86,6 @@ class SummaryGenerator(Protocol):
 
         Returns:
             Generated conversation summary.
-        """
-
-        ...
-
-
-class MemoryExtractor(Protocol):
-    """Extract durable memory candidates independently of responses."""
-
-    def extract_memories(self, messages: list[ChatMessage]) -> list[ExtractedMemory]:
-        """Extract memory candidates from conversation messages.
-
-        Args:
-            messages: Conversation messages to inspect.
-
-        Returns:
-            Extracted durable memory candidates.
         """
 
         ...
