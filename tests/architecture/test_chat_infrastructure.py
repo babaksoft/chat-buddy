@@ -1,7 +1,11 @@
 """Architecture checks for the canonical Chat infrastructure adapters."""
 
 import ast
+import inspect
 from pathlib import Path
+from typing import get_args, get_origin, get_type_hints
+
+from sqlalchemy.orm import Session, sessionmaker
 
 PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
 CHAT_INFRASTRUCTURE_ROOT = PACKAGE_ROOT / "chat" / "infrastructure"
@@ -112,6 +116,53 @@ def test_generation_attempt_persistence_has_a_dedicated_adapter() -> None:
     assert all(
         hasattr(GenerationAttemptRepository, method) for method in lifecycle_methods
     )
+
+
+def test_chat_repositories_require_session_factories() -> None:
+    """Prevent concrete repositories from regaining live-session constructors."""
+
+    from chat_buddy.chat.infrastructure.db.repositories import (
+        ConversationRepository,
+        GenerationAttemptRepository,
+        MemoryRepository,
+        SummaryRepository,
+    )
+
+    repositories = (
+        ConversationRepository,
+        GenerationAttemptRepository,
+        MemoryRepository,
+        SummaryRepository,
+    )
+
+    for repository in repositories:
+        parameters = tuple(inspect.signature(repository).parameters.values())
+        session_factory_annotation = get_type_hints(repository.__init__)[
+            "session_factory"
+        ]
+        assert len(parameters) == 1
+        assert parameters[0].name == "session_factory"
+        assert get_origin(session_factory_annotation) is sessionmaker
+        assert get_args(session_factory_annotation) == (Session,)
+
+
+def test_chat_composition_passes_factory_without_opening_sessions() -> None:
+    """Keep SQLAlchemy session creation inside concrete repositories."""
+
+    composition_path = PACKAGE_ROOT / "chat" / "ui" / "composition.py"
+    tree = ast.parse(
+        composition_path.read_text(encoding="utf-8-sig"),
+        filename=str(composition_path),
+    )
+    opened_sessions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ChatSessionLocal"
+    ]
+
+    assert opened_sessions == []
 
 
 def test_chat_generation_migration_isolated_from_characters() -> None:

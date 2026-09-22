@@ -71,8 +71,8 @@ def test_memory_extraction_is_durable_chat_wide_and_idempotent(
     """Verify service/repository extraction persists provenance once.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     turn = _complete_turn(
@@ -114,8 +114,8 @@ def test_failed_candidate_transactions_roll_back_before_exhaustion(
     """Verify failed candidate writes leave only an exhausted receipt.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
         monkeypatch:
             Fixture used to simulate transaction failures.
     """

@@ -42,8 +42,8 @@ def _complete_turn(session_factory: sessionmaker[Session]) -> CompletedTurn:
     """Persist and return one exact completed turn.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
 
     Returns:
         Completed turn matching committed persistence.
@@ -84,8 +84,8 @@ def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
     """Verify persisted attempt content does not follow later message edits.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     repository = ConversationRepository(session_factory)
@@ -113,14 +113,13 @@ def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
 
 
 def test_database_rejects_second_open_attempt_per_conversation(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify the partial unique index closes the concurrent-start race.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     repository = ConversationRepository(session_factory)
@@ -151,13 +150,13 @@ def test_database_rejects_second_open_attempt_per_conversation(
         status=GenerationAttemptStatus.PENDING,
         created_at=first.created_at,
     )
-    session.add(second_message)
-    session.flush()
-    session.add(second)
+    with session_factory() as constraint_session:
+        constraint_session.add(second_message)
+        constraint_session.flush()
+        constraint_session.add(second)
 
-    with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        with pytest.raises(IntegrityError):
+            constraint_session.commit()
 
 
 def test_summary_replacement_preserves_lineage_and_uncovered_order(
@@ -166,8 +165,8 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
     """Verify atomic summary replacement and checkpoint coverage.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     attempts = GenerationAttemptRepository(session_factory)
@@ -226,33 +225,32 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
 
 
 def test_database_rejects_cross_conversation_summary_checkpoint(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify summary checkpoints cannot cross conversation ownership.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     conversations = ConversationRepository(session_factory)
     source_turn = _complete_turn(session_factory)
     other = conversations.create_conversation()
-    session.add(
-        Summary(
-            id=uuid4(),
-            conversation_id=other.id,
-            content="Invalid",
-            lifecycle=SummaryLifecycle.ACTIVE,
-            checkpoint_message_id=source_turn.assistant_message_id,
-            created_at=datetime.now(UTC),
+    with session_factory() as constraint_session:
+        constraint_session.add(
+            Summary(
+                id=uuid4(),
+                conversation_id=other.id,
+                content="Invalid",
+                lifecycle=SummaryLifecycle.ACTIVE,
+                checkpoint_message_id=source_turn.assistant_message_id,
+                created_at=datetime.now(UTC),
+            )
         )
-    )
 
-    with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        with pytest.raises(IntegrityError):
+            constraint_session.commit()
 
 
 def test_memory_extraction_correction_lifecycle_and_hard_delete(
@@ -261,8 +259,8 @@ def test_memory_extraction_correction_lifecycle_and_hard_delete(
     """Verify memory provenance, correction, eligibility, and purge behavior.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     turn = _complete_turn(session_factory)
@@ -329,8 +327,8 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
     """Verify one terminal receipt prevents repeated candidate effects.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     turn = _complete_turn(session_factory)
@@ -358,8 +356,8 @@ def test_extraction_supersedes_only_current_automatic_memory(
     """Verify automatic conflicts respect extracted, corrected, and excluded state.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     repository = MemoryRepository(session_factory)
@@ -458,8 +456,8 @@ def test_memory_rejects_stale_management_writes(
     """Verify stale revision identifiers cannot partially change or delete memory.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     turn = _complete_turn(session_factory)
@@ -516,8 +514,8 @@ def test_source_unavailability_clears_extracted_references(
     """Verify conversation deletion preparation retains memory without sources.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     turn = _complete_turn(session_factory)
@@ -547,38 +545,37 @@ def test_source_unavailability_clears_extracted_references(
 
 
 def test_database_rejects_invalid_memory_source_combination(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify extracted provenance must match one exact completed attempt.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     conversations = ConversationRepository(session_factory)
     turn = _complete_turn(session_factory)
     other = conversations.create_conversation()
-    session.add(
-        Memory(
-            revision_id=uuid4(),
-            memory_id=uuid4(),
-            subject="invalid",
-            content="Invalid provenance.",
-            lifecycle=MemoryLifecycle.ACTIVE,
-            origin_kind=MemoryOriginKind.EXTRACTED,
-            source_available=True,
-            source_conversation_id=other.id,
-            source_user_message_id=turn.user_message_id,
-            source_assistant_message_id=turn.assistant_message_id,
-            source_generation_attempt_id=turn.attempt_id,
-            source_generation_status=GenerationAttemptStatus.COMPLETED,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+    with session_factory() as constraint_session:
+        constraint_session.add(
+            Memory(
+                revision_id=uuid4(),
+                memory_id=uuid4(),
+                subject="invalid",
+                content="Invalid provenance.",
+                lifecycle=MemoryLifecycle.ACTIVE,
+                origin_kind=MemoryOriginKind.EXTRACTED,
+                source_available=True,
+                source_conversation_id=other.id,
+                source_user_message_id=turn.user_message_id,
+                source_assistant_message_id=turn.assistant_message_id,
+                source_generation_attempt_id=turn.attempt_id,
+                source_generation_status=GenerationAttemptStatus.COMPLETED,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
         )
-    )
 
-    with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        with pytest.raises(IntegrityError):
+            constraint_session.commit()

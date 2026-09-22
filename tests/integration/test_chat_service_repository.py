@@ -250,14 +250,13 @@ def _build_service(
 
 
 def test_new_conversation_completes_with_default_model_provenance(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify a new conversation persists response and immutable provenance.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     gateway = FakeGateway()
@@ -266,7 +265,8 @@ def test_new_conversation_completes_with_default_model_provenance(
     response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
     messages = conversations.get_messages(response.conversation_id)
-    attempts = list(session.scalars(select(GenerationAttempt)))
+    with session_factory() as inspection_session:
+        attempts = list(inspection_session.scalars(select(GenerationAttempt)))
     persisted_conversation = repository.get_conversation(response.conversation_id)
     assert [message.role for message in messages] == [ChatRole.USER, ChatRole.ASSISTANT]
     assert messages[1].content == "Response from first-model."
@@ -281,14 +281,13 @@ def test_new_conversation_completes_with_default_model_provenance(
 
 
 def test_resumed_conversation_streams_through_persisted_selection(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify streaming resumes with persisted model and requested settings.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     gateway = FakeGateway()
@@ -308,7 +307,8 @@ def test_resumed_conversation_streams_through_persisted_selection(
     assert conversations.get_messages(conversation.id)[1].content == (
         "Streamed from second-model."
     )
-    attempt = session.scalar(select(GenerationAttempt))
+    with session_factory() as inspection_session:
+        attempt = inspection_session.scalar(select(GenerationAttempt))
     assert attempt is not None
     assert attempt.status is GenerationAttemptStatus.COMPLETED
     assert attempt.model_id == "second-model"
@@ -316,14 +316,13 @@ def test_resumed_conversation_streams_through_persisted_selection(
 
 
 def test_composed_second_provider_is_selectable_and_streams(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify a second provider works without changing application services.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     second_gateway = FakeGateway()
@@ -349,7 +348,8 @@ def test_composed_second_provider_is_selectable_and_streams(
     assert conversations.get_messages(conversation.id)[1].content == (
         "Streamed from second-provider-model."
     )
-    attempt = session.scalar(select(GenerationAttempt))
+    with session_factory() as inspection_session:
+        attempt = inspection_session.scalar(select(GenerationAttempt))
     assert attempt is not None
     assert attempt.provider_id == "second-provider"
     assert attempt.model_id == "second-provider-model"
@@ -357,14 +357,13 @@ def test_composed_second_provider_is_selectable_and_streams(
 
 
 def test_model_change_affects_next_attempt_without_rewriting_provenance(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify selection changes apply only at the next attempt boundary.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     service, conversations, repository = _build_service(session_factory, FakeGateway())
@@ -381,11 +380,12 @@ def test_model_change_affects_next_attempt_without_rewriting_provenance(
     )
     service.chat(ChatRequest(conversation.id, "Second turn"))
 
-    attempts = list(
-        session.scalars(
-            select(GenerationAttempt).order_by(GenerationAttempt.created_at)
+    with session_factory() as inspection_session:
+        attempts = list(
+            inspection_session.scalars(
+                select(GenerationAttempt).order_by(GenerationAttempt.created_at)
+            )
         )
-    )
     assert [attempt.model_id for attempt in attempts] == [
         "first-model",
         "second-model",
@@ -395,14 +395,13 @@ def test_model_change_affects_next_attempt_without_rewriting_provenance(
 
 
 def test_title_generation_runs_after_completed_attempt(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify successful first exchange retains existing auto-title behavior.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     service, _, repository = _build_service(
@@ -413,7 +412,8 @@ def test_title_generation_runs_after_completed_attempt(
     response = service.chat(ChatRequest(None, "Plan the launch"))
 
     conversation = repository.get_conversation(response.conversation_id)
-    attempt = session.scalar(select(GenerationAttempt))
+    with session_factory() as inspection_session:
+        attempt = inspection_session.scalar(select(GenerationAttempt))
     assert attempt is not None
     assert attempt.status is GenerationAttemptStatus.COMPLETED
     assert conversation is not None
@@ -421,14 +421,13 @@ def test_title_generation_runs_after_completed_attempt(
 
 
 def test_multiple_completed_turns_remain_normal_conversation_history(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify lifecycle routing preserves ordinary multi-turn history.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     service, conversations, repository = _build_service(session_factory, FakeGateway())
@@ -447,14 +446,13 @@ def test_multiple_completed_turns_remain_normal_conversation_history(
 
 
 def test_successful_retry_reuses_user_message_and_adds_one_assistant(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify retry recovery creates one response without duplicate input.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     gateway = RecoveringGateway()
@@ -467,7 +465,8 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.chat(ChatRequest(None, "Recover this turn"))
-    failed = session.scalar(select(GenerationAttempt))
+    with session_factory() as inspection_session:
+        failed = inspection_session.scalar(select(GenerationAttempt))
     assert failed is not None
     assert failed.status is GenerationAttemptStatus.FAILED
 
@@ -479,11 +478,12 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     response = service.retry(failed.id)
 
     messages = conversations.get_messages(response.conversation_id)
-    attempts = list(
-        session.scalars(
-            select(GenerationAttempt).order_by(GenerationAttempt.created_at)
+    with session_factory() as inspection_session:
+        attempts = list(
+            inspection_session.scalars(
+                select(GenerationAttempt).order_by(GenerationAttempt.created_at)
+            )
         )
-    )
     assert [message.role for message in messages] == [
         ChatRole.USER,
         ChatRole.ASSISTANT,
@@ -507,14 +507,13 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
 
 
 def test_failed_retry_remains_outside_completed_history(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify another provider failure creates no assistant message.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     gateway = RecoveringGateway()
@@ -522,13 +521,15 @@ def test_failed_retry_remains_outside_completed_history(
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.chat(ChatRequest(None, "Still failing"))
-    failed = session.scalar(select(GenerationAttempt))
+    with session_factory() as inspection_session:
+        failed = inspection_session.scalar(select(GenerationAttempt))
     assert failed is not None
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.retry(failed.id)
 
-    attempts = list(session.scalars(select(GenerationAttempt)))
+    with session_factory() as inspection_session:
+        attempts = list(inspection_session.scalars(select(GenerationAttempt)))
     messages = conversations.get_messages(failed.conversation_id)
     assert len(attempts) == 2
     assert all(attempt.status is GenerationAttemptStatus.FAILED for attempt in attempts)

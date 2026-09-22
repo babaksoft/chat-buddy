@@ -195,8 +195,8 @@ def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
     """Long provider-backed history stays bounded across Chat conversations.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
         provider_id:
             Local or cloud response-provider identifier.
         model_id:

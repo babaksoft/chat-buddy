@@ -68,8 +68,8 @@ def test_memory_management_controls_eligibility_and_purges_lineage(
     """Verify correction, lifecycle controls, and deletion across repositories.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     conversations = ConversationRepository(session_factory)

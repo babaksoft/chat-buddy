@@ -1,6 +1,6 @@
 # Chat Repository Refactoring Plan
 
-Status: In progress — Slices 1–3 complete; Slice 4 next
+Status: Complete — all four slices and completion criteria satisfied
 
 Last updated: 2026-09-22
 
@@ -69,16 +69,16 @@ this slice so it remains focused on ownership boundaries.
 - [x] Add deterministic session-closure checks and retain failed-write rollback
   coverage.
 
-### Slice 4: Consolidation and completion
+### Slice 4: Consolidation and completion — Complete
 
-- [ ] Remove transitional fixtures, constructors, helpers, and stale test
+- [x] Remove transitional fixtures, constructors, helpers, and stale test
   doubles.
-- [ ] Verify exports and Chat architecture boundaries.
-- [ ] Confirm no Chat repository accepts a live session and composition creates
+- [x] Verify exports and Chat architecture boundaries.
+- [x] Confirm no Chat repository accepts a live session and composition creates
   none.
-- [ ] Run `scripts/check.sh` and resolve formatting, import, typing,
+- [x] Run `scripts/check.sh` and resolve formatting, import, typing,
   architecture, and behavioral regressions.
-- [ ] Mark this plan and the ongoing TODO complete only after the full suite
+- [x] Mark this plan and the ongoing TODO complete only after the full suite
   passes.
 
 ## Completion criteria

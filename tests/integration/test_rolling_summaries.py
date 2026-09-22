@@ -191,8 +191,8 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
     """Persisted checkpoints isolate two conversations and skip covered turns.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     conversations = ConversationRepository(session_factory)
@@ -246,14 +246,13 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
 
 
 def test_deleting_conversation_hard_deletes_its_summary_versions(
-    session: Session,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Conversation ownership cascades deletion across summary lineage.
 
     Args:
-        session:
-            Isolated database session.
+        session_factory:
+            Isolated database session factory.
     """
 
     conversations = ConversationRepository(session_factory)
@@ -270,9 +269,10 @@ def test_deleting_conversation_hard_deletes_its_summary_versions(
 
     conversations.delete_conversation(conversation.id)
 
-    version_count = session.scalar(
-        select(func.count())
-        .select_from(Summary)
-        .where(Summary.conversation_id == conversation.id)
-    )
+    with session_factory() as inspection_session:
+        version_count = inspection_session.scalar(
+            select(func.count())
+            .select_from(Summary)
+            .where(Summary.conversation_id == conversation.id)
+        )
     assert version_count == 0

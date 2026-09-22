@@ -56,21 +56,3 @@ def session_factory() -> Generator[sessionmaker[Session], None, None]:
         yield factory
     finally:
         engine.dispose()
-
-
-@pytest.fixture
-def session(
-    session_factory: sessionmaker[Session],
-) -> Generator[Session, None, None]:
-    """Create a separate database inspection and constraint-test session.
-
-    Args:
-        session_factory:
-            Isolated test database session factory.
-
-    Yields:
-        SQLAlchemy session connected to the isolated test database.
-    """
-
-    with session_factory() as session:
-        yield session
