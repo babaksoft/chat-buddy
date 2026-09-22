@@ -1,6 +1,6 @@
 # Chat Repository Refactoring Plan
 
-Status: In progress — Slices 1–2 complete; Slice 3 next
+Status: In progress — Slices 1–3 complete; Slice 4 next
 
 Last updated: 2026-09-22
 
@@ -54,19 +54,19 @@ This slice changes no production behavior.
 Repositories continue using the existing shared-session construction during
 this slice so it remains focused on ownership boundaries.
 
-### Slice 3: Move repositories to repository-owned sessions
+### Slice 3: Move repositories to repository-owned sessions — Complete
 
-- [ ] Change Conversation, Generation Attempt, Memory, and Summary repository
+- [x] Change Conversation, Generation Attempt, Memory, and Summary repository
   implementations to accept a typed SQLAlchemy session factory.
-- [ ] Open and close one session per public operation and use repository-owned
+- [x] Open and close one session per public operation and use repository-owned
   transaction contexts for writes.
-- [ ] Pass the active session into private helpers so nested work and compound
+- [x] Pass the active session into private helpers so nested work and compound
   lifecycle operations remain in one transaction.
-- [ ] Update Chat composition to pass `ChatSessionLocal` directly and hold no
+- [x] Update Chat composition to pass `ChatSessionLocal` directly and hold no
   long-lived session.
-- [ ] Convert repository and integration tests to factory construction and
+- [x] Convert repository and integration tests to factory construction and
   separate inspection sessions.
-- [ ] Add deterministic session-closure checks and retain failed-write rollback
+- [x] Add deterministic session-closure checks and retain failed-write rollback
   coverage.
 
 ### Slice 4: Consolidation and completion

@@ -19,48 +19,47 @@ def run_smoke_test() -> None:
     5. Verify cleanup.
     """
 
-    with ChatSessionLocal() as session:
-        repository = ConversationRepository(session)
+    repository = ConversationRepository(ChatSessionLocal)
 
-        conversation = repository.create_conversation(
-            title="Repository Test",
-        )
+    conversation = repository.create_conversation(
+        title="Repository Test",
+    )
 
-        repository.add_message(
-            conversation.id,
-            ChatRole.USER,
-            "Hello Samantha",
-        )
+    repository.add_message(
+        conversation.id,
+        ChatRole.USER,
+        "Hello Samantha",
+    )
 
-        repository.add_message(
-            conversation.id,
-            ChatRole.ASSISTANT,
-            "Hello human!",
-        )
+    repository.add_message(
+        conversation.id,
+        ChatRole.ASSISTANT,
+        "Hello human!",
+    )
 
-        messages = repository.get_messages(
-            conversation.id,
-        )
+    messages = repository.get_messages(
+        conversation.id,
+    )
 
-        print(f"Conversation ID: {conversation.id}")
+    print(f"Conversation ID: {conversation.id}")
 
-        for message in messages:
-            print(f"{message.role.value}: " f"{message.content}")
+    for message in messages:
+        print(f"{message.role.value}: " f"{message.content}")
 
-        deleted = repository.delete_conversation(
-            conversation.id,
-        )
+    deleted = repository.delete_conversation(
+        conversation.id,
+    )
 
-        print(f"Conversation deleted: {deleted}")
+    print(f"Conversation deleted: {deleted}")
 
-        conversation_after_delete = repository.get_conversation(
-            conversation.id,
-        )
+    conversation_after_delete = repository.get_conversation(
+        conversation.id,
+    )
 
-        print(
-            "Conversation exists after deletion:",
-            conversation_after_delete is not None,
-        )
+    print(
+        "Conversation exists after deletion:",
+        conversation_after_delete is not None,
+    )
 
 
 if __name__ == "__main__":

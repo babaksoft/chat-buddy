@@ -2,8 +2,9 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.application.service import (
     MemoryExtractionService,
@@ -65,7 +66,7 @@ def _complete_turn(
 
 
 def test_memory_extraction_is_durable_chat_wide_and_idempotent(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify service/repository extraction persists provenance once.
 
@@ -75,9 +76,10 @@ def test_memory_extraction_is_durable_chat_wide_and_idempotent(
     """
 
     turn = _complete_turn(
-        ConversationRepository(session), GenerationAttemptRepository(session)
+        ConversationRepository(session_factory),
+        GenerationAttemptRepository(session_factory),
     )
-    memory_repository = MemoryRepository(session)
+    memory_repository = MemoryRepository(session_factory)
     extractor = Mock()
     extractor.extract_candidates.return_value = (
         MemoryCandidate(subject="location", content="The user lives in Tehran."),
@@ -90,7 +92,7 @@ def test_memory_extraction_is_durable_chat_wide_and_idempotent(
 
     first = service.process(turn)
     repeated = service.process(turn)
-    other_conversation = ConversationRepository(session).create_conversation()
+    other_conversation = ConversationRepository(session_factory).create_conversation()
     eligible_for_other_conversation = memory_repository.list_eligible_memories()
 
     assert other_conversation.id != turn.conversation_id
@@ -106,7 +108,7 @@ def test_memory_extraction_is_durable_chat_wide_and_idempotent(
 
 
 def test_failed_candidate_transactions_roll_back_before_exhaustion(
-    session: Session,
+    session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify failed candidate writes leave only an exhausted receipt.
@@ -119,17 +121,17 @@ def test_failed_candidate_transactions_roll_back_before_exhaustion(
     """
 
     turn = _complete_turn(
-        ConversationRepository(session), GenerationAttemptRepository(session)
+        ConversationRepository(session_factory),
+        GenerationAttemptRepository(session_factory),
     )
-    memory_repository = MemoryRepository(session)
+    memory_repository = MemoryRepository(session_factory)
     extractor = Mock()
     extractor.extract_candidates.return_value = (
         MemoryCandidate(subject="location", content="The user lives in Tehran."),
     )
-    original_commit = session.commit
     commit_count = 0
 
-    def fail_candidate_commits() -> None:
+    def fail_candidate_commits(_: Session) -> None:
         """Fail three candidate commits, then allow the exhausted receipt.
 
         Raises:
@@ -141,16 +143,18 @@ def test_failed_candidate_transactions_roll_back_before_exhaustion(
         commit_count += 1
         if commit_count <= 3:
             raise SQLAlchemyError("simulated transaction failure")
-        original_commit()
 
-    monkeypatch.setattr(session, "commit", Mock(side_effect=fail_candidate_commits))
+    event.listen(session_factory.class_, "before_commit", fail_candidate_commits)
     service = MemoryExtractionService(
         repository=memory_repository,
         extractor=extractor,
         clock=lambda: datetime.now(UTC),
     )
 
-    receipt = service.process(turn)
+    try:
+        receipt = service.process(turn)
+    finally:
+        event.remove(session_factory.class_, "before_commit", fail_candidate_commits)
 
     assert receipt.outcome is MemoryExtractionOutcome.EXHAUSTED
     assert receipt.attempt_count == 3

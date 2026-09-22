@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from chat_buddy.chat.domain import (
     ChatRole,
@@ -23,15 +23,15 @@ from chat_buddy.chat.infrastructure.db.models import (
 class SummaryRepository:
     """Persists conversation-owned checkpointed summary versions."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the repository.
 
         Args:
-            session:
-                SQLAlchemy session used for repository operations.
+            session_factory:
+                Factory for repository-owned SQLAlchemy sessions.
         """
 
-        self._session = session
+        self._session_factory = session_factory
 
     def get_active_summary(self, conversation_id: UUID) -> SummaryRecord | None:
         """Return the active summary for a conversation.
@@ -48,8 +48,9 @@ class SummaryRepository:
             Summary.conversation_id == conversation_id,
             Summary.lifecycle == SummaryLifecycle.ACTIVE,
         )
-        model = self._session.scalar(statement)
-        return self._to_record(model) if model is not None else None
+        with self._session_factory() as session:
+            model = session.scalar(statement)
+            return self._to_record(model) if model is not None else None
 
     def get_summary(self, summary_id: UUID) -> SummaryRecord | None:
         """Return one summary version.
@@ -62,8 +63,9 @@ class SummaryRepository:
             Matching summary record, or ``None`` when absent.
         """
 
-        model = self._session.get(Summary, summary_id)
-        return self._to_record(model) if model is not None else None
+        with self._session_factory() as session:
+            model = session.get(Summary, summary_id)
+            return self._to_record(model) if model is not None else None
 
     def replace_active_summary(
         self,
@@ -94,50 +96,55 @@ class SummaryRepository:
         if summary.lifecycle is not SummaryLifecycle.ACTIVE:
             raise ValueError("A replacement summary must be active.")
 
-        active = self._lock_active(summary.conversation_id)
-        active_id = active.id if active is not None else None
-        if active_id != expected_active_id:
-            raise RuntimeError("The active summary changed before replacement.")
-        if summary.predecessor_id != expected_active_id:
-            raise ValueError(
-                "Summary predecessor must match the expected active version."
-            )
-
-        checkpoint = self._completed_attempt_for_message(
-            summary.checkpoint_message_id,
-            summary.conversation_id,
-        )
-        if checkpoint is None:
-            raise ValueError(
-                "Summary checkpoint must be a completed assistant message in its conversation."
-            )
-
-        if active is not None:
-            prior_checkpoint = self._completed_attempt_for_message(
-                active.checkpoint_message_id,
-                summary.conversation_id,
-            )
-            if prior_checkpoint is None:
-                raise ValueError("The active summary has an invalid checkpoint.")
-            if self._attempt_order(checkpoint) < self._attempt_order(prior_checkpoint):
-                raise ValueError("A summary checkpoint cannot move backward.")
-            active.lifecycle = SummaryLifecycle.SUPERSEDED
-
-        model = Summary(
-            id=summary.id,
-            conversation_id=summary.conversation_id,
-            content=summary.content,
-            lifecycle=summary.lifecycle,
-            predecessor_id=summary.predecessor_id,
-            checkpoint_message_id=summary.checkpoint_message_id,
-            created_at=summary.created_at,
-        )
         try:
-            self._session.add(model)
-            self._session.commit()
-            return summary
-        except SQLAlchemyError:
-            self._session.rollback()
+            with self._session_factory() as session, session.begin():
+                active = self._lock_active(session, summary.conversation_id)
+                active_id = active.id if active is not None else None
+                if active_id != expected_active_id:
+                    raise RuntimeError("The active summary changed before replacement.")
+                if summary.predecessor_id != expected_active_id:
+                    raise ValueError(
+                        "Summary predecessor must match the expected active version."
+                    )
+
+                checkpoint = self._completed_attempt_for_message(
+                    session,
+                    summary.checkpoint_message_id,
+                    summary.conversation_id,
+                )
+                if checkpoint is None:
+                    raise ValueError(
+                        "Summary checkpoint must be a completed assistant message in its conversation."
+                    )
+
+                if active is not None:
+                    prior_checkpoint = self._completed_attempt_for_message(
+                        session,
+                        active.checkpoint_message_id,
+                        summary.conversation_id,
+                    )
+                    if prior_checkpoint is None:
+                        raise ValueError(
+                            "The active summary has an invalid checkpoint."
+                        )
+                    if self._attempt_order(checkpoint) < self._attempt_order(
+                        prior_checkpoint
+                    ):
+                        raise ValueError("A summary checkpoint cannot move backward.")
+                    active.lifecycle = SummaryLifecycle.SUPERSEDED
+
+                model = Summary(
+                    id=summary.id,
+                    conversation_id=summary.conversation_id,
+                    content=summary.content,
+                    lifecycle=summary.lifecycle,
+                    predecessor_id=summary.predecessor_id,
+                    checkpoint_message_id=summary.checkpoint_message_id,
+                    created_at=summary.created_at,
+                )
+                session.add(model)
+                return summary
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
     def get_uncovered_completed_turns(
@@ -173,34 +180,36 @@ class SummaryRepository:
             )
             .order_by(GenerationAttempt.finished_at, GenerationAttempt.id)
         )
-        rows = list(self._session.execute(statement))
-        active = self.get_active_summary(conversation_id)
-        if active is not None:
-            positions = {
-                attempt.assistant_message_id: index
-                for index, (attempt, _, _) in enumerate(rows)
-            }
-            checkpoint_position = positions.get(active.checkpoint_message_id)
-            if checkpoint_position is None:
-                raise ValueError(
-                    "The active summary checkpoint is not a completed turn."
+        with self._session_factory() as session:
+            rows = list(session.execute(statement))
+            active_model = self._active_summary(session, conversation_id)
+            if active_model is not None:
+                active = self._to_record(active_model)
+                positions = {
+                    attempt.assistant_message_id: index
+                    for index, (attempt, _, _) in enumerate(rows)
+                }
+                checkpoint_position = positions.get(active.checkpoint_message_id)
+                if checkpoint_position is None:
+                    raise ValueError(
+                        "The active summary checkpoint is not a completed turn."
+                    )
+                rows = rows[checkpoint_position + 1 :]
+
+            return tuple(
+                CompletedTurn(
+                    conversation_id=attempt.conversation_id,
+                    attempt_id=attempt.id,
+                    user_message_id=user.id,
+                    assistant_message_id=assistant.id,
+                    user_content=attempt.submitted_user_content,
+                    assistant_content=assistant.content,
+                    completed_at=self._aware(attempt.finished_at),
                 )
-            rows = rows[checkpoint_position + 1 :]
-
-        return tuple(
-            CompletedTurn(
-                conversation_id=attempt.conversation_id,
-                attempt_id=attempt.id,
-                user_message_id=user.id,
-                assistant_message_id=assistant.id,
-                user_content=attempt.submitted_user_content,
-                assistant_content=assistant.content,
-                completed_at=self._aware(attempt.finished_at),
+                for attempt, user, assistant in rows
             )
-            for attempt, user, assistant in rows
-        )
 
-    def _lock_active(self, conversation_id: UUID) -> Summary | None:
+    def _lock_active(self, session: Session, conversation_id: UUID) -> Summary | None:
         """Load the current active summary with a row lock.
 
         Args:
@@ -219,10 +228,21 @@ class SummaryRepository:
             )
             .with_for_update()
         )
-        return self._session.scalar(statement)
+        return session.scalar(statement)
+
+    def _active_summary(
+        self, session: Session, conversation_id: UUID
+    ) -> Summary | None:
+        """Load the active summary using an existing session."""
+
+        statement = select(Summary).where(
+            Summary.conversation_id == conversation_id,
+            Summary.lifecycle == SummaryLifecycle.ACTIVE,
+        )
+        return session.scalar(statement)
 
     def _completed_attempt_for_message(
-        self, message_id: UUID, conversation_id: UUID
+        self, session: Session, message_id: UUID, conversation_id: UUID
     ) -> GenerationAttempt | None:
         """Load a completed attempt for one assistant checkpoint.
 
@@ -241,7 +261,7 @@ class SummaryRepository:
             GenerationAttempt.conversation_id == conversation_id,
             GenerationAttempt.status == GenerationAttemptStatus.COMPLETED,
         )
-        return self._session.scalar(statement)
+        return session.scalar(statement)
 
     @staticmethod
     def _attempt_order(attempt: GenerationAttempt) -> tuple[datetime, UUID]:

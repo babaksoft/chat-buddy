@@ -36,11 +36,10 @@ def build_services() -> tuple[
 ]:
     """Create the application services used by the Chat page."""
 
-    session = ChatSessionLocal()
-    conversation_repository = ConversationRepository(session)
-    generation_attempt_repository = GenerationAttemptRepository(session)
-    memory_repository = MemoryRepository(session)
-    summary_repository = SummaryRepository(session)
+    conversation_repository = ConversationRepository(ChatSessionLocal)
+    generation_attempt_repository = GenerationAttemptRepository(ChatSessionLocal)
+    memory_repository = MemoryRepository(ChatSessionLocal)
+    summary_repository = SummaryRepository(ChatSessionLocal)
 
     provider_runtime = build_provider_runtime()
     memory_extraction_service = MemoryExtractionService(

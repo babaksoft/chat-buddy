@@ -4,7 +4,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.application.config import RollingSummaryConfig
 from chat_buddy.chat.application.service import RollingSummaryService
@@ -186,7 +186,7 @@ def _inputs(conversation_id: UUID) -> ContextInputs:
 
 
 def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Persisted checkpoints isolate two conversations and skip covered turns.
 
@@ -195,9 +195,9 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
-    summaries = SummaryRepository(session)
+    conversations = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
+    summaries = SummaryRepository(session_factory)
     first_conversation = conversations.create_conversation()
     second_conversation = conversations.create_conversation()
     first_turns = tuple(
@@ -247,6 +247,7 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
 
 def test_deleting_conversation_hard_deletes_its_summary_versions(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Conversation ownership cascades deletion across summary lineage.
 
@@ -255,9 +256,9 @@ def test_deleting_conversation_hard_deletes_its_summary_versions(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
-    summaries = SummaryRepository(session)
+    conversations = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
+    summaries = SummaryRepository(session_factory)
     conversation = conversations.create_conversation()
     for number in range(3):
         _complete_turn(attempts, conversation.id, number)

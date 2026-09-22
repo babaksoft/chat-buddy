@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.domain import (
     ChatRole,
@@ -29,16 +29,16 @@ logger = logging.getLogger(__name__)
 class ConversationRepository:
     """Provide persistence for conversations and standalone messages."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """
         Initialize the repository.
 
         Args:
-            session:
-                SQLAlchemy session.
+            session_factory:
+                Factory for repository-owned SQLAlchemy sessions.
         """
 
-        self._session = session
+        self._session_factory = session_factory
 
     def create_conversation(
         self,
@@ -69,29 +69,26 @@ class ConversationRepository:
         """
 
         try:
-            conversation = Conversation(
-                title=title,
-                provider_id=str(provider_id) if provider_id is not None else None,
-                model_id=str(model_id) if model_id is not None else None,
-                requested_generation_configuration=self._configuration_to_dict(
-                    requested_generation_configuration or GenerationConfiguration()
-                ),
-            )
+            with self._session_factory() as session, session.begin():
+                conversation = Conversation(
+                    title=title,
+                    provider_id=str(provider_id) if provider_id is not None else None,
+                    model_id=str(model_id) if model_id is not None else None,
+                    requested_generation_configuration=self._configuration_to_dict(
+                        requested_generation_configuration or GenerationConfiguration()
+                    ),
+                )
 
-            self._session.add(conversation)
-            self._session.commit()
-            self._session.refresh(conversation)
+                session.add(conversation)
+                session.flush()
 
-            logger.info(
-                "Created conversation %s",
-                conversation.id,
-            )
-
-            return self._to_conversation_record(conversation)
+                logger.info(
+                    "Created conversation %s",
+                    conversation.id,
+                )
+                return self._to_conversation_record(conversation)
 
         except SQLAlchemyError:
-            self._session.rollback()
-
             logger.exception("Failed to create conversation.")
             raise
 
@@ -123,22 +120,20 @@ class ConversationRepository:
         """
 
         try:
-            conversation = self._session.get(Conversation, conversation_id)
-            if conversation is None:
-                return None
+            with self._session_factory() as session, session.begin():
+                conversation = session.get(Conversation, conversation_id)
+                if conversation is None:
+                    return None
 
-            conversation.provider_id = str(provider_id)
-            conversation.model_id = str(model_id)
-            conversation.requested_generation_configuration = (
-                self._configuration_to_dict(requested_configuration)
-            )
-            self._session.commit()
-            self._session.refresh(conversation)
-            return self._to_conversation_record(conversation)
+                conversation.provider_id = str(provider_id)
+                conversation.model_id = str(model_id)
+                conversation.requested_generation_configuration = (
+                    self._configuration_to_dict(requested_configuration)
+                )
+                session.flush()
+                return self._to_conversation_record(conversation)
 
         except SQLAlchemyError:
-            self._session.rollback()
-
             logger.exception(
                 "Failed to update generation defaults for conversation %s.",
                 conversation_id,
@@ -161,10 +156,11 @@ class ConversationRepository:
             otherwise None.
         """
 
-        conversation = self._session.get(
-            Conversation,
-            conversation_id,
-        )
+        with self._session_factory() as session:
+            conversation = session.get(
+                Conversation,
+                conversation_id,
+            )
 
         logger.debug(
             "Retrieved conversation %s: found=%s",
@@ -195,7 +191,8 @@ class ConversationRepository:
             Conversation.updated_at.desc(),
         )
 
-        conversations = list(self._session.scalars(statement))
+        with self._session_factory() as session:
+            conversations = list(session.scalars(statement))
 
         logger.debug(
             "Retrieved %d conversations.",
@@ -228,33 +225,30 @@ class ConversationRepository:
         """
 
         try:
-            conversation = self._session.get(
-                Conversation,
-                conversation_id,
-            )
-
-            if conversation is None:
-                logger.warning(
-                    "Conversation %s not found for rename.",
+            with self._session_factory() as session, session.begin():
+                conversation = session.get(
+                    Conversation,
                     conversation_id,
                 )
 
-                return False
+                if conversation is None:
+                    logger.warning(
+                        "Conversation %s not found for rename.",
+                        conversation_id,
+                    )
 
-            conversation.title = title
-            self._session.commit()
-            self._session.refresh(conversation)
+                    return False
 
-            logger.info(
-                "Renamed conversation %s.",
-                conversation_id,
-            )
+                conversation.title = title
 
-            return True
+                logger.info(
+                    "Renamed conversation %s.",
+                    conversation_id,
+                )
+
+                return True
 
         except SQLAlchemyError:
-            self._session.rollback()
-
             logger.exception(
                 "Failed to rename conversation %s.",
                 conversation_id,
@@ -287,27 +281,24 @@ class ConversationRepository:
         """
 
         try:
-            message = Message(
-                conversation_id=conversation_id,
-                role=role,
-                content=content,
-            )
+            with self._session_factory() as session, session.begin():
+                message = Message(
+                    conversation_id=conversation_id,
+                    role=role,
+                    content=content,
+                )
 
-            self._session.add(message)
-            self._session.commit()
-            self._session.refresh(message)
+                session.add(message)
+                session.flush()
 
-            logger.info(
-                "Added %s message to conversation %s",
-                role.value,
-                conversation_id,
-            )
-
-            return self._to_message_record(message)
+                logger.info(
+                    "Added %s message to conversation %s",
+                    role.value,
+                    conversation_id,
+                )
+                return self._to_message_record(message)
 
         except SQLAlchemyError:
-            self._session.rollback()
-
             logger.exception(
                 "Failed to add message to conversation %s",
                 conversation_id,
@@ -340,7 +331,8 @@ class ConversationRepository:
             )
         )
 
-        messages = list(self._session.scalars(statement))
+        with self._session_factory() as session:
+            messages = list(session.scalars(statement))
 
         logger.debug(
             "Retrieved %d messages from conversation %s",
@@ -361,8 +353,9 @@ class ConversationRepository:
             The matching message, or ``None`` when it does not exist.
         """
 
-        message = self._session.get(Message, message_id)
-        return self._to_message_record(message) if message is not None else None
+        with self._session_factory() as session:
+            message = session.get(Message, message_id)
+            return self._to_message_record(message) if message is not None else None
 
     def get_unmatched_user_message(self, conversation_id: UUID) -> MessageRecord | None:
         """Return the unanswered final user message, when present.
@@ -381,10 +374,11 @@ class ConversationRepository:
             .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(1)
         )
-        message = self._session.scalar(statement)
-        if message is None or message.role is not ChatRole.USER:
-            return None
-        return self._to_message_record(message)
+        with self._session_factory() as session:
+            message = session.scalar(statement)
+            if message is None or message.role is not ChatRole.USER:
+                return None
+            return self._to_message_record(message)
 
     def edit_unmatched_user_message(
         self, conversation_id: UUID, content: str
@@ -409,33 +403,37 @@ class ConversationRepository:
                 If replacement content is blank.
         """
 
-        if not content.strip():
-            raise ValueError("User message content must be non-empty.")
-        if self._has_open_generation_attempt(conversation_id):
-            raise InvalidGenerationAttemptTransitionError(
-                "Cannot edit an unmatched user message while an attempt is open."
-            )
-        tail = self.get_unmatched_user_message(conversation_id)
-        if tail is None:
-            raise LookupError(
-                f"Conversation {conversation_id} has no unmatched user message."
-            )
-
-        model = self._session.get(Message, tail.id)
-        if model is None:
-            raise LookupError(f"Message {tail.id} does not exist.")
-
-        model.content = content
         try:
-            self._session.commit()
+            with self._session_factory() as session, session.begin():
+                if not content.strip():
+                    raise ValueError("User message content must be non-empty.")
+                if self._has_open_generation_attempt(session, conversation_id):
+                    raise InvalidGenerationAttemptTransitionError(
+                        "Cannot edit an unmatched user message while an attempt is open."
+                    )
+                tail = self._get_unmatched_user_message(session, conversation_id)
+                if tail is None:
+                    raise LookupError(
+                        f"Conversation {conversation_id} has no unmatched user message."
+                    )
+
+                model = session.get(Message, tail.id)
+                if model is None:
+                    raise LookupError(f"Message {tail.id} does not exist.")
+
+                model.content = content
+                session.flush()
+                return self._to_message_record(model)
         except SQLAlchemyError:
-            self._session.rollback()
-            logger.exception("Failed to edit unmatched message %s.", tail.id)
+            logger.exception(
+                "Failed to edit unmatched message in conversation %s.",
+                conversation_id,
+            )
             raise
 
-        return self._to_message_record(model)
-
-    def _has_open_generation_attempt(self, conversation_id: UUID) -> bool:
+    def _has_open_generation_attempt(
+        self, session: Session, conversation_id: UUID
+    ) -> bool:
         """Return whether a generation attempt currently owns the message tail.
 
         Args:
@@ -459,7 +457,23 @@ class ConversationRepository:
             )
             .limit(1)
         )
-        return self._session.scalar(statement) is not None
+        return session.scalar(statement) is not None
+
+    def _get_unmatched_user_message(
+        self, session: Session, conversation_id: UUID
+    ) -> MessageRecord | None:
+        """Return the unmatched tail using an existing transaction."""
+
+        statement = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+        message = session.scalar(statement)
+        if message is None or message.role is not ChatRole.USER:
+            return None
+        return self._to_message_record(message)
 
     @staticmethod
     def _to_conversation_record(conversation: Conversation) -> ConversationRecord:
@@ -587,29 +601,27 @@ class ConversationRepository:
         """
 
         try:
-            conversation = self._session.get(
-                Conversation,
-                conversation_id,
-            )
-            if conversation is None:
-                logger.warning(
-                    "Conversation %s not found for deletion.",
+            with self._session_factory() as session, session.begin():
+                conversation = session.get(
+                    Conversation,
                     conversation_id,
                 )
-                return False
+                if conversation is None:
+                    logger.warning(
+                        "Conversation %s not found for deletion.",
+                        conversation_id,
+                    )
+                    return False
 
-            self._session.delete(conversation)
-            self._session.commit()
+                session.delete(conversation)
 
-            logger.info(
-                "Deleted conversation %s",
-                conversation_id,
-            )
-            return True
+                logger.info(
+                    "Deleted conversation %s",
+                    conversation_id,
+                )
+                return True
 
         except SQLAlchemyError:
-            self._session.rollback()
-
             logger.exception(
                 "Failed to delete conversation %s",
                 conversation_id,

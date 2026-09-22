@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.domain import (
     ChatRole,
@@ -38,7 +38,7 @@ from chat_buddy.chat.infrastructure.db.repositories import (
 )
 
 
-def _complete_turn(session: Session) -> CompletedTurn:
+def _complete_turn(session_factory: sessionmaker[Session]) -> CompletedTurn:
     """Persist and return one exact completed turn.
 
     Args:
@@ -49,8 +49,8 @@ def _complete_turn(session: Session) -> CompletedTurn:
         Completed turn matching committed persistence.
     """
 
-    conversations = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
+    conversations = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
     conversation = conversations.create_conversation()
     pending = attempts.start_generation_attempt(
         conversation.id,
@@ -79,7 +79,7 @@ def _complete_turn(session: Session) -> CompletedTurn:
 
 
 def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify persisted attempt content does not follow later message edits.
 
@@ -88,8 +88,8 @@ def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
             Isolated database session.
     """
 
-    repository = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
+    repository = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
     conversation = repository.create_conversation()
     pending = attempts.start_generation_attempt(
         conversation.id,
@@ -114,6 +114,7 @@ def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
 
 def test_database_rejects_second_open_attempt_per_conversation(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify the partial unique index closes the concurrent-start race.
 
@@ -122,8 +123,8 @@ def test_database_rejects_second_open_attempt_per_conversation(
             Isolated database session.
     """
 
-    repository = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
+    repository = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
     conversation = repository.create_conversation()
     first = attempts.start_generation_attempt(
         conversation.id,
@@ -160,7 +161,7 @@ def test_database_rejects_second_open_attempt_per_conversation(
 
 
 def test_summary_replacement_preserves_lineage_and_uncovered_order(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify atomic summary replacement and checkpoint coverage.
 
@@ -169,9 +170,9 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
             Isolated database session.
     """
 
-    attempts = GenerationAttemptRepository(session)
-    summaries = SummaryRepository(session)
-    first_turn = _complete_turn(session)
+    attempts = GenerationAttemptRepository(session_factory)
+    summaries = SummaryRepository(session_factory)
+    first_turn = _complete_turn(session_factory)
     first = SummaryRecord(
         id=uuid4(),
         conversation_id=first_turn.conversation_id,
@@ -226,6 +227,7 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
 
 def test_database_rejects_cross_conversation_summary_checkpoint(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify summary checkpoints cannot cross conversation ownership.
 
@@ -234,8 +236,8 @@ def test_database_rejects_cross_conversation_summary_checkpoint(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
-    source_turn = _complete_turn(session)
+    conversations = ConversationRepository(session_factory)
+    source_turn = _complete_turn(session_factory)
     other = conversations.create_conversation()
     session.add(
         Summary(
@@ -254,7 +256,7 @@ def test_database_rejects_cross_conversation_summary_checkpoint(
 
 
 def test_memory_extraction_correction_lifecycle_and_hard_delete(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify memory provenance, correction, eligibility, and purge behavior.
 
@@ -263,8 +265,8 @@ def test_memory_extraction_correction_lifecycle_and_hard_delete(
             Isolated database session.
     """
 
-    turn = _complete_turn(session)
-    repository = MemoryRepository(session)
+    turn = _complete_turn(session_factory)
+    repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -322,7 +324,7 @@ def test_memory_extraction_correction_lifecycle_and_hard_delete(
 
 
 def test_receipt_is_unique_and_repeated_processing_is_idempotent(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify one terminal receipt prevents repeated candidate effects.
 
@@ -331,8 +333,8 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
             Isolated database session.
     """
 
-    turn = _complete_turn(session)
-    repository = MemoryRepository(session)
+    turn = _complete_turn(session_factory)
+    repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -351,7 +353,7 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
 
 
 def test_extraction_supersedes_only_current_automatic_memory(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify automatic conflicts respect extracted, corrected, and excluded state.
 
@@ -360,8 +362,8 @@ def test_extraction_supersedes_only_current_automatic_memory(
             Isolated database session.
     """
 
-    repository = MemoryRepository(session)
-    first_turn = _complete_turn(session)
+    repository = MemoryRepository(session_factory)
+    first_turn = _complete_turn(session_factory)
     first_receipt = ExtractionReceiptRecord(
         generation_attempt_id=first_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -376,7 +378,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
     first = repository.find_current_by_subject("location")
     assert first is not None
 
-    second_turn = _complete_turn(session)
+    second_turn = _complete_turn(session_factory)
     second_receipt = ExtractionReceiptRecord(
         generation_attempt_id=second_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -417,7 +419,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         expected_revision_id=replaced.revision_id,
     )
 
-    third_turn = _complete_turn(session)
+    third_turn = _complete_turn(session_factory)
     repository.process_extraction(
         third_turn,
         (MemoryCandidate(subject="location", content="The user lives in Isfahan."),),
@@ -436,7 +438,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         target=MemoryLifecycle.EXCLUDED,
         at=corrected_at + timedelta(seconds=1),
     )
-    fourth_turn = _complete_turn(session)
+    fourth_turn = _complete_turn(session_factory)
     repository.process_extraction(
         fourth_turn,
         (MemoryCandidate(subject="location", content="The user lives in Tabriz."),),
@@ -451,7 +453,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
 
 
 def test_memory_rejects_stale_management_writes(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify stale revision identifiers cannot partially change or delete memory.
 
@@ -460,8 +462,8 @@ def test_memory_rejects_stale_management_writes(
             Isolated database session.
     """
 
-    turn = _complete_turn(session)
-    repository = MemoryRepository(session)
+    turn = _complete_turn(session_factory)
+    repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -509,7 +511,7 @@ def test_memory_rejects_stale_management_writes(
 
 
 def test_source_unavailability_clears_extracted_references(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify conversation deletion preparation retains memory without sources.
 
@@ -518,8 +520,8 @@ def test_source_unavailability_clears_extracted_references(
             Isolated database session.
     """
 
-    turn = _complete_turn(session)
-    repository = MemoryRepository(session)
+    turn = _complete_turn(session_factory)
+    repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -546,6 +548,7 @@ def test_source_unavailability_clears_extracted_references(
 
 def test_database_rejects_invalid_memory_source_combination(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify extracted provenance must match one exact completed attempt.
 
@@ -554,8 +557,8 @@ def test_database_rejects_invalid_memory_source_combination(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
-    turn = _complete_turn(session)
+    conversations = ConversationRepository(session_factory)
+    turn = _complete_turn(session_factory)
     other = conversations.create_conversation()
     session.add(
         Memory(

@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.application.schemas import ChatRequest
 from chat_buddy.chat.application.service import (
@@ -184,7 +184,7 @@ def _model(
 
 
 def _build_service(
-    session: Session,
+    session_factory: sessionmaker[Session],
     gateway: FakeGateway,
     *,
     memory_extraction_service: Mock | None = None,
@@ -221,8 +221,8 @@ def _build_service(
         default_model_id=FIRST_MODEL_ID,
     )
     resolver = StaticResponseGatewayResolver(gateways)
-    repository = ConversationRepository(session)
-    attempt_repository = GenerationAttemptRepository(session)
+    repository = ConversationRepository(session_factory)
+    attempt_repository = GenerationAttemptRepository(session_factory)
     conversation_service = ConversationService(repository)
     attempt_service = GenerationAttemptService(attempt_repository)
     extraction = memory_extraction_service or Mock()
@@ -251,6 +251,7 @@ def _build_service(
 
 def test_new_conversation_completes_with_default_model_provenance(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify a new conversation persists response and immutable provenance.
 
@@ -260,7 +261,7 @@ def test_new_conversation_completes_with_default_model_provenance(
     """
 
     gateway = FakeGateway()
-    service, conversations, repository = _build_service(session, gateway)
+    service, conversations, repository = _build_service(session_factory, gateway)
 
     response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
@@ -281,6 +282,7 @@ def test_new_conversation_completes_with_default_model_provenance(
 
 def test_resumed_conversation_streams_through_persisted_selection(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify streaming resumes with persisted model and requested settings.
 
@@ -290,7 +292,7 @@ def test_resumed_conversation_streams_through_persisted_selection(
     """
 
     gateway = FakeGateway()
-    service, conversations, repository = _build_service(session, gateway)
+    service, conversations, repository = _build_service(session_factory, gateway)
     conversation = repository.create_conversation(
         provider_id=PROVIDER_ID,
         model_id=SECOND_MODEL_ID,
@@ -315,6 +317,7 @@ def test_resumed_conversation_streams_through_persisted_selection(
 
 def test_composed_second_provider_is_selectable_and_streams(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify a second provider works without changing application services.
 
@@ -325,7 +328,7 @@ def test_composed_second_provider_is_selectable_and_streams(
 
     second_gateway = FakeGateway()
     service, conversations, repository = _build_service(
-        session,
+        session_factory,
         FakeGateway(),
         second_provider_gateway=second_gateway,
     )
@@ -355,6 +358,7 @@ def test_composed_second_provider_is_selectable_and_streams(
 
 def test_model_change_affects_next_attempt_without_rewriting_provenance(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify selection changes apply only at the next attempt boundary.
 
@@ -363,7 +367,7 @@ def test_model_change_affects_next_attempt_without_rewriting_provenance(
             Isolated database session.
     """
 
-    service, conversations, repository = _build_service(session, FakeGateway())
+    service, conversations, repository = _build_service(session_factory, FakeGateway())
     conversation = repository.create_conversation(
         provider_id=PROVIDER_ID,
         model_id=FIRST_MODEL_ID,
@@ -392,6 +396,7 @@ def test_model_change_affects_next_attempt_without_rewriting_provenance(
 
 def test_title_generation_runs_after_completed_attempt(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify successful first exchange retains existing auto-title behavior.
 
@@ -401,7 +406,7 @@ def test_title_generation_runs_after_completed_attempt(
     """
 
     service, _, repository = _build_service(
-        session,
+        session_factory,
         FakeGateway(title="Launch planning"),
     )
 
@@ -417,6 +422,7 @@ def test_title_generation_runs_after_completed_attempt(
 
 def test_multiple_completed_turns_remain_normal_conversation_history(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify lifecycle routing preserves ordinary multi-turn history.
 
@@ -425,7 +431,7 @@ def test_multiple_completed_turns_remain_normal_conversation_history(
             Isolated database session.
     """
 
-    service, conversations, repository = _build_service(session, FakeGateway())
+    service, conversations, repository = _build_service(session_factory, FakeGateway())
     conversation = repository.create_conversation()
 
     service.chat(ChatRequest(conversation.id, "First"))
@@ -442,6 +448,7 @@ def test_multiple_completed_turns_remain_normal_conversation_history(
 
 def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify retry recovery creates one response without duplicate input.
 
@@ -453,7 +460,7 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     gateway = RecoveringGateway()
     extraction = Mock()
     service, conversations, _ = _build_service(
-        session,
+        session_factory,
         gateway,
         memory_extraction_service=extraction,
     )
@@ -499,7 +506,10 @@ def test_successful_retry_reuses_user_message_and_adds_one_assistant(
     ) == 1
 
 
-def test_failed_retry_remains_outside_completed_history(session: Session) -> None:
+def test_failed_retry_remains_outside_completed_history(
+    session: Session,
+    session_factory: sessionmaker[Session],
+) -> None:
     """Verify another provider failure creates no assistant message.
 
     Args:
@@ -508,7 +518,7 @@ def test_failed_retry_remains_outside_completed_history(session: Session) -> Non
     """
 
     gateway = RecoveringGateway()
-    service, conversations, _ = _build_service(session, gateway)
+    service, conversations, _ = _build_service(session_factory, gateway)
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.chat(ChatRequest(None, "Still failing"))

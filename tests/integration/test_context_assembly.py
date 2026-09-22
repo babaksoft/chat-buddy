@@ -4,7 +4,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.application.config import ContextBudgetConfig, RollingSummaryConfig
 from chat_buddy.chat.application.context_builder import (
@@ -188,7 +188,9 @@ def _assembler(
     ],
 )
 def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
-    session: Session, provider_id: ProviderId, model_id: ModelId
+    session_factory: sessionmaker[Session],
+    provider_id: ProviderId,
+    model_id: ModelId,
 ) -> None:
     """Long provider-backed history stays bounded across Chat conversations.
 
@@ -201,10 +203,10 @@ def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
             Selected provider-local model identifier.
     """
 
-    conversations = ConversationRepository(session)
-    attempts = GenerationAttemptRepository(session)
-    memories = MemoryRepository(session)
-    summaries = SummaryRepository(session)
+    conversations = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
+    memories = MemoryRepository(session_factory)
+    summaries = SummaryRepository(session_factory)
     assembler = _assembler(memories, summaries)
     model = _model(provider_id, model_id)
     configuration = GenerationConfiguration()

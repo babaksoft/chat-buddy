@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.domain import (
     CompletedTurn,
@@ -32,15 +32,15 @@ from chat_buddy.chat.infrastructure.db.models import (
 class MemoryRepository:
     """Persists provenance-aware Chat memory revisions and receipts."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the repository.
 
         Args:
-            session:
-                SQLAlchemy session used for repository operations.
+            session_factory:
+                Factory for repository-owned SQLAlchemy sessions.
         """
 
-        self._session = session
+        self._session_factory = session_factory
 
     def get_memory(self, memory_id: UUID) -> MemoryRecord | None:
         """Return a logical memory.
@@ -53,8 +53,9 @@ class MemoryRepository:
             Current domain record when found.
         """
 
-        model = self._current_by_memory_id(memory_id)
-        return self._to_record(model) if model is not None else None
+        with self._session_factory() as session:
+            model = self._current_by_memory_id(session, memory_id)
+            return self._to_record(model) if model is not None else None
 
     def get_revision(self, revision_id: UUID) -> MemoryRecord | None:
         """Return one specific memory revision.
@@ -67,8 +68,9 @@ class MemoryRepository:
             Matching record, or ``None``.
         """
 
-        model = self._session.get(Memory, revision_id)
-        return self._to_record(model) if model is not None else None
+        with self._session_factory() as session:
+            model = session.get(Memory, revision_id)
+            return self._to_record(model) if model is not None else None
 
     def list_memories(
         self, lifecycles: frozenset[MemoryLifecycle] | None = None
@@ -87,7 +89,8 @@ class MemoryRepository:
         if lifecycles is not None:
             statement = statement.where(Memory.lifecycle.in_(lifecycles))
         statement = statement.order_by(Memory.created_at, Memory.revision_id)
-        return tuple(self._to_record(item) for item in self._session.scalars(statement))
+        with self._session_factory() as session:
+            return tuple(self._to_record(item) for item in session.scalars(statement))
 
     def list_eligible_memories(self) -> tuple[MemoryRecord, ...]:
         """Return active current revisions in deterministic prompt order.
@@ -101,7 +104,8 @@ class MemoryRepository:
             .where(Memory.lifecycle == MemoryLifecycle.ACTIVE)
             .order_by(Memory.updated_at.desc(), Memory.memory_id)
         )
-        return tuple(self._to_record(item) for item in self._session.scalars(statement))
+        with self._session_factory() as session:
+            return tuple(self._to_record(item) for item in session.scalars(statement))
 
     def find_current_by_subject(self, subject: str) -> MemoryRecord | None:
         """Return the current revision for a normalized subject.
@@ -117,8 +121,9 @@ class MemoryRepository:
         normalized = normalize_memory_subject(subject)
         if normalized != subject:
             raise ValueError("Memory subject must already be normalized.")
-        model = self._current_by_subject(normalized)
-        return self._to_record(model) if model is not None else None
+        with self._session_factory() as session:
+            model = self._current_by_subject(session, normalized)
+            return self._to_record(model) if model is not None else None
 
     def replace_memory(
         self,
@@ -144,35 +149,45 @@ class MemoryRepository:
                 If the expected revision is stale.
         """
 
-        current = self._lock_current(replacement.id)
-        if current is None or current.revision_id != expected_revision_id:
-            raise RuntimeError(
-                "The current memory revision changed before replacement."
-            )
-        current_record = self._to_record(current)
-        if current_record.lifecycle is not MemoryLifecycle.ACTIVE:
-            raise ValueError("Only an active memory can be corrected.")
-        if replacement.lifecycle is not MemoryLifecycle.ACTIVE:
-            raise ValueError("A replacement memory must be active.")
-        if replacement.origin.kind is not MemoryOriginKind.USER_CORRECTION:
-            raise ValueError("A user replacement needs correction provenance.")
-        if replacement.origin.superseded_revision_id != expected_revision_id:
-            raise ValueError("Correction provenance must identify the prior revision.")
-        if replacement.id != current.memory_id:
-            raise ValueError("A replacement must remain in the same memory lineage.")
-
-        subject_owner = self._current_by_subject(replacement.subject, lock=True)
-        if subject_owner is not None and subject_owner.memory_id != replacement.id:
-            raise ValueError("Another current memory already uses this subject.")
-
-        current.lifecycle = MemoryLifecycle.SUPERSEDED
-        current.updated_at = replacement.updated_at
         try:
-            self._session.add(self._from_record(replacement))
-            self._session.commit()
-            return replacement
-        except SQLAlchemyError:
-            self._session.rollback()
+            with self._session_factory() as session, session.begin():
+                current = self._lock_current(session, replacement.id)
+                if current is None or current.revision_id != expected_revision_id:
+                    raise RuntimeError(
+                        "The current memory revision changed before replacement."
+                    )
+                current_record = self._to_record(current)
+                if current_record.lifecycle is not MemoryLifecycle.ACTIVE:
+                    raise ValueError("Only an active memory can be corrected.")
+                if replacement.lifecycle is not MemoryLifecycle.ACTIVE:
+                    raise ValueError("A replacement memory must be active.")
+                if replacement.origin.kind is not MemoryOriginKind.USER_CORRECTION:
+                    raise ValueError("A user replacement needs correction provenance.")
+                if replacement.origin.superseded_revision_id != expected_revision_id:
+                    raise ValueError(
+                        "Correction provenance must identify the prior revision."
+                    )
+                if replacement.id != current.memory_id:
+                    raise ValueError(
+                        "A replacement must remain in the same memory lineage."
+                    )
+
+                subject_owner = self._current_by_subject(
+                    session, replacement.subject, lock=True
+                )
+                if (
+                    subject_owner is not None
+                    and subject_owner.memory_id != replacement.id
+                ):
+                    raise ValueError(
+                        "Another current memory already uses this subject."
+                    )
+
+                current.lifecycle = MemoryLifecycle.SUPERSEDED
+                current.updated_at = replacement.updated_at
+                session.add(self._from_record(replacement))
+                return replacement
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
     def transition_memory(
@@ -203,17 +218,18 @@ class MemoryRepository:
                 If the expected current revision is stale.
         """
 
-        model = self._lock_current(memory_id)
-        if model is None or model.revision_id != expected_revision_id:
-            raise RuntimeError("The current memory revision changed before transition.")
-        transitioned = self._to_record(model).transition(target, at=at)
-        model.lifecycle = transitioned.lifecycle
-        model.updated_at = transitioned.updated_at
         try:
-            self._session.commit()
-            return transitioned
-        except SQLAlchemyError:
-            self._session.rollback()
+            with self._session_factory() as session, session.begin():
+                model = self._lock_current(session, memory_id)
+                if model is None or model.revision_id != expected_revision_id:
+                    raise RuntimeError(
+                        "The current memory revision changed before transition."
+                    )
+                transitioned = self._to_record(model).transition(target, at=at)
+                model.lifecycle = transitioned.lifecycle
+                model.updated_at = transitioned.updated_at
+                return transitioned
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
     def process_extraction(
@@ -241,53 +257,58 @@ class MemoryRepository:
         """
 
         try:
-            existing = self.get_extraction_receipt(turn.attempt_id)
-            if existing is not None:
-                return existing
-            if receipt.generation_attempt_id != turn.attempt_id:
-                raise ValueError("Extraction receipt must identify the completed turn.")
-            if receipt.outcome.value == "exhausted" and candidates:
-                raise ValueError("An exhausted extraction cannot persist candidates.")
-            self._validate_completed_turn(turn)
+            with self._session_factory() as session, session.begin():
+                existing = self._get_extraction_receipt(session, turn.attempt_id)
+                if existing is not None:
+                    return existing
+                if receipt.generation_attempt_id != turn.attempt_id:
+                    raise ValueError(
+                        "Extraction receipt must identify the completed turn."
+                    )
+                if receipt.outcome.value == "exhausted" and candidates:
+                    raise ValueError(
+                        "An exhausted extraction cannot persist candidates."
+                    )
+                self._validate_completed_turn(session, turn)
 
-            for candidate in candidates:
-                current = self._current_by_subject(candidate.subject, lock=True)
-                if current is not None:
-                    record = self._to_record(current)
-                    if record.lifecycle is MemoryLifecycle.EXCLUDED:
-                        continue
-                    if record.origin.kind is MemoryOriginKind.USER_CORRECTION:
-                        continue
-                    if record.content == candidate.content:
-                        continue
-                    current.lifecycle = MemoryLifecycle.SUPERSEDED
-                    current.updated_at = receipt.completed_at
-                    memory_id = current.memory_id
-                else:
-                    memory_id = uuid4()
+                for candidate in candidates:
+                    current = self._current_by_subject(
+                        session, candidate.subject, lock=True
+                    )
+                    if current is not None:
+                        record = self._to_record(current)
+                        if record.lifecycle is MemoryLifecycle.EXCLUDED:
+                            continue
+                        if record.origin.kind is MemoryOriginKind.USER_CORRECTION:
+                            continue
+                        if record.content == candidate.content:
+                            continue
+                        current.lifecycle = MemoryLifecycle.SUPERSEDED
+                        current.updated_at = receipt.completed_at
+                        memory_id = current.memory_id
+                    else:
+                        memory_id = uuid4()
 
-                self._session.add(
-                    self._extracted_model(
-                        memory_id=memory_id,
-                        candidate=candidate,
-                        turn=turn,
-                        at=receipt.completed_at,
+                    session.add(
+                        self._extracted_model(
+                            memory_id=memory_id,
+                            candidate=candidate,
+                            turn=turn,
+                            at=receipt.completed_at,
+                        )
+                    )
+
+                session.add(
+                    ExtractionReceipt(
+                        generation_attempt_id=receipt.generation_attempt_id,
+                        generation_attempt_status=GenerationAttemptStatus.COMPLETED,
+                        outcome=receipt.outcome,
+                        attempt_count=receipt.attempt_count,
+                        completed_at=receipt.completed_at,
                     )
                 )
-
-            self._session.add(
-                ExtractionReceipt(
-                    generation_attempt_id=receipt.generation_attempt_id,
-                    generation_attempt_status=GenerationAttemptStatus.COMPLETED,
-                    outcome=receipt.outcome,
-                    attempt_count=receipt.attempt_count,
-                    completed_at=receipt.completed_at,
-                )
-            )
-            self._session.commit()
-            return receipt
-        except SQLAlchemyError:
-            self._session.rollback()
+                return receipt
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
     def get_extraction_receipt(
@@ -303,7 +324,15 @@ class MemoryRepository:
             Matching terminal receipt, or ``None``.
         """
 
-        model = self._session.get(ExtractionReceipt, generation_attempt_id)
+        with self._session_factory() as session:
+            return self._get_extraction_receipt(session, generation_attempt_id)
+
+    def _get_extraction_receipt(
+        self, session: Session, generation_attempt_id: UUID
+    ) -> ExtractionReceiptRecord | None:
+        """Return an extraction receipt using an existing session."""
+
+        model = session.get(ExtractionReceipt, generation_attempt_id)
         if model is None:
             return None
         return ExtractionReceiptRecord(
@@ -340,11 +369,10 @@ class MemoryRepository:
             )
         )
         try:
-            result = cast(CursorResult[Any], self._session.execute(statement))
-            self._session.commit()
-            return result.rowcount
-        except SQLAlchemyError:
-            self._session.rollback()
+            with self._session_factory() as session, session.begin():
+                result = cast(CursorResult[Any], session.execute(statement))
+                return result.rowcount
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
     def get_origin(self, revision_id: UUID) -> MemoryOrigin | None:
@@ -358,8 +386,9 @@ class MemoryRepository:
             Matching origin value, or ``None``.
         """
 
-        model = self._session.get(Memory, revision_id)
-        return self._origin(model) if model is not None else None
+        with self._session_factory() as session:
+            model = session.get(Memory, revision_id)
+            return self._origin(model) if model is not None else None
 
     def hard_delete(
         self,
@@ -380,25 +409,24 @@ class MemoryRepository:
             Whether a logical memory was deleted.
         """
 
-        current = self._lock_current(memory_id)
-        if current is None:
-            return MemoryDeletionResult.NOT_FOUND
-
-        if (
-            expected_revision_id is not None
-            and current.revision_id != expected_revision_id
-        ):
-            return MemoryDeletionResult.STALE
-
         try:
-            self._session.execute(delete(Memory).where(Memory.memory_id == memory_id))
-            self._session.commit()
-            return MemoryDeletionResult.DELETED
-        except SQLAlchemyError:
-            self._session.rollback()
+            with self._session_factory() as session, session.begin():
+                current = self._lock_current(session, memory_id)
+                if current is None:
+                    return MemoryDeletionResult.NOT_FOUND
+
+                if (
+                    expected_revision_id is not None
+                    and current.revision_id != expected_revision_id
+                ):
+                    return MemoryDeletionResult.STALE
+
+                session.execute(delete(Memory).where(Memory.memory_id == memory_id))
+                return MemoryDeletionResult.DELETED
+        except SQLAlchemyError:  # noqa: TRY203
             raise
 
-    def _validate_completed_turn(self, turn: CompletedTurn) -> None:
+    def _validate_completed_turn(self, session: Session, turn: CompletedTurn) -> None:
         """Verify exact turn provenance against committed persistence.
 
         Args:
@@ -410,9 +438,9 @@ class MemoryRepository:
                 If persisted provenance or content differs.
         """
 
-        attempt = self._session.get(GenerationAttempt, turn.attempt_id)
-        user = self._session.get(Message, turn.user_message_id)
-        assistant = self._session.get(Message, turn.assistant_message_id)
+        attempt = session.get(GenerationAttempt, turn.attempt_id)
+        user = session.get(Message, turn.user_message_id)
+        assistant = session.get(Message, turn.assistant_message_id)
         if (
             attempt is None
             or user is None
@@ -426,7 +454,7 @@ class MemoryRepository:
         ):
             raise ValueError("Extraction turn does not match a completed attempt.")
 
-    def _current_by_memory_id(self, memory_id: UUID) -> Memory | None:
+    def _current_by_memory_id(self, session: Session, memory_id: UUID) -> Memory | None:
         """Load the current entity for a logical memory.
 
         Args:
@@ -441,9 +469,9 @@ class MemoryRepository:
             Memory.memory_id == memory_id,
             Memory.lifecycle != MemoryLifecycle.SUPERSEDED,
         )
-        return self._session.scalar(statement)
+        return session.scalar(statement)
 
-    def _lock_current(self, memory_id: UUID) -> Memory | None:
+    def _lock_current(self, session: Session, memory_id: UUID) -> Memory | None:
         """Load and lock the current entity for a logical memory.
 
         Args:
@@ -462,9 +490,11 @@ class MemoryRepository:
             )
             .with_for_update()
         )
-        return self._session.scalar(statement)
+        return session.scalar(statement)
 
-    def _current_by_subject(self, subject: str, *, lock: bool = False) -> Memory | None:
+    def _current_by_subject(
+        self, session: Session, subject: str, *, lock: bool = False
+    ) -> Memory | None:
         """Load the current entity for a normalized subject.
 
         Args:
@@ -483,7 +513,7 @@ class MemoryRepository:
         )
         if lock:
             statement = statement.with_for_update()
-        return self._session.scalar(statement)
+        return session.scalar(statement)
 
     @staticmethod
     def _extracted_model(

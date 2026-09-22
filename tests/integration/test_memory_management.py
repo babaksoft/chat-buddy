@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.application.schemas import MemoryManagementOutcome
 from chat_buddy.chat.application.service import MemoryManagementService
@@ -63,7 +63,7 @@ def _complete_turn(
 
 
 def test_memory_management_controls_eligibility_and_purges_lineage(
-    session: Session,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify correction, lifecycle controls, and deletion across repositories.
 
@@ -72,9 +72,9 @@ def test_memory_management_controls_eligibility_and_purges_lineage(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
-    memories = MemoryRepository(session)
-    turn = _complete_turn(conversations, GenerationAttemptRepository(session))
+    conversations = ConversationRepository(session_factory)
+    memories = MemoryRepository(session_factory)
+    turn = _complete_turn(conversations, GenerationAttemptRepository(session_factory))
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,

@@ -62,7 +62,7 @@ def session_factory() -> Generator[sessionmaker[Session], None, None]:
 def session(
     session_factory: sessionmaker[Session],
 ) -> Generator[Session, None, None]:
-    """Create a session for repositories that still accept a live session.
+    """Create a separate database inspection and constraint-test session.
 
     Args:
         session_factory:
