@@ -416,7 +416,14 @@ Acceptance:
 
 ### Slice 10 — Add the selected cloud response adapter
 
-**Status: Planned.**
+**Status: Complete.**
+
+Delivered by the opt-in OpenAI Responses adapter, curated immutable model
+descriptors, conservative local `o200k_base` budgeting, safe SDK failure
+normalization, provider-neutral UI discovery and disclosure, and mocked contract,
+composition, transport, streaming, and token-count coverage. Ollama remains the
+default and sole utility provider; the live cloud smoke test remains explicitly
+credential-gated, networked, billable, and skipped by normal CI.
 
 - Implement the selected Chat infrastructure adapter against `ResponseGenerator`
   for complete and streaming responses.

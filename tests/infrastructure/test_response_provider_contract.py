@@ -1,6 +1,7 @@
 """Common contract tests for response-provider adapters."""
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
 
@@ -13,7 +14,7 @@ from chat_buddy.chat.domain import (
     ModelId,
     ResponseGenerator,
 )
-from chat_buddy.chat.infrastructure.llm import OllamaGateway
+from chat_buddy.chat.infrastructure.llm import OllamaGateway, OpenAIResponseGateway
 
 
 class FakeResponseProvider:
@@ -65,7 +66,7 @@ class FakeResponseProvider:
         yield "contract."
 
 
-@pytest.fixture(params=("ollama", "fake"), ids=("mocked-ollama", "fake-provider"))
+@pytest.fixture(params=("ollama", "openai"), ids=("mocked-ollama", "mocked-openai"))
 def response_provider(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
@@ -83,8 +84,32 @@ def response_provider(
     """
 
     provider_name = cast(str, request.param)
-    if provider_name == "fake":
-        return FakeResponseProvider()
+    if provider_name == "openai":
+        response = SimpleNamespace(
+            status="completed",
+            output=(
+                SimpleNamespace(
+                    content=(
+                        SimpleNamespace(
+                            type="output_text", text="Hello from contract."
+                        ),
+                    )
+                ),
+            ),
+        )
+        events = iter(
+            (
+                SimpleNamespace(type="response.output_text.delta", delta="Hello from "),
+                SimpleNamespace(type="response.output_text.delta", delta="contract."),
+                SimpleNamespace(type="response.completed", response=response),
+            )
+        )
+        client = Mock()
+        client.responses.create.return_value = response
+        streaming_client = Mock()
+        streaming_client.responses.create.return_value = events
+        client.with_options.return_value = streaming_client
+        return OpenAIResponseGateway(client=client)
 
     client = Mock()
 
@@ -128,7 +153,11 @@ def test_response_provider_generates_complete_response(
 
     response = response_provider.generate(
         [ChatMessage(role=ChatRole.USER, content="Hello")],
-        ModelId("contract-model"),
+        ModelId(
+            "gpt-4.1-2025-04-14"
+            if isinstance(response_provider, OpenAIResponseGateway)
+            else "contract-model"
+        ),
         GenerationConfiguration(temperature=0.3),
     )
 
@@ -142,7 +171,11 @@ def test_response_provider_streams_response_chunks(
 
     chunks = response_provider.generate_stream(
         [ChatMessage(role=ChatRole.USER, content="Hello")],
-        ModelId("contract-model"),
+        ModelId(
+            "gpt-4.1-2025-04-14"
+            if isinstance(response_provider, OpenAIResponseGateway)
+            else "contract-model"
+        ),
         GenerationConfiguration(temperature=0.3),
     )
 

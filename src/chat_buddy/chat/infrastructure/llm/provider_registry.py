@@ -168,6 +168,16 @@ class StaticProviderRegistry:
                 f"Model '{model.id}' does not support: {names}."
             )
 
+        if (
+            requested.max_output_tokens is not None
+            and registered_model.maximum_output_tokens is not None
+            and requested.max_output_tokens > registered_model.maximum_output_tokens
+        ):
+            raise InvalidGenerationConfigurationError(
+                f"Model '{model.id}' supports at most "
+                f"{registered_model.maximum_output_tokens} output tokens."
+            )
+
         overrides = {
             field.name: value
             for field in fields(requested)

@@ -119,9 +119,8 @@ class DefaultContextBudgeter:
         """
 
         capacity = (
-            model.context_window_tokens
+            model.prompt_token_capacity(model.output_token_reserve(configuration))
             - self._config.prompt_overhead_tokens
-            - model.output_token_reserve(configuration)
         )
         if capacity <= 0:
             raise ContextWindowExceededError(

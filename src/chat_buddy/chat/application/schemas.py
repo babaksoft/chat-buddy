@@ -39,6 +39,7 @@ class ProviderOption:
 
     id: ProviderId
     display_name: str
+    usage_notice: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

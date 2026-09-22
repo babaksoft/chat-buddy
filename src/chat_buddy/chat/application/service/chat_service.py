@@ -237,7 +237,11 @@ class ChatService:
             configuration = selected.requested_generation_configuration
 
         providers = tuple(
-            ProviderOption(id=item.id, display_name=item.display_name)
+            ProviderOption(
+                id=item.id,
+                display_name=item.display_name,
+                usage_notice=item.usage_notice,
+            )
             for item in self._provider_registry.list_providers()
         )
         models = tuple(

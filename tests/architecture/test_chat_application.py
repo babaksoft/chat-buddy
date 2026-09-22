@@ -39,7 +39,7 @@ def test_chat_application_has_only_inward_chat_dependencies() -> None:
     assert violations == []
 
 
-def test_application_and_ui_do_not_import_ollama_sdk_or_adapter() -> None:
+def test_application_and_ui_do_not_import_provider_sdks_or_adapters() -> None:
     """Keep provider clients and concrete adapter types in infrastructure."""
 
     roots = (APPLICATION_ROOT, *UI_ROOTS)
@@ -48,15 +48,18 @@ def test_application_and_ui_do_not_import_ollama_sdk_or_adapter() -> None:
         for root in roots
         for path in sorted(root.rglob("*.py"))
         for imported_module in sorted(_imports(path))
-        if imported_module == "ollama"
-        or imported_module.startswith("ollama.")
-        or imported_module.endswith("ollama_gateway")
+        if imported_module in {"ollama", "openai", "tiktoken"}
+        or imported_module.startswith(("ollama.", "openai.", "tiktoken."))
+        or imported_module.endswith(("ollama_gateway", "openai_gateway"))
     ]
     adapter_name_violations = [
         str(path.relative_to(PACKAGE_ROOT))
         for root in roots
         for path in sorted(root.rglob("*.py"))
-        if "OllamaGateway" in path.read_text(encoding="utf-8-sig")
+        if any(
+            name in path.read_text(encoding="utf-8-sig")
+            for name in ("OllamaGateway", "OpenAIResponseGateway")
+        )
     ]
 
     assert violations == []
@@ -92,6 +95,23 @@ def test_ollama_sdk_is_confined_to_its_infrastructure_adapter() -> None:
         if path != allowed_path
         for imported_module in sorted(_imports(path))
         if imported_module == "ollama" or imported_module.startswith("ollama.")
+    ]
+
+    assert violations == []
+
+
+def test_openai_sdk_is_confined_to_its_infrastructure_adapter() -> None:
+    """Prevent the cloud SDK from escaping the concrete response adapter."""
+
+    allowed_path = (
+        PACKAGE_ROOT / "chat" / "infrastructure" / "llm" / "openai_gateway.py"
+    )
+    violations = [
+        f"{path.relative_to(PACKAGE_ROOT)} imports {imported_module}"
+        for path in sorted(PACKAGE_ROOT.rglob("*.py"))
+        if path != allowed_path
+        for imported_module in sorted(_imports(path))
+        if imported_module == "openai" or imported_module.startswith("openai.")
     ]
 
     assert violations == []

@@ -76,6 +76,32 @@ streamlit run src/chat_buddy/ui/streamlit_app.py
 
 The Characters landing page is also available at `/characters`.
 
+## Optional OpenAI responses
+
+Chat remains Ollama-only by default. To opt into the response-only OpenAI
+provider, set both variables before starting Streamlit:
+
+```bash
+export CHAT_OPENAI_ENABLED=true
+export CHAT_OPENAI_API_KEY="your-api-key"
+uv run streamlit run src/chat_buddy/ui/streamlit_app.py
+```
+
+OpenAI is omitted when it is disabled or its Chat-specific key is blank; Chat
+does not read `OPENAI_API_KEY`. The curated OpenAI models are used only for
+visible Chat responses. Titles, rolling summaries, and memory extraction remain
+on Ollama. Requests are billable and send the assembled current input, recent
+turns, conversation summary, and eligible Chat-wide memories to OpenAI with
+response storage disabled. Provider abuse-monitoring retention may still apply.
+Local deletion cannot retract data already transmitted to the provider.
+
+The optional live smoke test is networked and billable. It is skipped unless
+`CHAT_OPENAI_SMOKE_TEST=true` and `CHAT_OPENAI_API_KEY` is non-blank:
+
+```bash
+CHAT_OPENAI_SMOKE_TEST=true uv run pytest -v -m openai_smoke
+```
+
 ## Database setup
 
 Chat persistence now has an independent migration history in the PostgreSQL

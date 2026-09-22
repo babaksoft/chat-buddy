@@ -1006,6 +1006,7 @@ dependencies = [
     { name = "llama-index-llms-ollama" },
     { name = "notebook" },
     { name = "ollama" },
+    { name = "openai" },
     { name = "openinference-instrumentation-llama-index" },
     { name = "prometheus-client" },
     { name = "psycopg2-binary" },
@@ -1014,6 +1015,7 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "streamlit" },
+    { name = "tiktoken" },
 ]
 
 [package.optional-dependencies]
@@ -1043,6 +1045,7 @@ requires-dist = [
     { name = "llama-index-llms-ollama" },
     { name = "notebook" },
     { name = "ollama" },
+    { name = "openai", specifier = ">=3.8.0" },
     { name = "openinference-instrumentation-llama-index" },
     { name = "prometheus-client" },
     { name = "psycopg2-binary" },
@@ -1051,6 +1054,7 @@ requires-dist = [
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "streamlit" },
+    { name = "tiktoken", specifier = ">=0.14.0" },
 ]
 provides-extras = ["build"]
 

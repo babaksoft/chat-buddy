@@ -31,6 +31,7 @@ dependencies = [
     "llama-index-llms-ollama",
     "notebook",
     "ollama",
+    "openai>=3.8.0",
     "openinference-instrumentation-llama-index",
     "prometheus_client",
     "psycopg2-binary",
@@ -39,6 +40,7 @@ dependencies = [
     "sentence-transformers",
     "SQLAlchemy",
     "streamlit",
+    "tiktoken>=0.14.0",
 ]
 
 [project.urls]
@@ -70,6 +72,9 @@ files = ["src", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "openai_smoke: explicitly enabled networked and billable OpenAI smoke test",
+]
 
 [tool.hatch.build]
 sources = ["src"]

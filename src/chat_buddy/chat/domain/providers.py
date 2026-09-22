@@ -131,6 +131,7 @@ class ProviderDescriptor:
 
     id: ProviderId
     display_name: str
+    usage_notice: str | None = None
 
     def __post_init__(self) -> None:
         """Validate provider presentation metadata.
@@ -142,6 +143,8 @@ class ProviderDescriptor:
 
         if not self.display_name.strip():
             raise ValueError("Provider display name must be non-empty.")
+        if self.usage_notice is not None and not self.usage_notice.strip():
+            raise ValueError("Provider usage notice cannot be blank.")
 
 
 @dataclass(slots=True, frozen=True)
@@ -157,6 +160,9 @@ class ModelDescriptor:
     default_generation_configuration: GenerationConfiguration
     token_counter: TokenCounter
     default_output_token_reserve: int
+    maximum_input_tokens: int | None = None
+    maximum_output_tokens: int | None = None
+    application_prompt_limit: int | None = None
 
     def __post_init__(self) -> None:
         """Validate model limits, presentation metadata, and defaults.
@@ -176,6 +182,23 @@ class ModelDescriptor:
             raise ValueError("Model output-token reserve must be greater than 0.")
         if self.default_output_token_reserve >= self.context_window_tokens:
             raise ValueError("Model output-token reserve must be below its window.")
+        for name, value in (
+            ("maximum input", self.maximum_input_tokens),
+            ("maximum output", self.maximum_output_tokens),
+            ("application prompt", self.application_prompt_limit),
+        ):
+            if value is not None and value <= 0:
+                raise ValueError(f"Model {name} limit must be greater than 0.")
+        if (
+            self.maximum_input_tokens is not None
+            and self.maximum_input_tokens > self.context_window_tokens
+        ):
+            raise ValueError("Model maximum input cannot exceed its context window.")
+        if (
+            self.maximum_output_tokens is not None
+            and self.default_output_token_reserve > self.maximum_output_tokens
+        ):
+            raise ValueError("Model output-token reserve exceeds its maximum output.")
 
         unsupported_defaults = (
             self.default_generation_configuration.requested_parameters
@@ -186,6 +209,34 @@ class ModelDescriptor:
             raise InvalidGenerationConfigurationError(
                 f"Model defaults contain unsupported parameters: {names}."
             )
+
+        configured_output = self.default_generation_configuration.max_output_tokens
+        if (
+            configured_output is not None
+            and self.maximum_output_tokens is not None
+            and configured_output > self.maximum_output_tokens
+        ):
+            raise InvalidGenerationConfigurationError(
+                "Model default max_output_tokens exceeds its maximum output."
+            )
+
+    def prompt_token_capacity(self, output_reserve: int) -> int:
+        """Return the model-specific prompt ceiling before fixed overhead.
+
+        Args:
+            output_reserve:
+                Tokens reserved for the generated response.
+
+        Returns:
+            Smallest applicable provider, context, and application limit.
+        """
+
+        limits = [self.context_window_tokens - output_reserve]
+        if self.maximum_input_tokens is not None:
+            limits.append(self.maximum_input_tokens)
+        if self.application_prompt_limit is not None:
+            limits.append(self.application_prompt_limit)
+        return min(limits)
 
     def output_token_reserve(self, configuration: GenerationConfiguration) -> int:
         """Return the deterministic reserve for one effective generation.

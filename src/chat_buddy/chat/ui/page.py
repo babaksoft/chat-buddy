@@ -291,6 +291,9 @@ def render_generation_selection(
     )
     model_id = ModelId(selected_model)
     model = next(item for item in available_models if item.id == model_id)
+    provider = next(item for item in selection.providers if item.id == provider_id)
+    if provider.usage_notice is not None:
+        st.caption(provider.usage_notice)
     current = selection.configuration
     with st.expander("Generation settings"):
         temperature = (

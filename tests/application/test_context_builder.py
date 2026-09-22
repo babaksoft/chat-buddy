@@ -193,6 +193,34 @@ def test_budget_accepts_exact_fit_after_output_and_overhead_reservation() -> Non
     assert result.prompt_capacity == 5
 
 
+def test_budget_uses_smallest_application_provider_and_context_limit() -> None:
+    """Cloud-sized windows remain bounded by the application prompt ceiling."""
+
+    base = _model(1_000_000)
+    model = ModelDescriptor(
+        provider_id=base.provider_id,
+        id=base.id,
+        display_name=base.display_name,
+        context_window_tokens=base.context_window_tokens,
+        supports_streaming=base.supports_streaming,
+        supported_generation_parameters=base.supported_generation_parameters,
+        default_generation_configuration=base.default_generation_configuration,
+        token_counter=base.token_counter,
+        default_output_token_reserve=10,
+        maximum_input_tokens=900_000,
+        maximum_output_tokens=100_000,
+        application_prompt_limit=65_536,
+    )
+    inputs = ContextInputs(
+        conversation_id=uuid4(),
+        current_input=ChatMessage(ChatRole.USER, "hello"),
+    )
+
+    result = _budgeter(overhead=64).assemble(inputs, model, GenerationConfiguration())
+
+    assert result.prompt_capacity == 65_472
+
+
 def test_explicit_output_reservation_can_make_current_input_oversized() -> None:
     """The request output maximum takes precedence over the model default."""
 

@@ -1,9 +1,9 @@
 # Remaining tasks in current stage
 
-Stage 3 is in progress. Slices 1–9 are complete; Slices 10–11 remain Planned in
+Stage 3 is in progress. Slices 1–10 are complete; Slice 11 remains Planned in
 `work/ongoing/PLAN.md`.
 
-Next: Slice 10 — Add the selected OpenAI cloud response adapter.
+Next: Slice 11 — Prove the Stage 3 milestone and remove provisional paths.
 
 ## Focused refactoring backlog
 
