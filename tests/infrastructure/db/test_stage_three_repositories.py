@@ -32,32 +32,35 @@ from chat_buddy.chat.infrastructure.db.models import (
 )
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     MemoryRepository,
     SummaryRepository,
 )
 
 
-def _complete_turn(repository: ConversationRepository) -> CompletedTurn:
+def _complete_turn(session: Session) -> CompletedTurn:
     """Persist and return one exact completed turn.
 
     Args:
-        repository:
-            Conversation repository under test.
+        session:
+            Isolated database session.
 
     Returns:
         Completed turn matching committed persistence.
     """
 
-    conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    conversations = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
+    conversation = conversations.create_conversation()
+    pending = attempts.start_generation_attempt(
         conversation.id,
         "I live in Tehran.",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    streaming = repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = repository.complete_generation_attempt(
+    streaming = attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    completed = attempts.complete_generation_attempt(
         streaming.id,
         "Thanks, I will remember that.",
         at=pending.created_at + timedelta(seconds=1),
@@ -86,23 +89,24 @@ def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
     """
 
     repository = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempts.start_generation_attempt(
         conversation.id,
         "Original",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    failed = repository.fail_generation_attempt(
+    attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    failed = attempts.fail_generation_attempt(
         pending.id,
         error_code="provider_error",
         at=pending.created_at,
     )
     repository.edit_unmatched_user_message(conversation.id, "Edited")
 
-    reloaded = repository.get_generation_attempt(failed.id)
+    reloaded = attempts.get_generation_attempt(failed.id)
 
     assert reloaded is not None
     assert reloaded.submitted_user_content == "Original"
@@ -119,8 +123,9 @@ def test_database_rejects_second_open_attempt_per_conversation(
     """
 
     repository = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     conversation = repository.create_conversation()
-    first = repository.start_generation_attempt(
+    first = attempts.start_generation_attempt(
         conversation.id,
         "First",
         ProviderId("ollama"),
@@ -164,9 +169,9 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     summaries = SummaryRepository(session)
-    first_turn = _complete_turn(conversations)
+    first_turn = _complete_turn(session)
     first = SummaryRecord(
         id=uuid4(),
         conversation_id=first_turn.conversation_id,
@@ -182,15 +187,15 @@ def test_summary_replacement_preserves_lineage_and_uncovered_order(
     summaries.replace_active_summary(first, expected_active_id=None)
     assert summaries.get_uncovered_completed_turns(first_turn.conversation_id) == ()
 
-    pending = conversations.start_generation_attempt(
+    pending = attempts.start_generation_attempt(
         first_turn.conversation_id,
         "I prefer tea.",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    conversations.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = conversations.complete_generation_attempt(
+    attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    completed = attempts.complete_generation_attempt(
         pending.id,
         "Noted.",
         at=pending.created_at + timedelta(seconds=1),
@@ -230,7 +235,7 @@ def test_database_rejects_cross_conversation_summary_checkpoint(
     """
 
     conversations = ConversationRepository(session)
-    source_turn = _complete_turn(conversations)
+    source_turn = _complete_turn(session)
     other = conversations.create_conversation()
     session.add(
         Summary(
@@ -258,7 +263,7 @@ def test_memory_extraction_correction_lifecycle_and_hard_delete(
             Isolated database session.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(session)
     repository = MemoryRepository(session)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -326,7 +331,7 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
             Isolated database session.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(session)
     repository = MemoryRepository(session)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -355,9 +360,8 @@ def test_extraction_supersedes_only_current_automatic_memory(
             Isolated database session.
     """
 
-    conversations = ConversationRepository(session)
     repository = MemoryRepository(session)
-    first_turn = _complete_turn(conversations)
+    first_turn = _complete_turn(session)
     first_receipt = ExtractionReceiptRecord(
         generation_attempt_id=first_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -372,7 +376,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
     first = repository.find_current_by_subject("location")
     assert first is not None
 
-    second_turn = _complete_turn(conversations)
+    second_turn = _complete_turn(session)
     second_receipt = ExtractionReceiptRecord(
         generation_attempt_id=second_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -413,7 +417,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         expected_revision_id=replaced.revision_id,
     )
 
-    third_turn = _complete_turn(conversations)
+    third_turn = _complete_turn(session)
     repository.process_extraction(
         third_turn,
         (MemoryCandidate(subject="location", content="The user lives in Isfahan."),),
@@ -432,7 +436,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         target=MemoryLifecycle.EXCLUDED,
         at=corrected_at + timedelta(seconds=1),
     )
-    fourth_turn = _complete_turn(conversations)
+    fourth_turn = _complete_turn(session)
     repository.process_extraction(
         fourth_turn,
         (MemoryCandidate(subject="location", content="The user lives in Tabriz."),),
@@ -456,7 +460,7 @@ def test_memory_rejects_stale_management_writes(
             Isolated database session.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(session)
     repository = MemoryRepository(session)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -514,7 +518,7 @@ def test_source_unavailability_clears_extracted_references(
             Isolated database session.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(session)
     repository = MemoryRepository(session)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -551,7 +555,7 @@ def test_database_rejects_invalid_memory_source_combination(
     """
 
     conversations = ConversationRepository(session)
-    turn = _complete_turn(conversations)
+    turn = _complete_turn(session)
     other = conversations.create_conversation()
     session.add(
         Memory(

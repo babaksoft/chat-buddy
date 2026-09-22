@@ -56,6 +56,7 @@ from chat_buddy.chat.domain.repositories import (
     ChatMemoryRepository,
     ConversationRecord,
     ConversationRepository,
+    GenerationAttemptRepository,
     MessageRecord,
     SummaryRepository,
 )
@@ -81,6 +82,7 @@ __all__ = [
     "ConversationRepository",
     "ExtractionReceiptRecord",
     "GenerationAttemptRecord",
+    "GenerationAttemptRepository",
     "GenerationAttemptStatus",
     "GenerationConfiguration",
     "GenerationParameter",

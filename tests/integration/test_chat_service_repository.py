@@ -6,7 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from chat_buddy.chat.application.schemas import ChatRequest
-from chat_buddy.chat.application.service import ChatService, ConversationService
+from chat_buddy.chat.application.service import (
+    ChatService,
+    ConversationService,
+    GenerationAttemptService,
+)
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
@@ -20,7 +24,10 @@ from chat_buddy.chat.domain import (
     ProviderId,
 )
 from chat_buddy.chat.infrastructure.db.models import GenerationAttempt
-from chat_buddy.chat.infrastructure.db.repositories import ConversationRepository
+from chat_buddy.chat.infrastructure.db.repositories import (
+    ConversationRepository,
+    GenerationAttemptRepository,
+)
 from chat_buddy.chat.infrastructure.llm.provider_registry import (
     StaticProviderRegistry,
     StaticResponseGatewayResolver,
@@ -215,7 +222,9 @@ def _build_service(
     )
     resolver = StaticResponseGatewayResolver(gateways)
     repository = ConversationRepository(session)
+    attempt_repository = GenerationAttemptRepository(session)
     conversation_service = ConversationService(repository)
+    attempt_service = GenerationAttemptService(attempt_repository)
     extraction = memory_extraction_service or Mock()
     context_assembler = Mock()
     context_assembler.assemble.side_effect = (
@@ -228,6 +237,7 @@ def _build_service(
     return (
         ChatService(
             conversation_service=conversation_service,
+            generation_attempt_service=attempt_service,
             memory_extraction_service=extraction,
             context_assembler=context_assembler,
             provider_registry=registry,

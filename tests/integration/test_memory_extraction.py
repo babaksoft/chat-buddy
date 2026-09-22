@@ -18,11 +18,15 @@ from chat_buddy.chat.domain import (
 )
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     MemoryRepository,
 )
 
 
-def _complete_turn(repository: ConversationRepository) -> CompletedTurn:
+def _complete_turn(
+    conversations: ConversationRepository,
+    attempts: GenerationAttemptRepository,
+) -> CompletedTurn:
     """Persist and return one exact completed source turn.
 
     Args:
@@ -33,16 +37,16 @@ def _complete_turn(repository: ConversationRepository) -> CompletedTurn:
         Exact committed turn.
     """
 
-    conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    conversation = conversations.create_conversation()
+    pending = attempts.start_generation_attempt(
         conversation.id,
         "I live in Tehran.",
         ProviderId("ollama"),
         ModelId("utility"),
         GenerationConfiguration(),
     )
-    streaming = repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = repository.complete_generation_attempt(
+    streaming = attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    completed = attempts.complete_generation_attempt(
         streaming.id,
         "Thanks for telling me.",
         at=streaming.started_at or streaming.created_at,
@@ -70,7 +74,9 @@ def test_memory_extraction_is_durable_chat_wide_and_idempotent(
             Isolated database session.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(
+        ConversationRepository(session), GenerationAttemptRepository(session)
+    )
     memory_repository = MemoryRepository(session)
     extractor = Mock()
     extractor.extract_candidates.return_value = (
@@ -112,7 +118,9 @@ def test_failed_candidate_transactions_roll_back_before_exhaustion(
             Fixture used to simulate transaction failures.
     """
 
-    turn = _complete_turn(ConversationRepository(session))
+    turn = _complete_turn(
+        ConversationRepository(session), GenerationAttemptRepository(session)
+    )
     memory_repository = MemoryRepository(session)
     extractor = Mock()
     extractor.extract_candidates.return_value = (

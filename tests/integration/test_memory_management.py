@@ -16,11 +16,15 @@ from chat_buddy.chat.domain import (
 )
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     MemoryRepository,
 )
 
 
-def _complete_turn(repository: ConversationRepository) -> CompletedTurn:
+def _complete_turn(
+    conversations: ConversationRepository,
+    attempts: GenerationAttemptRepository,
+) -> CompletedTurn:
     """Persist and return one completed turn.
 
     Args:
@@ -31,16 +35,16 @@ def _complete_turn(repository: ConversationRepository) -> CompletedTurn:
         Exact completed turn value.
     """
 
-    conversation = repository.create_conversation(title="Introductions")
-    pending = repository.start_generation_attempt(
+    conversation = conversations.create_conversation(title="Introductions")
+    pending = attempts.start_generation_attempt(
         conversation.id,
         "I live in Tehran.",
         ProviderId("ollama"),
         ModelId("utility"),
         GenerationConfiguration(),
     )
-    streaming = repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = repository.complete_generation_attempt(
+    streaming = attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    completed = attempts.complete_generation_attempt(
         streaming.id,
         "Thanks for telling me.",
         at=pending.created_at + timedelta(seconds=1),
@@ -70,7 +74,7 @@ def test_memory_management_controls_eligibility_and_purges_lineage(
 
     conversations = ConversationRepository(session)
     memories = MemoryRepository(session)
-    turn = _complete_turn(conversations)
+    turn = _complete_turn(conversations, GenerationAttemptRepository(session))
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,

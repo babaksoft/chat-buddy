@@ -1,7 +1,7 @@
-﻿import logging
+import logging
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from chat_buddy.chat.domain import (
     ChatRole,
     ConversationRecord,
-    GenerationAttemptRecord,
     GenerationAttemptStatus,
     GenerationConfiguration,
     InvalidGenerationAttemptTransitionError,
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationRepository:
-    """Provides persistence for conversations, messages, and generation attempts."""
+    """Provide persistence for conversations and standalone messages."""
 
     def __init__(self, session: Session) -> None:
         """
@@ -365,396 +364,6 @@ class ConversationRepository:
         message = self._session.get(Message, message_id)
         return self._to_message_record(message) if message is not None else None
 
-    def start_generation_attempt(
-        self,
-        conversation_id: UUID,
-        user_content: str,
-        provider_id: ProviderId,
-        model_id: ModelId,
-        effective_configuration: GenerationConfiguration,
-    ) -> GenerationAttemptRecord:
-        """Atomically persist a source user message and pending attempt.
-
-        Args:
-            conversation_id:
-                Identifier of the target conversation.
-            user_content:
-                Source user-message content.
-            provider_id:
-                Effective response provider.
-            model_id:
-                Effective provider-local model.
-            effective_configuration:
-                Validated effective generation settings.
-
-        Returns:
-            The persisted pending attempt.
-
-        Raises:
-            LookupError:
-                If the conversation does not exist.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        if self._session.get(Conversation, conversation_id) is None:
-            raise LookupError(f"Conversation {conversation_id} does not exist.")
-        if self.get_unmatched_user_message(conversation_id) is not None:
-            raise InvalidGenerationAttemptTransitionError(
-                "Cannot start a new turn until the unmatched tail completes."
-            )
-
-        created_at = datetime.now(UTC)
-        message_id = uuid4()
-        attempt = GenerationAttemptRecord(
-            id=uuid4(),
-            conversation_id=conversation_id,
-            source_user_message_id=message_id,
-            submitted_user_content=user_content,
-            provider_id=provider_id,
-            model_id=model_id,
-            effective_configuration=effective_configuration,
-            status=GenerationAttemptStatus.PENDING,
-            created_at=created_at,
-        )
-        message = Message(
-            id=message_id,
-            conversation_id=conversation_id,
-            role=ChatRole.USER,
-            content=user_content,
-            created_at=created_at,
-        )
-        attempt_model = self._from_generation_attempt(attempt)
-
-        try:
-            self._session.add(message)
-            self._session.flush()
-            self._session.add(attempt_model)
-            self._session.commit()
-            return attempt
-
-        except SQLAlchemyError:
-            self._session.rollback()
-
-            logger.exception(
-                "Failed to start generation attempt for conversation %s.",
-                conversation_id,
-            )
-            raise
-
-    def retry_generation_attempt(
-        self,
-        attempt_id: UUID,
-        provider_id: ProviderId,
-        model_id: ModelId,
-        effective_configuration: GenerationConfiguration,
-    ) -> GenerationAttemptRecord:
-        """Create a pending retry that reuses an incomplete attempt's source.
-
-        Args:
-            attempt_id:
-                Identifier of the failed or interrupted attempt to retry.
-            provider_id:
-                Effective response provider for the retry.
-            model_id:
-                Effective provider-local model for the retry.
-            effective_configuration:
-                Validated immutable generation settings for the retry.
-
-        Returns:
-            The newly persisted pending retry.
-
-        Raises:
-            LookupError:
-                If the source attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the source attempt is not incomplete.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        source = self._get_attempt_model(attempt_id)
-        if source.status not in {
-            GenerationAttemptStatus.FAILED,
-            GenerationAttemptStatus.INTERRUPTED,
-        }:
-            raise InvalidGenerationAttemptTransitionError(
-                "Only a failed or interrupted attempt can be retried."
-            )
-        latest_retryable = self.get_latest_retryable_generation_attempt(
-            source.conversation_id
-        )
-        if latest_retryable is None or latest_retryable.id != source.id:
-            raise InvalidGenerationAttemptTransitionError(
-                "Only the latest attempt for the unmatched tail can be retried."
-            )
-
-        source_message = self._session.get(Message, source.source_user_message_id)
-        if source_message is None:
-            raise LookupError(
-                f"Source message {source.source_user_message_id} does not exist."
-            )
-
-        retry = GenerationAttemptRecord(
-            id=uuid4(),
-            conversation_id=source.conversation_id,
-            source_user_message_id=source.source_user_message_id,
-            submitted_user_content=source_message.content,
-            provider_id=provider_id,
-            model_id=model_id,
-            effective_configuration=effective_configuration,
-            status=GenerationAttemptStatus.PENDING,
-            created_at=datetime.now(UTC),
-        )
-        try:
-            self._session.add(self._from_generation_attempt(retry))
-            self._session.commit()
-            return retry
-
-        except SQLAlchemyError:
-            self._session.rollback()
-            logger.exception("Failed to retry generation attempt %s.", attempt_id)
-            raise
-
-    def begin_generation_attempt(
-        self, attempt_id: UUID, *, at: datetime
-    ) -> GenerationAttemptRecord:
-        """Transition a pending attempt to streaming.
-
-        Args:
-            attempt_id:
-                Identifier of the attempt to start.
-            at:
-                Time response streaming started.
-
-        Returns:
-            The persisted streaming attempt.
-
-        Raises:
-            LookupError:
-                If the attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the attempt is not pending or the timestamp is invalid.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        model = self._get_attempt_model(attempt_id)
-        updated = self._to_generation_attempt(model).start(at=at)
-        return self._persist_attempt_update(model, updated)
-
-    def checkpoint_generation_attempt(
-        self, attempt_id: UUID, partial_content: str
-    ) -> GenerationAttemptRecord:
-        """Replace partial content for a streaming attempt.
-
-        Args:
-            attempt_id:
-                Identifier of the streaming attempt.
-            partial_content:
-                Complete output accumulated so far.
-
-        Returns:
-            The persisted streaming attempt.
-
-        Raises:
-            LookupError:
-                If the attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the attempt is not streaming.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        model = self._get_attempt_model(attempt_id)
-        updated = self._to_generation_attempt(model).checkpoint(partial_content)
-        return self._persist_attempt_update(model, updated)
-
-    def complete_generation_attempt(
-        self, attempt_id: UUID, assistant_content: str, *, at: datetime
-    ) -> GenerationAttemptRecord:
-        """Atomically persist an assistant message and complete its attempt.
-
-        Args:
-            attempt_id:
-                Identifier of the streaming attempt.
-            assistant_content:
-                Completed assistant response.
-            at:
-                Time generation completed.
-
-        Returns:
-            The completed attempt linked to the new assistant message.
-
-        Raises:
-            LookupError:
-                If the attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the attempt is not streaming or the timestamp is invalid.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        model = self._get_attempt_model(attempt_id)
-        message_id = uuid4()
-        updated = self._to_generation_attempt(model).complete(
-            assistant_message_id=message_id,
-            at=at,
-        )
-        message = Message(
-            id=message_id,
-            conversation_id=updated.conversation_id,
-            role=ChatRole.ASSISTANT,
-            content=assistant_content,
-            created_at=at,
-        )
-        try:
-            self._session.add(message)
-            self._session.flush()
-            self._apply_attempt(model, updated)
-            self._session.commit()
-            return updated
-
-        except SQLAlchemyError:
-            self._session.rollback()
-
-            logger.exception("Failed to complete generation attempt %s.", attempt_id)
-            raise
-
-    def fail_generation_attempt(
-        self,
-        attempt_id: UUID,
-        *,
-        error_code: str,
-        at: datetime,
-        error_detail: str | None = None,
-        partial_content: str | None = None,
-    ) -> GenerationAttemptRecord:
-        """Persist a failed terminal state with normalized safe diagnostics.
-
-        Args:
-            attempt_id:
-                Identifier of the streaming attempt.
-            error_code:
-                Stable normalized failure code.
-            at:
-                Time generation failed.
-            error_detail:
-                Optional safe user-facing detail.
-            partial_content:
-                Optional complete partial output.
-
-        Returns:
-            The persisted failed attempt.
-
-        Raises:
-            LookupError:
-                If the attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the attempt is not streaming or failure data is invalid.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        model = self._get_attempt_model(attempt_id)
-        updated = self._to_generation_attempt(model).fail(
-            error_code=error_code,
-            error_detail=error_detail,
-            partial_content=partial_content,
-            at=at,
-        )
-        return self._persist_attempt_update(model, updated)
-
-    def interrupt_generation_attempt(
-        self,
-        attempt_id: UUID,
-        *,
-        at: datetime,
-        partial_content: str | None = None,
-    ) -> GenerationAttemptRecord:
-        """Persist an interrupted terminal state.
-
-        Args:
-            attempt_id:
-                Identifier of the streaming attempt.
-            at:
-                Time generation was interrupted.
-            partial_content:
-                Optional complete partial output.
-
-        Returns:
-            The persisted interrupted attempt.
-
-        Raises:
-            LookupError:
-                If the attempt does not exist.
-            InvalidGenerationAttemptTransitionError:
-                If the attempt is not streaming or the timestamp is invalid.
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        model = self._get_attempt_model(attempt_id)
-        updated = self._to_generation_attempt(model).interrupt(
-            partial_content=partial_content,
-            at=at,
-        )
-        return self._persist_attempt_update(model, updated)
-
-    def get_generation_attempt(
-        self, attempt_id: UUID
-    ) -> GenerationAttemptRecord | None:
-        """Retrieve an attempt by identifier.
-
-        Args:
-            attempt_id:
-                Identifier of the attempt to retrieve.
-
-        Returns:
-            The matching attempt, or ``None`` when it does not exist.
-        """
-
-        model = self._session.get(GenerationAttempt, attempt_id)
-        return self._to_generation_attempt(model) if model is not None else None
-
-    def get_open_generation_attempt(
-        self, conversation_id: UUID
-    ) -> GenerationAttemptRecord | None:
-        """Return the singular pending or streaming attempt for a conversation.
-
-        Args:
-            conversation_id:
-                Identifier of the conversation to inspect.
-
-        Returns:
-            Open attempt, or ``None`` when no invocation is active.
-
-        Raises:
-            RuntimeError:
-                If provisional persistence contains multiple open attempts.
-        """
-
-        statement = (
-            select(GenerationAttempt)
-            .where(
-                GenerationAttempt.conversation_id == conversation_id,
-                GenerationAttempt.status.in_(
-                    (
-                        GenerationAttemptStatus.PENDING,
-                        GenerationAttemptStatus.STREAMING,
-                    )
-                ),
-            )
-            .order_by(GenerationAttempt.created_at.desc(), GenerationAttempt.id.desc())
-            .limit(2)
-        )
-        models = list(self._session.scalars(statement))
-        if len(models) > 1:
-            raise RuntimeError(
-                f"Conversation {conversation_id} has multiple open attempts."
-            )
-        return self._to_generation_attempt(models[0]) if models else None
-
     def get_unmatched_user_message(self, conversation_id: UUID) -> MessageRecord | None:
         """Return the unanswered final user message, when present.
 
@@ -802,11 +411,10 @@ class ConversationRepository:
 
         if not content.strip():
             raise ValueError("User message content must be non-empty.")
-        if self.get_open_generation_attempt(conversation_id) is not None:
+        if self._has_open_generation_attempt(conversation_id):
             raise InvalidGenerationAttemptTransitionError(
                 "Cannot edit an unmatched user message while an attempt is open."
             )
-
         tail = self.get_unmatched_user_message(conversation_id)
         if tail is None:
             raise LookupError(
@@ -827,66 +435,31 @@ class ConversationRepository:
 
         return self._to_message_record(model)
 
-    def get_latest_retryable_generation_attempt(
-        self, conversation_id: UUID
-    ) -> GenerationAttemptRecord | None:
-        """Return the latest retry target for the unmatched final user message.
+    def _has_open_generation_attempt(self, conversation_id: UUID) -> bool:
+        """Return whether a generation attempt currently owns the message tail.
 
         Args:
             conversation_id:
-                Conversation whose linear tail should be inspected.
+                Conversation whose message tail is being edited.
 
         Returns:
-            Latest retryable attempt, or ``None`` when none is actionable.
+            Whether a pending or streaming attempt exists.
         """
 
-        if self.get_open_generation_attempt(conversation_id) is not None:
-            return None
-
-        tail = self.get_unmatched_user_message(conversation_id)
-        if tail is None:
-            return None
-
         statement = (
-            select(GenerationAttempt)
+            select(GenerationAttempt.id)
             .where(
                 GenerationAttempt.conversation_id == conversation_id,
-                GenerationAttempt.source_user_message_id == tail.id,
                 GenerationAttempt.status.in_(
                     (
-                        GenerationAttemptStatus.FAILED,
-                        GenerationAttemptStatus.INTERRUPTED,
+                        GenerationAttemptStatus.PENDING,
+                        GenerationAttemptStatus.STREAMING,
                     )
                 ),
             )
-            .order_by(GenerationAttempt.created_at.desc(), GenerationAttempt.id.desc())
             .limit(1)
         )
-        model = self._session.scalar(statement)
-        return self._to_generation_attempt(model) if model is not None else None
-
-    def get_generation_attempts(
-        self, conversation_id: UUID
-    ) -> list[GenerationAttemptRecord]:
-        """Retrieve all attempts for a conversation in creation order.
-
-        Args:
-            conversation_id:
-                Identifier of the conversation to inspect.
-
-        Returns:
-            Attempts ordered from oldest to newest.
-        """
-
-        statement = (
-            select(GenerationAttempt)
-            .where(GenerationAttempt.conversation_id == conversation_id)
-            .order_by(GenerationAttempt.created_at.asc())
-        )
-        return [
-            self._to_generation_attempt(model)
-            for model in self._session.scalars(statement)
-        ]
+        return self._session.scalar(statement) is not None
 
     @staticmethod
     def _to_conversation_record(conversation: Conversation) -> ConversationRecord:
@@ -929,162 +502,6 @@ class ConversationRepository:
             conversation_id=message.conversation_id,
             role=message.role,
             content=message.content,
-        )
-
-    def _get_attempt_model(self, attempt_id: UUID) -> GenerationAttempt:
-        """Load and lock an attempt for a lifecycle transition.
-
-        Args:
-            attempt_id:
-                Identifier of the attempt to load.
-
-        Returns:
-            The locked persistence model.
-
-        Raises:
-            LookupError:
-                If no matching attempt exists.
-        """
-
-        statement = (
-            select(GenerationAttempt)
-            .where(GenerationAttempt.id == attempt_id)
-            .with_for_update()
-        )
-        model = self._session.scalar(statement)
-        if model is None:
-            raise LookupError(f"Generation attempt {attempt_id} does not exist.")
-        return model
-
-    def _persist_attempt_update(
-        self,
-        model: GenerationAttempt,
-        attempt: GenerationAttemptRecord,
-    ) -> GenerationAttemptRecord:
-        """Apply and commit a validated attempt snapshot.
-
-        Args:
-            model:
-                Persistence model to update.
-            attempt:
-                Validated domain snapshot to persist.
-
-        Returns:
-            The persisted domain snapshot.
-
-        Raises:
-            SQLAlchemyError:
-                If persistence fails.
-        """
-
-        self._apply_attempt(model, attempt)
-        try:
-            self._session.commit()
-            return attempt
-
-        except SQLAlchemyError:
-            self._session.rollback()
-
-            logger.exception("Failed to update generation attempt %s.", attempt.id)
-            raise
-
-    @staticmethod
-    def _apply_attempt(
-        model: GenerationAttempt,
-        attempt: GenerationAttemptRecord,
-    ) -> None:
-        """Copy mutable lifecycle fields from a validated domain snapshot.
-
-        Args:
-            model:
-                Persistence model to update.
-            attempt:
-                Validated domain snapshot.
-        """
-
-        model.status = attempt.status
-        model.started_at = attempt.started_at
-        model.finished_at = attempt.finished_at
-        model.partial_content = attempt.partial_content
-        model.error_code = attempt.error_code
-        model.error_detail = attempt.error_detail
-        model.assistant_message_id = attempt.assistant_message_id
-
-    @staticmethod
-    def _from_generation_attempt(
-        attempt: GenerationAttemptRecord,
-    ) -> GenerationAttempt:
-        """Translate a domain attempt into a persistence model.
-
-        Args:
-            attempt:
-                Domain attempt to translate.
-
-        Returns:
-            New persistence model.
-        """
-
-        return GenerationAttempt(
-            id=attempt.id,
-            conversation_id=attempt.conversation_id,
-            source_user_message_id=attempt.source_user_message_id,
-            submitted_user_content=attempt.submitted_user_content,
-            provider_id=str(attempt.provider_id),
-            model_id=str(attempt.model_id),
-            effective_configuration=ConversationRepository._configuration_to_dict(
-                attempt.effective_configuration
-            ),
-            status=attempt.status,
-            partial_content=attempt.partial_content,
-            error_code=attempt.error_code,
-            error_detail=attempt.error_detail,
-            assistant_message_id=attempt.assistant_message_id,
-            created_at=attempt.created_at,
-            started_at=attempt.started_at,
-            finished_at=attempt.finished_at,
-        )
-
-    def _to_generation_attempt(
-        self,
-        model: GenerationAttempt,
-    ) -> GenerationAttemptRecord:
-        """Translate a persistence model into an immutable domain attempt.
-
-        Args:
-            model:
-                Persistence model to translate.
-
-        Returns:
-            Immutable domain snapshot.
-
-        Raises:
-            ValueError:
-                If persisted configuration, timestamps, or lifecycle fields are
-                invalid.
-        """
-
-        created_at = ConversationRepository._timezone_aware(model.created_at)
-        if created_at is None:
-            raise ValueError("Persisted generation attempt has no creation time.")
-
-        return GenerationAttemptRecord(
-            id=model.id,
-            conversation_id=model.conversation_id,
-            source_user_message_id=model.source_user_message_id,
-            submitted_user_content=model.submitted_user_content,
-            provider_id=ProviderId(model.provider_id),
-            model_id=ModelId(model.model_id),
-            effective_configuration=ConversationRepository._configuration_from_dict(
-                model.effective_configuration
-            ),
-            status=model.status,
-            partial_content=model.partial_content,
-            error_code=model.error_code,
-            error_detail=model.error_detail,
-            assistant_message_id=model.assistant_message_id,
-            created_at=created_at,
-            started_at=ConversationRepository._timezone_aware(model.started_at),
-            finished_at=ConversationRepository._timezone_aware(model.finished_at),
         )
 
     @staticmethod

@@ -84,6 +84,36 @@ def test_chat_persistence_fields_have_descriptions() -> None:
     assert undocumented_fields == []
 
 
+def test_generation_attempt_persistence_has_a_dedicated_adapter() -> None:
+    """Keep attempt lifecycle methods off the conversation adapter."""
+
+    from chat_buddy.chat.infrastructure.db.repositories import (
+        ConversationRepository,
+        GenerationAttemptRepository,
+    )
+
+    lifecycle_methods = (
+        "start_generation_attempt",
+        "retry_generation_attempt",
+        "begin_generation_attempt",
+        "checkpoint_generation_attempt",
+        "complete_generation_attempt",
+        "fail_generation_attempt",
+        "interrupt_generation_attempt",
+        "get_generation_attempt",
+        "get_open_generation_attempt",
+        "get_latest_retryable_generation_attempt",
+        "get_generation_attempts",
+    )
+
+    assert all(
+        not hasattr(ConversationRepository, method) for method in lifecycle_methods
+    )
+    assert all(
+        hasattr(GenerationAttemptRepository, method) for method in lifecycle_methods
+    )
+
+
 def test_chat_generation_migration_isolated_from_characters() -> None:
     """Verify the Stage 2 generation migration owns only Chat objects."""
 

@@ -22,6 +22,7 @@ from chat_buddy.chat.domain import (
 from chat_buddy.chat.infrastructure.db.models import Summary
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     SummaryRepository,
 )
 
@@ -95,7 +96,7 @@ def _model() -> ModelDescriptor:
 
 
 def _complete_turn(
-    repository: ConversationRepository,
+    repository: GenerationAttemptRepository,
     conversation_id: UUID,
     number: int,
 ) -> CompletedTurn:
@@ -195,15 +196,15 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
     """
 
     conversations = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     summaries = SummaryRepository(session)
     first_conversation = conversations.create_conversation()
     second_conversation = conversations.create_conversation()
     first_turns = tuple(
-        _complete_turn(conversations, first_conversation.id, number)
-        for number in range(3)
+        _complete_turn(attempts, first_conversation.id, number) for number in range(3)
     )
     second_turns = tuple(
-        _complete_turn(conversations, second_conversation.id, number)
+        _complete_turn(attempts, second_conversation.id, number)
         for number in range(10, 13)
     )
     generator = RecordingGenerator()
@@ -232,7 +233,7 @@ def test_persisted_summary_resumes_and_rolls_without_crossing_conversations(
         turn.conversation_id == second_conversation.id for turn in generator.calls[1][1]
     )
 
-    fourth = _complete_turn(conversations, first_conversation.id, 4)
+    fourth = _complete_turn(attempts, first_conversation.id, 4)
     replacement = service.update_summary(
         _inputs(first_conversation.id), _model(), GenerationConfiguration()
     )
@@ -255,10 +256,11 @@ def test_deleting_conversation_hard_deletes_its_summary_versions(
     """
 
     conversations = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     summaries = SummaryRepository(session)
     conversation = conversations.create_conversation()
     for number in range(3):
-        _complete_turn(conversations, conversation.id, number)
+        _complete_turn(attempts, conversation.id, number)
     generator = RecordingGenerator()
     active = _service(summaries, generator).update_summary(
         _inputs(conversation.id), _model(), GenerationConfiguration()

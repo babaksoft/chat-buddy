@@ -12,6 +12,7 @@ from chat_buddy.chat.application.llm_summarizer import LLMSummarizer
 from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
+    GenerationAttemptService,
     MemoryExtractionService,
     MemoryManagementService,
     RollingSummaryService,
@@ -20,6 +21,7 @@ from chat_buddy.chat.infrastructure.config import settings
 from chat_buddy.chat.infrastructure.db import ChatSessionLocal
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     MemoryRepository,
     SummaryRepository,
 )
@@ -36,6 +38,7 @@ def build_services() -> tuple[
 
     session = ChatSessionLocal()
     conversation_repository = ConversationRepository(session)
+    generation_attempt_repository = GenerationAttemptRepository(session)
     memory_repository = MemoryRepository(session)
     summary_repository = SummaryRepository(session)
 
@@ -46,6 +49,9 @@ def build_services() -> tuple[
     )
     conversation_service = ConversationService(
         repository=conversation_repository,
+    )
+    generation_attempt_service = GenerationAttemptService(
+        repository=generation_attempt_repository,
     )
     memory_management_service = MemoryManagementService(
         memory_repository=memory_repository,
@@ -76,6 +82,7 @@ def build_services() -> tuple[
 
     chat_service = ChatService(
         conversation_service=conversation_service,
+        generation_attempt_service=generation_attempt_service,
         memory_extraction_service=memory_extraction_service,
         provider_registry=provider_runtime.registry,
         response_gateway_resolver=provider_runtime.response_gateway_resolver,

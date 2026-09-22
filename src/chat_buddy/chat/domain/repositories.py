@@ -46,7 +46,7 @@ class MessageRecord:
 
 
 class ConversationRepository(Protocol):
-    """Persistence operations required by conversation and generation services."""
+    """Persistence operations required by the conversation service."""
 
     def create_conversation(
         self,
@@ -238,6 +238,10 @@ class ConversationRepository(Protocol):
         """
 
         ...
+
+
+class GenerationAttemptRepository(Protocol):
+    """Persistence contract for generation-attempt lifecycle management."""
 
     def start_generation_attempt(
         self,

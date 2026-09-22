@@ -2,9 +2,14 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from chat_buddy.chat import domain
+from chat_buddy.chat.application.service import (
+    ConversationService,
+    GenerationAttemptService,
+)
 from chat_buddy.chat.domain import (
     ConversationRepository,
     GenerationAttemptRecord,
+    GenerationAttemptRepository,
     GenerationAttemptStatus,
     GenerationConfiguration,
     ModelId,
@@ -117,9 +122,43 @@ def _attempt(
 def test_repository_contract_has_only_singular_linear_attempt_queries() -> None:
     """Plural unresolved retry-target collections are absent from the contract."""
 
-    assert hasattr(ConversationRepository, "get_open_generation_attempt")
-    assert hasattr(ConversationRepository, "get_latest_retryable_generation_attempt")
-    assert not hasattr(ConversationRepository, "get_unresolved_generation_attempts")
+    assert not hasattr(ConversationRepository, "get_open_generation_attempt")
+    assert hasattr(GenerationAttemptRepository, "get_open_generation_attempt")
+    assert hasattr(
+        GenerationAttemptRepository, "get_latest_retryable_generation_attempt"
+    )
+    assert not hasattr(
+        GenerationAttemptRepository, "get_unresolved_generation_attempts"
+    )
+
+
+def test_generation_attempt_lifecycle_has_dedicated_boundaries() -> None:
+    """Attempt operations do not leak through conversation boundaries."""
+
+    lifecycle_methods = (
+        "start_generation_attempt",
+        "retry_generation_attempt",
+        "begin_generation_attempt",
+        "checkpoint_generation_attempt",
+        "complete_generation_attempt",
+        "fail_generation_attempt",
+        "interrupt_generation_attempt",
+        "get_generation_attempt",
+        "get_open_generation_attempt",
+        "get_latest_retryable_generation_attempt",
+        "get_generation_attempts",
+    )
+
+    assert all(
+        not hasattr(ConversationRepository, method) for method in lifecycle_methods
+    )
+    assert all(not hasattr(ConversationService, method) for method in lifecycle_methods)
+    assert all(
+        hasattr(GenerationAttemptRepository, method) for method in lifecycle_methods
+    )
+    assert all(
+        hasattr(GenerationAttemptService, method) for method in lifecycle_methods
+    )
 
 
 def test_fake_repository_replaces_open_and_latest_retryable_selections() -> None:

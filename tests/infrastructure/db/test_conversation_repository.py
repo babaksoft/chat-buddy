@@ -1,4 +1,4 @@
-﻿from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -16,6 +16,7 @@ from chat_buddy.chat.domain import (
 from chat_buddy.chat.infrastructure.db.models import GenerationAttempt, Message
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
 )
 
 
@@ -35,6 +36,13 @@ def repository(
     """
 
     return ConversationRepository(session)
+
+
+@pytest.fixture
+def attempt_repository(session: Session) -> GenerationAttemptRepository:
+    """Create a generation-attempt repository using the shared session."""
+
+    return GenerationAttemptRepository(session)
 
 
 def test_create_conversation(
@@ -251,6 +259,7 @@ def test_update_conversation_title(
 
 def test_generation_attempt_follows_completed_repository_lifecycle(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
     session_factory: sessionmaker[Session],
 ) -> None:
     """Verify pending, streaming, checkpoint, and atomic completion persistence.
@@ -263,7 +272,7 @@ def test_generation_attempt_follows_completed_repository_lifecycle(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempt_repository.start_generation_attempt(
         conversation.id,
         "Hello",
         ProviderId("ollama"),
@@ -292,12 +301,12 @@ def test_generation_attempt_follows_completed_repository_lifecycle(
         assert persisted_attempts[0].status is GenerationAttemptStatus.PENDING
 
     started_at = pending.created_at + timedelta(seconds=1)
-    streaming = repository.begin_generation_attempt(pending.id, at=started_at)
-    checkpointed = repository.checkpoint_generation_attempt(
+    streaming = attempt_repository.begin_generation_attempt(pending.id, at=started_at)
+    checkpointed = attempt_repository.checkpoint_generation_attempt(
         streaming.id,
         "Partial response",
     )
-    completed = repository.complete_generation_attempt(
+    completed = attempt_repository.complete_generation_attempt(
         checkpointed.id,
         "Completed response",
         at=started_at + timedelta(seconds=1),
@@ -322,12 +331,13 @@ def test_generation_attempt_follows_completed_repository_lifecycle(
         assert persisted_attempt is not None
         assert persisted_attempt.status is GenerationAttemptStatus.COMPLETED
         assert persisted_attempt.assistant_message_id == persisted_messages[1].id
-    assert repository.get_generation_attempt(completed.id) == completed
+    assert attempt_repository.get_generation_attempt(completed.id) == completed
 
 
 @pytest.mark.parametrize("terminal_state", ["failed", "interrupted"])
 def test_generation_attempt_persists_incomplete_terminal_states(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
     terminal_state: str,
 ) -> None:
     """Verify failed and interrupted attempts retain partial output.
@@ -340,7 +350,7 @@ def test_generation_attempt_persists_incomplete_terminal_states(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempt_repository.start_generation_attempt(
         conversation.id,
         "Hello",
         ProviderId("ollama"),
@@ -348,10 +358,10 @@ def test_generation_attempt_persists_incomplete_terminal_states(
         GenerationConfiguration(),
     )
     started_at = pending.created_at
-    repository.begin_generation_attempt(pending.id, at=started_at)
+    attempt_repository.begin_generation_attempt(pending.id, at=started_at)
 
     if terminal_state == "failed":
-        terminal = repository.fail_generation_attempt(
+        terminal = attempt_repository.fail_generation_attempt(
             pending.id,
             error_code="provider_unavailable",
             error_detail="Provider is unavailable.",
@@ -359,7 +369,7 @@ def test_generation_attempt_persists_incomplete_terminal_states(
             at=started_at + timedelta(seconds=1),
         )
     else:
-        terminal = repository.interrupt_generation_attempt(
+        terminal = attempt_repository.interrupt_generation_attempt(
             pending.id,
             partial_content="Partial",
             at=started_at + timedelta(seconds=1),
@@ -375,6 +385,7 @@ def test_generation_attempt_persists_incomplete_terminal_states(
 
 def test_retry_generation_attempt_reuses_source_user_message(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
 ) -> None:
     """Verify retry creates provenance without duplicating ordinary history.
 
@@ -384,22 +395,22 @@ def test_retry_generation_attempt_reuses_source_user_message(
     """
 
     conversation = repository.create_conversation()
-    original = repository.start_generation_attempt(
+    original = attempt_repository.start_generation_attempt(
         conversation.id,
         "Hello",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    repository.begin_generation_attempt(original.id, at=original.created_at)
-    failed = repository.fail_generation_attempt(
+    attempt_repository.begin_generation_attempt(original.id, at=original.created_at)
+    failed = attempt_repository.fail_generation_attempt(
         original.id,
         error_code="provider_error",
         at=original.created_at,
     )
     edited = repository.edit_unmatched_user_message(conversation.id, "Edited hello")
 
-    retry = repository.retry_generation_attempt(
+    retry = attempt_repository.retry_generation_attempt(
         failed.id,
         ProviderId("local-test"),
         ModelId("new-model"),
@@ -420,6 +431,7 @@ def test_retry_generation_attempt_reuses_source_user_message(
 
 def test_open_attempt_query_returns_one_scalar_and_excludes_terminal_attempts(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
 ) -> None:
     """Verify recovery exposes one open attempt rather than a collection.
 
@@ -429,33 +441,34 @@ def test_open_attempt_query_returns_one_scalar_and_excludes_terminal_attempts(
     """
 
     conversation = repository.create_conversation()
-    failed = repository.start_generation_attempt(
+    failed = attempt_repository.start_generation_attempt(
         conversation.id,
         "Failed",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    repository.begin_generation_attempt(failed.id, at=failed.created_at)
-    repository.fail_generation_attempt(
+    attempt_repository.begin_generation_attempt(failed.id, at=failed.created_at)
+    attempt_repository.fail_generation_attempt(
         failed.id,
         error_code="provider_error",
         at=failed.created_at,
     )
-    pending = repository.retry_generation_attempt(
+    pending = attempt_repository.retry_generation_attempt(
         failed.id,
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
 
-    open_attempt = repository.get_open_generation_attempt(conversation.id)
+    open_attempt = attempt_repository.get_open_generation_attempt(conversation.id)
 
     assert open_attempt == pending
 
 
 def test_unmatched_tail_cannot_be_edited_while_attempt_is_open(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
 ) -> None:
     """Verify editing is limited to an unmatched tail with no open attempt.
 
@@ -465,7 +478,7 @@ def test_unmatched_tail_cannot_be_edited_while_attempt_is_open(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempt_repository.start_generation_attempt(
         conversation.id,
         "Original",
         ProviderId("ollama"),
@@ -477,8 +490,8 @@ def test_unmatched_tail_cannot_be_edited_while_attempt_is_open(
     with pytest.raises(InvalidGenerationAttemptTransitionError, match="open"):
         repository.edit_unmatched_user_message(conversation.id, "Edited")
 
-    repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
+    attempt_repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    attempt_repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
 
     edited = repository.edit_unmatched_user_message(conversation.id, "Edited")
 
@@ -487,6 +500,7 @@ def test_unmatched_tail_cannot_be_edited_while_attempt_is_open(
 
 def test_generation_attempt_query_includes_terminal_recovery_states(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
 ) -> None:
     """Verify the application can retrieve attempts needed for recovery UI.
 
@@ -496,28 +510,29 @@ def test_generation_attempt_query_includes_terminal_recovery_states(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempt_repository.start_generation_attempt(
         conversation.id,
         "Hello",
         ProviderId("ollama"),
         ModelId("mistral"),
         GenerationConfiguration(),
     )
-    repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    failed = repository.fail_generation_attempt(
+    attempt_repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    failed = attempt_repository.fail_generation_attempt(
         pending.id,
         error_code="provider_error",
         at=pending.created_at,
         partial_content="Partial",
     )
 
-    attempts = repository.get_generation_attempts(conversation.id)
+    attempts = attempt_repository.get_generation_attempts(conversation.id)
 
     assert attempts == [failed]
 
 
 def test_generation_repository_rejects_invalid_transitions(
     repository: ConversationRepository,
+    attempt_repository: GenerationAttemptRepository,
 ) -> None:
     """Verify repository operations enforce the domain lifecycle.
 
@@ -527,7 +542,7 @@ def test_generation_repository_rejects_invalid_transitions(
     """
 
     conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
+    pending = attempt_repository.start_generation_attempt(
         conversation.id,
         "Hello",
         ProviderId("ollama"),
@@ -536,19 +551,19 @@ def test_generation_repository_rejects_invalid_transitions(
     )
 
     with pytest.raises(InvalidGenerationAttemptTransitionError):
-        repository.checkpoint_generation_attempt(pending.id, "Too early")
+        attempt_repository.checkpoint_generation_attempt(pending.id, "Too early")
     with pytest.raises(InvalidGenerationAttemptTransitionError):
-        repository.complete_generation_attempt(
+        attempt_repository.complete_generation_attempt(
             pending.id,
             "Too early",
             at=pending.created_at,
         )
 
-    repository.begin_generation_attempt(pending.id, at=pending.created_at)
-    repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
+    attempt_repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    attempt_repository.interrupt_generation_attempt(pending.id, at=pending.created_at)
 
     with pytest.raises(InvalidGenerationAttemptTransitionError):
-        repository.begin_generation_attempt(pending.id, at=pending.created_at)
+        attempt_repository.begin_generation_attempt(pending.id, at=pending.created_at)
 
 
 def test_start_generation_attempt_rolls_back_message_and_attempt_together(
@@ -566,6 +581,7 @@ def test_start_generation_attempt_rolls_back_message_and_attempt_together(
 
     with session_factory() as repository_session:
         repository = ConversationRepository(repository_session)
+        attempt_repository = GenerationAttemptRepository(repository_session)
         conversation = repository.create_conversation()
 
         def fail_commit() -> None:
@@ -576,7 +592,7 @@ def test_start_generation_attempt_rolls_back_message_and_attempt_together(
         with monkeypatch.context() as patch:
             patch.setattr(repository_session, "commit", fail_commit)
             with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
-                repository.start_generation_attempt(
+                attempt_repository.start_generation_attempt(
                     conversation.id,
                     "Hello",
                     ProviderId("ollama"),
@@ -609,15 +625,16 @@ def test_complete_generation_attempt_rolls_back_message_and_status_together(
 
     with session_factory() as repository_session:
         repository = ConversationRepository(repository_session)
+        attempt_repository = GenerationAttemptRepository(repository_session)
         conversation = repository.create_conversation()
-        pending = repository.start_generation_attempt(
+        pending = attempt_repository.start_generation_attempt(
             conversation.id,
             "Hello",
             ProviderId("ollama"),
             ModelId("mistral"),
             GenerationConfiguration(),
         )
-        repository.begin_generation_attempt(pending.id, at=pending.created_at)
+        attempt_repository.begin_generation_attempt(pending.id, at=pending.created_at)
 
         def fail_commit() -> None:
             """Simulate a database failure while committing the transaction."""
@@ -627,7 +644,7 @@ def test_complete_generation_attempt_rolls_back_message_and_status_together(
         with monkeypatch.context() as patch:
             patch.setattr(repository_session, "commit", fail_commit)
             with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
-                repository.complete_generation_attempt(
+                attempt_repository.complete_generation_attempt(
                     pending.id,
                     "Response",
                     at=datetime.now(UTC),

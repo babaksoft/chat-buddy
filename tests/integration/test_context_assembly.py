@@ -27,6 +27,7 @@ from chat_buddy.chat.domain import (
 )
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
+    GenerationAttemptRepository,
     MemoryRepository,
     SummaryRepository,
 )
@@ -93,7 +94,7 @@ def _model(provider_id: ProviderId, model_id: ModelId) -> ModelDescriptor:
 
 
 def _complete_turn(
-    repository: ConversationRepository,
+    repository: GenerationAttemptRepository,
     conversation_id: UUID,
     number: int,
     provider_id: ProviderId,
@@ -201,13 +202,14 @@ def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
     """
 
     conversations = ConversationRepository(session)
+    attempts = GenerationAttemptRepository(session)
     memories = MemoryRepository(session)
     summaries = SummaryRepository(session)
     assembler = _assembler(memories, summaries)
     model = _model(provider_id, model_id)
     configuration = GenerationConfiguration()
     conversation_a = conversations.create_conversation()
-    first = _complete_turn(conversations, conversation_a.id, 1, provider_id, model_id)
+    first = _complete_turn(attempts, conversation_a.id, 1, provider_id, model_id)
     memories.process_extraction(
         first,
         (MemoryCandidate("city", "The user lives in Tehran."),),
@@ -218,8 +220,8 @@ def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
             completed_at=first.completed_at + timedelta(seconds=1),
         ),
     )
-    second = _complete_turn(conversations, conversation_a.id, 2, provider_id, model_id)
-    third = _complete_turn(conversations, conversation_a.id, 3, provider_id, model_id)
+    second = _complete_turn(attempts, conversation_a.id, 2, provider_id, model_id)
+    third = _complete_turn(attempts, conversation_a.id, 3, provider_id, model_id)
 
     first_result = assembler.assemble(
         conversation_a.id,
@@ -236,7 +238,7 @@ def test_long_context_rolls_multiple_checkpoints_and_reuses_global_memory(
         third.attempt_id,
     )
 
-    fourth = _complete_turn(conversations, conversation_a.id, 4, provider_id, model_id)
+    fourth = _complete_turn(attempts, conversation_a.id, 4, provider_id, model_id)
     second_result = assembler.assemble(
         conversation_a.id,
         ChatMessage(ChatRole.USER, "question 5"),

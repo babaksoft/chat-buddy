@@ -14,6 +14,9 @@ from chat_buddy.chat.application.schemas import (
     ProviderOption,
 )
 from chat_buddy.chat.application.service.conversation_service import ConversationService
+from chat_buddy.chat.application.service.generation_attempt_service import (
+    GenerationAttemptService,
+)
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
@@ -59,6 +62,7 @@ class ChatService:
     def __init__(
         self,
         conversation_service: ConversationService,
+        generation_attempt_service: GenerationAttemptService,
         memory_extraction_service: MemoryExtractionProcessor,
         context_assembler: ContextAssembler,
         provider_registry: ProviderRegistry,
@@ -69,7 +73,9 @@ class ChatService:
 
         Args:
             conversation_service:
-                Conversation and generation-attempt persistence service.
+                Conversation and message persistence service.
+            generation_attempt_service:
+                Generation-attempt lifecycle service.
             memory_extraction_service:
                 Bounded processor for exact committed turns.
             context_assembler:
@@ -83,6 +89,7 @@ class ChatService:
         """
 
         self._conversation_service = conversation_service
+        self._generation_attempt_service = generation_attempt_service
         self._memory_extraction_service = memory_extraction_service
         self._context_assembler = context_assembler
         self._provider_registry = provider_registry
@@ -171,7 +178,7 @@ class ChatService:
                 Identifier of the resumed conversation.
         """
 
-        attempt = self._conversation_service.get_open_generation_attempt(
+        attempt = self._generation_attempt_service.get_open_generation_attempt(
             conversation_id
         )
         if attempt is None or attempt.id in self._active_attempt_ids:
@@ -187,11 +194,11 @@ class ChatService:
             if timestamp is not None
         )
         if attempt.status is GenerationAttemptStatus.PENDING:
-            self._conversation_service.begin_generation_attempt(
+            self._generation_attempt_service.begin_generation_attempt(
                 attempt.id,
                 at=reconciled_at,
             )
-        self._conversation_service.interrupt_generation_attempt(
+        self._generation_attempt_service.interrupt_generation_attempt(
             attempt.id,
             at=reconciled_at,
             partial_content=attempt.partial_content,
@@ -321,8 +328,10 @@ class ChatService:
         """
 
         self.reconcile_generation_attempts(conversation_id)
-        attempt = self._conversation_service.get_latest_retryable_generation_attempt(
-            conversation_id
+        attempt = (
+            self._generation_attempt_service.get_latest_retryable_generation_attempt(
+                conversation_id
+            )
         )
         return (attempt,) if attempt is not None else ()
 
@@ -429,7 +438,7 @@ class ChatService:
             model,
             configuration,
         )
-        attempt = self._conversation_service.start_generation_attempt(
+        attempt = self._generation_attempt_service.start_generation_attempt(
             conversation.id,
             request.message,
             model.provider_id,
@@ -531,7 +540,7 @@ class ChatService:
                 If the attempt is not failed or interrupted.
         """
 
-        source = self._conversation_service.get_generation_attempt(attempt_id)
+        source = self._generation_attempt_service.get_generation_attempt(attempt_id)
         if source is None:
             raise LookupError(f"Generation attempt {attempt_id} does not exist.")
         if source.status not in {
@@ -543,7 +552,7 @@ class ChatService:
             )
         self.reconcile_generation_attempts(source.conversation_id)
         latest_retryable = (
-            self._conversation_service.get_latest_retryable_generation_attempt(
+            self._generation_attempt_service.get_latest_retryable_generation_attempt(
                 source.conversation_id
             )
         )
@@ -573,7 +582,7 @@ class ChatService:
             model,
             configuration,
         )
-        retry = self._conversation_service.retry_generation_attempt(
+        retry = self._generation_attempt_service.retry_generation_attempt(
             source.id,
             model.provider_id,
             model.id,
@@ -696,7 +705,7 @@ class ChatService:
         """
 
         try:
-            self._conversation_service.fail_generation_attempt(
+            self._generation_attempt_service.fail_generation_attempt(
                 generation.attempt.id,
                 error_code="provider_error",
                 error_detail="The response provider could not complete the request.",
@@ -721,7 +730,7 @@ class ChatService:
                 Complete response content accumulated before cancellation.
         """
 
-        self._conversation_service.interrupt_generation_attempt(
+        self._generation_attempt_service.interrupt_generation_attempt(
             generation.attempt.id,
             partial_content=partial_content or None,
             at=datetime.now(UTC),
@@ -735,7 +744,7 @@ class ChatService:
                 Pending generation attempt.
         """
 
-        self._conversation_service.begin_generation_attempt(
+        self._generation_attempt_service.begin_generation_attempt(
             attempt.id,
             at=datetime.now(UTC),
         )
@@ -754,7 +763,7 @@ class ChatService:
                 Complete assistant response.
         """
 
-        completed = self._conversation_service.complete_generation_attempt(
+        completed = self._generation_attempt_service.complete_generation_attempt(
             generation.attempt.id,
             response,
             at=datetime.now(UTC),

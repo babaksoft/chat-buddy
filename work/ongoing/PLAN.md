@@ -1,6 +1,6 @@
 # Chat Repository Refactoring Plan
 
-Status: In progress — Slice 1 complete; Slice 2 next
+Status: In progress — Slices 1–2 complete; Slice 3 next
 
 Last updated: 2026-09-22
 
@@ -36,18 +36,18 @@ moved and structurally refactored in the same slice.
 
 This slice changes no production behavior.
 
-### Slice 2: Extract generation-attempt ownership end to end
+### Slice 2: Extract generation-attempt ownership end to end — Complete
 
-- [ ] Add a domain `GenerationAttemptRepository` protocol for attempt creation,
+- [x] Add a domain `GenerationAttemptRepository` protocol for attempt creation,
   retries, state transitions, recovery queries, and history.
-- [ ] Narrow `ConversationRepository` to conversation and standalone message
+- [x] Narrow `ConversationRepository` to conversation and standalone message
   operations.
-- [ ] Extract generation-attempt persistence into a dedicated infrastructure
+- [x] Extract generation-attempt persistence into a dedicated infrastructure
   repository. Keep source-message creation and assistant-message completion in
   that repository so each compound write remains atomic.
-- [ ] Add `GenerationAttemptService`, remove attempt lifecycle methods from
+- [x] Add `GenerationAttemptService`, remove attempt lifecycle methods from
   `ConversationService`, and inject both services into `ChatService`.
-- [ ] Update exports, composition, test doubles, repository tests, service tests,
+- [x] Update exports, composition, test doubles, repository tests, service tests,
   integration tests, and architecture coverage for the new responsibility
   boundary.
 

@@ -78,7 +78,7 @@ def _service(
     *,
     model: ModelDescriptor | None = None,
     title: str | None = "Generated title",
-) -> tuple[ChatService, Mock, Mock, Mock, Mock, Mock]:
+) -> tuple[ChatService, Mock, Mock, Mock, Mock, Mock, Mock]:
     """Build a Chat service and its application-level test doubles.
 
     Args:
@@ -100,20 +100,23 @@ def _service(
         provider_id=selected_model.provider_id,
         model_id=selected_model.id,
     )
+    generation_attempt_service = Mock()
     pending_attempt = _attempt(
         conversation_id,
         selected_model,
     )
-    conversation_service.start_generation_attempt.return_value = pending_attempt
-    conversation_service.complete_generation_attempt.return_value = (
+    generation_attempt_service.start_generation_attempt.return_value = pending_attempt
+    generation_attempt_service.complete_generation_attempt.return_value = (
         pending_attempt.start(at=pending_attempt.created_at).complete(
             assistant_message_id=uuid4(),
             at=pending_attempt.created_at,
         )
     )
     conversation_service.get_messages.return_value = []
-    conversation_service.get_open_generation_attempt.return_value = None
-    conversation_service.get_latest_retryable_generation_attempt.return_value = None
+    generation_attempt_service.get_open_generation_attempt.return_value = None
+    generation_attempt_service.get_latest_retryable_generation_attempt.return_value = (
+        None
+    )
 
     gateway = Mock()
     gateway.generate.return_value = "Hello from the model."
@@ -140,6 +143,7 @@ def _service(
 
     service = ChatService(
         conversation_service=conversation_service,
+        generation_attempt_service=generation_attempt_service,
         memory_extraction_service=memory_extraction_service,
         context_assembler=context_assembler,
         provider_registry=registry,
@@ -149,6 +153,7 @@ def _service(
     return (
         service,
         conversation_service,
+        generation_attempt_service,
         gateway,
         registry,
         context_assembler,
@@ -159,20 +164,20 @@ def _service(
 def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None:
     """Verify synchronous generation uses one validated lifecycle."""
 
-    service, conversations, gateway, registry, context_assembler, _ = _service()
+    service, _, attempts, gateway, registry, context_assembler, _ = _service()
 
     response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
     model = registry.get_model.return_value
     effective = registry.resolve_generation_configuration.return_value
-    conversations.start_generation_attempt.assert_called_once_with(
+    attempts.start_generation_attempt.assert_called_once_with(
         response.conversation_id,
         "Hello",
         model.provider_id,
         model.id,
         effective,
     )
-    conversations.begin_generation_attempt.assert_called_once()
+    attempts.begin_generation_attempt.assert_called_once()
     context_assembler.assemble.assert_called_once_with(
         response.conversation_id,
         ChatMessage(ChatRole.USER, "Hello"),
@@ -184,14 +189,14 @@ def test_chat_routes_effective_configuration_through_attempt_lifecycle() -> None
         model.id,
         effective,
     )
-    conversations.complete_generation_attempt.assert_called_once()
+    attempts.complete_generation_attempt.assert_called_once()
     assert response.response == "Hello from the model."
 
 
 def test_stream_chat_uses_the_same_attempt_lifecycle() -> None:
     """Verify streaming begins and completes the prepared attempt."""
 
-    service, conversations, gateway, registry, context_assembler, _ = _service()
+    service, _, attempts, gateway, registry, context_assembler, _ = _service()
 
     _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
     chunks = list(stream)
@@ -202,15 +207,15 @@ def test_stream_chat_uses_the_same_attempt_lifecycle() -> None:
         registry.get_model.return_value.id,
         registry.resolve_generation_configuration.return_value,
     )
-    conversations.begin_generation_attempt.assert_called_once()
-    completion = conversations.complete_generation_attempt.call_args
+    attempts.begin_generation_attempt.assert_called_once()
+    completion = attempts.complete_generation_attempt.call_args
     assert completion.args[1] == "Hello from the model."
 
 
 def test_new_conversation_persists_registry_default_before_attempt() -> None:
     """Verify a new conversation adopts the registered default selection."""
 
-    service, conversations, _, registry, _, _ = _service()
+    service, conversations, _, _, registry, _, _ = _service()
     model = registry.get_model.return_value
     initial = conversations.get_or_create_conversation.return_value
     initial = ConversationRecord(id=initial.id, title=None)
@@ -237,7 +242,7 @@ def test_new_conversation_persists_registry_default_before_attempt() -> None:
 def test_generation_selection_restores_persisted_application_choices() -> None:
     """Verify UI choices are projected through the application service."""
 
-    service, conversations, _, registry, _, _ = _service()
+    service, conversations, _, _, registry, _, _ = _service()
     model = registry.get_model.return_value
     conversation_id = uuid4()
     configuration = GenerationConfiguration(temperature=0.6)
@@ -266,7 +271,7 @@ def test_generation_selection_restores_persisted_application_choices() -> None:
 def test_generation_selection_change_is_validated_then_persisted() -> None:
     """Verify selector changes become defaults for the next generation only."""
 
-    service, conversations, _, registry, _, _ = _service()
+    service, conversations, _, _, registry, _, _ = _service()
     model = registry.get_model.return_value
     conversation = conversations.get_or_create_conversation.return_value
     configuration = GenerationConfiguration(top_p=0.8)
@@ -301,7 +306,7 @@ def test_generation_selection_change_is_validated_then_persisted() -> None:
 def test_recoverable_attempts_expose_only_the_singular_latest_retry_target() -> None:
     """Verify recovery exposes at most one actionable linear-tail attempt."""
 
-    service, conversations, _, registry, _, _ = _service()
+    service, _, attempts, _, registry, _, _ = _service()
     model = registry.get_model.return_value
     conversation_id = uuid4()
     source_id = uuid4()
@@ -318,7 +323,7 @@ def test_recoverable_attempts_expose_only_the_singular_latest_retry_target() -> 
         created_at=retry.created_at,
     )
     interrupted = retry.start(at=retry.created_at).interrupt(at=retry.created_at)
-    conversations.get_latest_retryable_generation_attempt.return_value = interrupted
+    attempts.get_latest_retryable_generation_attempt.return_value = interrupted
 
     recoverable = service.get_recoverable_generation_attempts(conversation_id)
 
@@ -328,20 +333,18 @@ def test_recoverable_attempts_expose_only_the_singular_latest_retry_target() -> 
 def test_streaming_capability_is_validated_before_attempt_is_started() -> None:
     """Verify a non-streaming model is rejected before persisting a user turn."""
 
-    service, conversations, _, _, _, _ = _service(
-        model=_model(supports_streaming=False)
-    )
+    service, _, attempts, _, _, _, _ = _service(model=_model(supports_streaming=False))
 
     with pytest.raises(InvalidGenerationConfigurationError):
         service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    conversations.start_generation_attempt.assert_not_called()
+    attempts.start_generation_attempt.assert_not_called()
 
 
 def test_context_failure_creates_no_attempt_and_invokes_no_provider() -> None:
     """Verify mandatory budget failure occurs before durable turn creation."""
 
-    service, conversations, gateway, _, context_assembler, _ = _service()
+    service, _, attempts, gateway, _, context_assembler, _ = _service()
     context_assembler.assemble.side_effect = ContextWindowExceededError(
         "mandatory context is too large"
     )
@@ -349,7 +352,7 @@ def test_context_failure_creates_no_attempt_and_invokes_no_provider() -> None:
     with pytest.raises(ContextWindowExceededError):
         service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    conversations.start_generation_attempt.assert_not_called()
+    attempts.start_generation_attempt.assert_not_called()
     gateway.generate.assert_not_called()
     gateway.generate_stream.assert_not_called()
 
@@ -357,15 +360,15 @@ def test_context_failure_creates_no_attempt_and_invokes_no_provider() -> None:
 def test_post_response_effects_run_after_atomic_completion() -> None:
     """Verify title and memory effects cannot precede assistant-message commit."""
 
-    service, conversations, _, _, _, memory_extraction_service = _service()
+    service, conversations, attempts, _, _, _, memory_extraction_service = _service()
     calls = Mock()
-    calls.attach_mock(conversations.complete_generation_attempt, "complete")
+    calls.attach_mock(attempts.complete_generation_attempt, "complete")
     calls.attach_mock(memory_extraction_service.process, "memory")
 
     service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
     assert [call[0] for call in calls.mock_calls] == ["complete", "memory"]
-    completed = conversations.complete_generation_attempt.return_value
+    completed = attempts.complete_generation_attempt.return_value
     turn = memory_extraction_service.process.call_args.args[0]
     assert turn.conversation_id == completed.conversation_id
     assert turn.attempt_id == completed.id
@@ -379,7 +382,7 @@ def test_post_response_effects_run_after_atomic_completion() -> None:
 def test_extraction_failure_does_not_change_completed_response() -> None:
     """Verify post-completion extraction remains best-effort for callers."""
 
-    service, conversations, _, _, _, memory_extraction_service = _service()
+    service, conversations, attempts, _, _, _, memory_extraction_service = _service()
     memory_extraction_service.process.side_effect = RuntimeError(
         "terminal receipt unavailable"
     )
@@ -387,21 +390,23 @@ def test_extraction_failure_does_not_change_completed_response() -> None:
     response = service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
     assert response.response == "Hello from the model."
-    conversations.complete_generation_attempt.assert_called_once()
+    attempts.complete_generation_attempt.assert_called_once()
     conversations.rename_conversation.assert_called_once()
 
 
 def test_provider_error_does_not_complete_or_run_turn_effects() -> None:
     """Verify unsuccessful synchronous generation remains outside completion."""
 
-    service, conversations, gateway, _, _, memory_extraction_service = _service()
+    service, conversations, attempts, gateway, _, _, memory_extraction_service = (
+        _service()
+    )
     gateway.generate.side_effect = RuntimeError("provider unavailable")
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         service.chat(ChatRequest(conversation_id=None, message="Hello"))
 
-    conversations.complete_generation_attempt.assert_not_called()
-    conversations.fail_generation_attempt.assert_called_once()
+    attempts.complete_generation_attempt.assert_not_called()
+    attempts.fail_generation_attempt.assert_called_once()
     memory_extraction_service.process.assert_not_called()
     conversations.rename_conversation.assert_not_called()
 
@@ -409,17 +414,17 @@ def test_provider_error_does_not_complete_or_run_turn_effects() -> None:
 def test_stream_failure_before_output_marks_attempt_failed() -> None:
     """Verify a provider failure before its first chunk is persisted."""
 
-    service, conversations, gateway, _, _, memory_extraction_service = _service()
+    service, _, attempts, gateway, _, _, memory_extraction_service = _service()
     gateway.generate_stream.side_effect = RuntimeError("provider unavailable")
 
     _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
     with pytest.raises(RuntimeError, match="provider unavailable"):
         next(stream)
 
-    failure = conversations.fail_generation_attempt.call_args
+    failure = attempts.fail_generation_attempt.call_args
     assert failure.kwargs["error_code"] == "provider_error"
     assert failure.kwargs["partial_content"] is None
-    conversations.complete_generation_attempt.assert_not_called()
+    attempts.complete_generation_attempt.assert_not_called()
     memory_extraction_service.process.assert_not_called()
 
 
@@ -431,7 +436,7 @@ def test_stream_failure_flushes_partial_output_to_attempt() -> None:
             Raised by the fake provider after yielding partial output.
     """
 
-    service, conversations, gateway, _, _, memory_extraction_service = _service()
+    service, _, attempts, gateway, _, _, memory_extraction_service = _service()
 
     def failing_stream() -> Generator[str, None, None]:
         """Yield one chunk before simulating a provider failure.
@@ -454,50 +459,50 @@ def test_stream_failure_flushes_partial_output_to_attempt() -> None:
     with pytest.raises(RuntimeError, match="stream failed"):
         next(stream)
 
-    failure = conversations.fail_generation_attempt.call_args
+    failure = attempts.fail_generation_attempt.call_args
     assert failure.kwargs["partial_content"] == "Partial"
-    conversations.complete_generation_attempt.assert_not_called()
+    attempts.complete_generation_attempt.assert_not_called()
     memory_extraction_service.process.assert_not_called()
 
 
 def test_stream_consumer_closure_marks_attempt_interrupted() -> None:
     """Verify generator closure flushes partial output as interrupted."""
 
-    service, conversations, _, _, _, memory_extraction_service = _service()
+    service, _, attempts, _, _, _, memory_extraction_service = _service()
     _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
 
     assert next(stream) == "Hello "
     stream.close()
 
-    interruption = conversations.interrupt_generation_attempt.call_args
+    interruption = attempts.interrupt_generation_attempt.call_args
     assert interruption.kwargs["partial_content"] == "Hello "
-    conversations.complete_generation_attempt.assert_not_called()
+    attempts.complete_generation_attempt.assert_not_called()
     memory_extraction_service.process.assert_not_called()
 
 
 def test_stream_consumer_closure_before_output_marks_attempt_interrupted() -> None:
     """Verify an unconsumed prepared stream can still be closed durably."""
 
-    service, conversations, gateway, _, _, _ = _service()
+    service, _, attempts, gateway, _, _, _ = _service()
     _, stream = service.stream_chat(ChatRequest(conversation_id=None, message="Hello"))
 
     stream.close()
 
-    conversations.interrupt_generation_attempt.assert_called_once()
+    attempts.interrupt_generation_attempt.assert_called_once()
     gateway.generate_stream.assert_not_called()
 
 
 def test_stale_streaming_attempt_is_reconciled_as_interrupted() -> None:
     """Verify resuming a conversation terminates an unowned stream."""
 
-    service, conversations, _, registry, _, _ = _service()
+    service, conversations, attempts, _, registry, _, _ = _service()
     conversation = conversations.get_or_create_conversation.return_value
     stale = _attempt(conversation.id, registry.get_model.return_value).start(
         at=datetime.now(UTC)
     )
-    conversations.get_open_generation_attempt.return_value = stale
+    attempts.get_open_generation_attempt.return_value = stale
 
     service.reconcile_generation_attempts(conversation.id)
 
-    conversations.interrupt_generation_attempt.assert_called_once()
-    conversations.begin_generation_attempt.assert_not_called()
+    attempts.interrupt_generation_attempt.assert_called_once()
+    attempts.begin_generation_attempt.assert_not_called()
