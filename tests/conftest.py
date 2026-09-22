@@ -25,17 +25,17 @@ def _enable_sqlite_foreign_keys(dbapi_connection: object, _: object) -> None:
 
 
 @pytest.fixture
-def session() -> Generator[Session, None, None]:
+def session_factory() -> Generator[sessionmaker[Session], None, None]:
     """
-    Create an isolated database session for testing.
+    Create an isolated database session factory for testing.
 
     An in-memory SQLite database is created for each
     test, ensuring complete test isolation and
     automatic cleanup.
 
     Yields:
-        SQLAlchemy session connected to an isolated
-        in-memory database.
+        SQLAlchemy session factory connected to an
+        isolated in-memory database.
     """
 
     engine = create_engine(
@@ -47,10 +47,30 @@ def session() -> Generator[Session, None, None]:
 
     ChatBase.metadata.create_all(engine)
 
-    session_factory = sessionmaker(
+    factory = sessionmaker(
         bind=engine,
         autoflush=False,
     )
+
+    try:
+        yield factory
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def session(
+    session_factory: sessionmaker[Session],
+) -> Generator[Session, None, None]:
+    """Create a session for repositories that still accept a live session.
+
+    Args:
+        session_factory:
+            Isolated test database session factory.
+
+    Yields:
+        SQLAlchemy session connected to the isolated test database.
+    """
 
     with session_factory() as session:
         yield session

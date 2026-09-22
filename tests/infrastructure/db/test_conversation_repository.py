@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.domain import (
     ChatRole,
@@ -251,12 +251,15 @@ def test_update_conversation_title(
 
 def test_generation_attempt_follows_completed_repository_lifecycle(
     repository: ConversationRepository,
+    session_factory: sessionmaker[Session],
 ) -> None:
     """Verify pending, streaming, checkpoint, and atomic completion persistence.
 
     Args:
         repository:
             Repository connected to the test database.
+        session_factory:
+            Isolated test database session factory.
     """
 
     conversation = repository.create_conversation()
@@ -270,9 +273,23 @@ def test_generation_attempt_follows_completed_repository_lifecycle(
 
     assert pending.status is GenerationAttemptStatus.PENDING
     assert pending.effective_configuration.temperature == 0.5
-    assert [
-        message.content for message in repository.get_messages(conversation.id)
-    ] == ["Hello"]
+    with session_factory() as inspection_session:
+        persisted_messages = list(
+            inspection_session.scalars(
+                select(Message).where(Message.conversation_id == conversation.id)
+            )
+        )
+        persisted_attempts = list(
+            inspection_session.scalars(
+                select(GenerationAttempt).where(
+                    GenerationAttempt.conversation_id == conversation.id
+                )
+            )
+        )
+        assert [message.content for message in persisted_messages] == ["Hello"]
+        assert len(persisted_attempts) == 1
+        assert persisted_attempts[0].source_user_message_id == persisted_messages[0].id
+        assert persisted_attempts[0].status is GenerationAttemptStatus.PENDING
 
     started_at = pending.created_at + timedelta(seconds=1)
     streaming = repository.begin_generation_attempt(pending.id, at=started_at)
@@ -289,12 +306,22 @@ def test_generation_attempt_follows_completed_repository_lifecycle(
     assert completed.status is GenerationAttemptStatus.COMPLETED
     assert completed.partial_content is None
     assert completed.assistant_message_id is not None
-    assert [
-        message.content for message in repository.get_messages(conversation.id)
-    ] == [
-        "Hello",
-        "Completed response",
-    ]
+    with session_factory() as inspection_session:
+        persisted_messages = list(
+            inspection_session.scalars(
+                select(Message)
+                .where(Message.conversation_id == conversation.id)
+                .order_by(Message.created_at)
+            )
+        )
+        persisted_attempt = inspection_session.get(GenerationAttempt, completed.id)
+        assert [message.content for message in persisted_messages] == [
+            "Hello",
+            "Completed response",
+        ]
+        assert persisted_attempt is not None
+        assert persisted_attempt.status is GenerationAttemptStatus.COMPLETED
+        assert persisted_attempt.assistant_message_id == persisted_messages[1].id
     assert repository.get_generation_attempt(completed.id) == completed
 
 
@@ -525,87 +552,94 @@ def test_generation_repository_rejects_invalid_transitions(
 
 
 def test_start_generation_attempt_rolls_back_message_and_attempt_together(
-    repository: ConversationRepository,
-    session: Session,
+    session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify a failed start commit leaves neither atomic record.
 
     Args:
-        repository:
-            Repository connected to the test database.
-        session:
-            Database session used by the repository.
+        session_factory:
+            Isolated test database session factory.
         monkeypatch:
             Pytest helper used to simulate commit failure.
     """
 
-    conversation = repository.create_conversation()
+    with session_factory() as repository_session:
+        repository = ConversationRepository(repository_session)
+        conversation = repository.create_conversation()
 
-    def fail_commit() -> None:
-        """Simulate a database failure while committing the transaction."""
+        def fail_commit() -> None:
+            """Simulate a database failure while committing the transaction."""
 
-        raise SQLAlchemyError("simulated commit failure")
+            raise SQLAlchemyError("simulated commit failure")
 
-    with monkeypatch.context() as patch:
-        patch.setattr(session, "commit", fail_commit)
-        with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
-            repository.start_generation_attempt(
-                conversation.id,
-                "Hello",
-                ProviderId("ollama"),
-                ModelId("mistral"),
-                GenerationConfiguration(),
+        with monkeypatch.context() as patch:
+            patch.setattr(repository_session, "commit", fail_commit)
+            with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+                repository.start_generation_attempt(
+                    conversation.id,
+                    "Hello",
+                    ProviderId("ollama"),
+                    ModelId("mistral"),
+                    GenerationConfiguration(),
+                )
+
+    with session_factory() as inspection_session:
+        assert inspection_session.scalar(select(func.count()).select_from(Message)) == 0
+        assert (
+            inspection_session.scalar(
+                select(func.count()).select_from(GenerationAttempt)
             )
-
-    assert session.scalar(select(func.count()).select_from(Message)) == 0
-    assert session.scalar(select(func.count()).select_from(GenerationAttempt)) == 0
+            == 0
+        )
 
 
 def test_complete_generation_attempt_rolls_back_message_and_status_together(
-    repository: ConversationRepository,
-    session: Session,
+    session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify a failed completion commit preserves the streaming attempt.
 
     Args:
-        repository:
-            Repository connected to the test database.
-        session:
-            Database session used by the repository.
+        session_factory:
+            Isolated test database session factory.
         monkeypatch:
             Pytest helper used to simulate commit failure.
     """
 
-    conversation = repository.create_conversation()
-    pending = repository.start_generation_attempt(
-        conversation.id,
-        "Hello",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    repository.begin_generation_attempt(pending.id, at=pending.created_at)
+    with session_factory() as repository_session:
+        repository = ConversationRepository(repository_session)
+        conversation = repository.create_conversation()
+        pending = repository.start_generation_attempt(
+            conversation.id,
+            "Hello",
+            ProviderId("ollama"),
+            ModelId("mistral"),
+            GenerationConfiguration(),
+        )
+        repository.begin_generation_attempt(pending.id, at=pending.created_at)
 
-    def fail_commit() -> None:
-        """Simulate a database failure while committing the transaction."""
+        def fail_commit() -> None:
+            """Simulate a database failure while committing the transaction."""
 
-        raise SQLAlchemyError("simulated commit failure")
+            raise SQLAlchemyError("simulated commit failure")
 
-    with monkeypatch.context() as patch:
-        patch.setattr(session, "commit", fail_commit)
-        with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
-            repository.complete_generation_attempt(
-                pending.id,
-                "Response",
-                at=datetime.now(UTC),
+        with monkeypatch.context() as patch:
+            patch.setattr(repository_session, "commit", fail_commit)
+            with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+                repository.complete_generation_attempt(
+                    pending.id,
+                    "Response",
+                    at=datetime.now(UTC),
+                )
+
+    with session_factory() as inspection_session:
+        persisted = inspection_session.get(GenerationAttempt, pending.id)
+        assert persisted is not None
+        assert persisted.status is GenerationAttemptStatus.STREAMING
+        messages = list(
+            inspection_session.scalars(
+                select(Message).where(Message.conversation_id == conversation.id)
             )
-
-    session.expire_all()
-    persisted = repository.get_generation_attempt(pending.id)
-    assert persisted is not None
-    assert persisted.status is GenerationAttemptStatus.STREAMING
-    assert [
-        message.content for message in repository.get_messages(conversation.id)
-    ] == ["Hello"]
+        )
+        assert [message.content for message in messages] == ["Hello"]
