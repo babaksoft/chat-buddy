@@ -176,12 +176,14 @@ class ModelDescriptor:
 
         if not self.display_name.strip():
             raise ValueError("Model display name must be non-empty.")
+
         if self.context_window_tokens <= 0:
             raise ValueError("Model context window must be greater than 0.")
         if self.default_output_token_reserve <= 0:
             raise ValueError("Model output-token reserve must be greater than 0.")
         if self.default_output_token_reserve >= self.context_window_tokens:
             raise ValueError("Model output-token reserve must be below its window.")
+
         for name, value in (
             ("maximum input", self.maximum_input_tokens),
             ("maximum output", self.maximum_output_tokens),
@@ -236,6 +238,7 @@ class ModelDescriptor:
             limits.append(self.maximum_input_tokens)
         if self.application_prompt_limit is not None:
             limits.append(self.application_prompt_limit)
+
         return min(limits)
 
     def output_token_reserve(self, configuration: GenerationConfiguration) -> int:

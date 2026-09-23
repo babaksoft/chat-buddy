@@ -26,7 +26,7 @@ _MODEL_OUTPUT_LIMITS = {model: 128_000 for model in _GPT_56_MODELS} | {
 }
 
 
-class OpenAIResponseGateway:
+class OpenAIGateway:
     """Generate complete and streaming responses with OpenAI Responses."""
 
     def __init__(self, api_key: str | None = None, client: Any | None = None) -> None:

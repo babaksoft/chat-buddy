@@ -19,14 +19,14 @@ from chat_buddy.chat.domain import (
 )
 from chat_buddy.chat.infrastructure.config import settings
 from chat_buddy.chat.infrastructure.llm.ollama_gateway import OllamaGateway
-from chat_buddy.chat.infrastructure.llm.openai_gateway import OpenAIResponseGateway
+from chat_buddy.chat.infrastructure.llm.openai_gateway import OpenAIGateway
 from chat_buddy.chat.infrastructure.llm.provider_registry import (
     StaticProviderRegistry,
     StaticResponseGatewayResolver,
 )
 from chat_buddy.chat.infrastructure.tokenization import (
     MistralTokenCounter,
-    OpenAIResponsesTokenCounter,
+    OpenAITokenCounter,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def build_provider_runtime() -> ProviderRuntime:
                         supports_streaming=True,
                         supported_generation_parameters=frozenset(supported),
                         default_generation_configuration=GenerationConfiguration(),
-                        token_counter=OpenAIResponsesTokenCounter(),
+                        token_counter=OpenAITokenCounter(),
                         default_output_token_reserve=output_reserve,
                         maximum_input_tokens=maximum_input,
                         maximum_output_tokens=maximum_output,
@@ -142,7 +142,7 @@ def build_provider_runtime() -> ProviderRuntime:
                         ),
                     )
                 )
-            gateways[openai_id] = OpenAIResponseGateway(api_key=api_key)
+            gateways[openai_id] = OpenAIGateway(api_key=api_key)
 
     registry = StaticProviderRegistry(
         providers=providers,

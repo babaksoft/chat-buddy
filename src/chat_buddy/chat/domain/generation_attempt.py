@@ -98,13 +98,14 @@ class GenerationAttemptRecord:
 
         if self.created_at.tzinfo is None:
             raise ValueError("Generation attempt timestamps must be timezone-aware.")
-        if not self.submitted_user_content.strip():
-            raise ValueError("Submitted user content must be non-empty.")
         for timestamp in (self.started_at, self.finished_at):
             if timestamp is not None and timestamp.tzinfo is None:
                 raise ValueError(
                     "Generation attempt timestamps must be timezone-aware."
                 )
+
+        if not self.submitted_user_content.strip():
+            raise ValueError("Submitted user content must be non-empty.")
 
         if self.status is GenerationAttemptStatus.PENDING:
             self._require(self.started_at is None, "Pending attempt cannot be started.")
@@ -197,6 +198,7 @@ class GenerationAttemptRecord:
             raise InvalidGenerationAttemptTransitionError(
                 "Only a streaming attempt can be checkpointed."
             )
+
         return replace(self, partial_content=partial_content or None)
 
     def complete(

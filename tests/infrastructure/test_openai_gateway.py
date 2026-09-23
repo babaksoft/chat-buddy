@@ -14,7 +14,7 @@ from chat_buddy.chat.domain import (
     ModelId,
     ProviderInvocationError,
 )
-from chat_buddy.chat.infrastructure.llm import OpenAIResponseGateway
+from chat_buddy.chat.infrastructure.llm import OpenAIGateway
 
 
 def _completed_response(*contents: object) -> SimpleNamespace:
@@ -47,7 +47,7 @@ def test_gateway_constructs_fixed_endpoint_client_with_bounded_transport(
     client_type = Mock()
     monkeypatch.setattr(openai, "OpenAI", client_type)
 
-    OpenAIResponseGateway(api_key="test-key-not-real")
+    OpenAIGateway(api_key="test-key-not-real")
 
     kwargs = client_type.call_args.kwargs
     assert kwargs["api_key"] == "test-key-not-real"
@@ -69,7 +69,7 @@ def test_complete_response_maps_gpt_56_request_and_combines_visible_output() -> 
         SimpleNamespace(type="output_text", text="answer"),
         SimpleNamespace(type="refusal", refusal=" declined"),
     )
-    gateway = OpenAIResponseGateway(client=client)
+    gateway = OpenAIGateway(client=client)
     messages = [ChatMessage(ChatRole.USER, "hello")]
 
     result = gateway.generate(
@@ -95,7 +95,7 @@ def test_gpt_41_maps_supported_sampling_parameters_without_reasoning() -> None:
     client.responses.create.return_value = _completed_response(
         SimpleNamespace(type="output_text", text="answer")
     )
-    gateway = OpenAIResponseGateway(client=client)
+    gateway = OpenAIGateway(client=client)
 
     gateway.generate(
         [ChatMessage(ChatRole.SYSTEM, "rules")],
@@ -133,7 +133,7 @@ def test_stream_disables_retries_and_yields_text_and_refusal_in_order() -> None:
     streaming_client.responses.create.return_value = stream
     client = Mock()
     client.with_options.return_value = streaming_client
-    gateway = OpenAIResponseGateway(client=client)
+    gateway = OpenAIGateway(client=client)
 
     chunks = gateway.generate_stream(
         [ChatMessage(ChatRole.USER, "hello")],
@@ -184,7 +184,7 @@ def test_adapter_rejects_unsupported_models_and_parameters(
             Expected safe validation detail.
     """
 
-    gateway = OpenAIResponseGateway(client=Mock())
+    gateway = OpenAIGateway(client=Mock())
 
     with pytest.raises(InvalidGenerationConfigurationError, match=match):
         gateway.generate([], ModelId(model), configuration)
@@ -201,7 +201,7 @@ def test_non_completed_or_empty_response_is_normalized(status: str) -> None:
 
     client = Mock()
     client.responses.create.return_value = SimpleNamespace(status=status, output=())
-    gateway = OpenAIResponseGateway(client=client)
+    gateway = OpenAIGateway(client=client)
 
     with pytest.raises(
         ProviderInvocationError, match="^provider_invalid_response$"
@@ -219,7 +219,7 @@ def test_sdk_failure_uses_safe_category_without_chained_payload() -> None:
         message="unsafe payload sk-test-secret",
         request=Mock(),
     )
-    gateway = OpenAIResponseGateway(client=client)
+    gateway = OpenAIGateway(client=client)
 
     with pytest.raises(
         ProviderInvocationError, match="^provider_unavailable$"

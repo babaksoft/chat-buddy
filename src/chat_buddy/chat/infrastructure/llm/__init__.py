@@ -3,7 +3,7 @@ from chat_buddy.chat.infrastructure.llm.configured_providers import (
     build_provider_runtime,
 )
 from chat_buddy.chat.infrastructure.llm.ollama_gateway import OllamaGateway
-from chat_buddy.chat.infrastructure.llm.openai_gateway import OpenAIResponseGateway
+from chat_buddy.chat.infrastructure.llm.openai_gateway import OpenAIGateway
 from chat_buddy.chat.infrastructure.llm.provider_registry import (
     StaticProviderRegistry,
     StaticResponseGatewayResolver,
@@ -11,7 +11,7 @@ from chat_buddy.chat.infrastructure.llm.provider_registry import (
 
 __all__ = [
     "OllamaGateway",
-    "OpenAIResponseGateway",
+    "OpenAIGateway",
     "ProviderRuntime",
     "StaticProviderRegistry",
     "StaticResponseGatewayResolver",

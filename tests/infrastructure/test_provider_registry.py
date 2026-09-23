@@ -254,7 +254,7 @@ def test_configured_runtime_registers_enabled_ollama_models(
     client_type.assert_called_once_with(host=settings.OLLAMA_ENDPOINT_URL)
 
 
-@patch("chat_buddy.chat.infrastructure.llm.configured_providers.OpenAIResponseGateway")
+@patch("chat_buddy.chat.infrastructure.llm.configured_providers.OpenAIGateway")
 @patch("chat_buddy.chat.infrastructure.llm.ollama_gateway.Client")
 def test_configured_runtime_registers_curated_openai_models_when_enabled(
     client_type: Mock,
@@ -342,7 +342,7 @@ def test_enabled_openai_without_chat_key_is_omitted_and_warned_safely(
     client_type.assert_called_once_with(host=settings.OLLAMA_ENDPOINT_URL)
 
 
-@patch("chat_buddy.chat.infrastructure.llm.configured_providers.OpenAIResponseGateway")
+@patch("chat_buddy.chat.infrastructure.llm.configured_providers.OpenAIGateway")
 @patch("chat_buddy.chat.infrastructure.llm.ollama_gateway.Client")
 def test_disabled_openai_does_not_read_or_construct_cloud_configuration(
     client_type: Mock,

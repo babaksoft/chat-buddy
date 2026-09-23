@@ -1,7 +1,7 @@
 """Tests for conservative offline OpenAI Responses token counting."""
 
 from chat_buddy.chat.domain import ChatMessage, ChatRole
-from chat_buddy.chat.infrastructure.tokenization import OpenAIResponsesTokenCounter
+from chat_buddy.chat.infrastructure.tokenization import OpenAITokenCounter
 
 
 class CharacterEncoder:
@@ -24,7 +24,7 @@ class CharacterEncoder:
 def test_empty_message_list_has_no_framing_cost() -> None:
     """No request messages produce a zero-token estimate."""
 
-    counter = OpenAIResponsesTokenCounter(CharacterEncoder())
+    counter = OpenAITokenCounter(CharacterEncoder())
 
     assert counter.count_tokens([]) == 0
 
@@ -36,7 +36,7 @@ def test_counter_applies_responses_framing_formula() -> None:
         ChatMessage(ChatRole.SYSTEM, "rules"),
         ChatMessage(ChatRole.USER, "hello"),
     ]
-    counter = OpenAIResponsesTokenCounter(CharacterEncoder())
+    counter = OpenAITokenCounter(CharacterEncoder())
 
     assert counter.count_tokens(messages) == (
         16 + (16 + len("system") + 5) + (16 + len("user") + 5)

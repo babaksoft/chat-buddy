@@ -97,16 +97,15 @@ class ContextInputs:
             for turn in self.uncovered_turns
         ):
             raise ValueError("Context turns must belong to one conversation.")
+        if len({turn.attempt_id for turn in self.uncovered_turns}) != len(
+            self.uncovered_turns
+        ):
+            raise ValueError("Uncovered context turns must be unique.")
 
         if any(
             memory.lifecycle is not MemoryLifecycle.ACTIVE for memory in self.memories
         ):
             raise ValueError("Only active memories are context-eligible.")
-
-        if len({turn.attempt_id for turn in self.uncovered_turns}) != len(
-            self.uncovered_turns
-        ):
-            raise ValueError("Uncovered context turns must be unique.")
 
 
 @dataclass(slots=True, frozen=True)
@@ -133,8 +132,10 @@ class ContextAssemblyResult:
             raise ValueError("Context token values must define a positive budget.")
         if self.prompt_tokens > self.prompt_capacity:
             raise ValueError("Assembled context exceeds its prompt capacity.")
+
         if set(self.included_memory_ids) & set(self.omitted_memory_ids):
             raise ValueError("A memory cannot be both included and omitted.")
+
         if set(self.included_attempt_ids) & set(self.omitted_attempt_ids):
             raise ValueError("A turn cannot be both included and omitted.")
 
@@ -187,7 +188,7 @@ class ContextBudgeter(Protocol):
 
 
 class ContextAssembler(Protocol):
-    """Prepare one response context through the shared Stage 3 policy."""
+    """Prepare one response context through the shared policy."""
 
     def assemble(
         self,

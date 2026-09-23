@@ -14,7 +14,7 @@ from chat_buddy.chat.domain import (
     ModelId,
     ResponseGenerator,
 )
-from chat_buddy.chat.infrastructure.llm import OllamaGateway, OpenAIResponseGateway
+from chat_buddy.chat.infrastructure.llm import OllamaGateway, OpenAIGateway
 
 
 class FakeResponseProvider:
@@ -109,7 +109,7 @@ def response_provider(
         streaming_client = Mock()
         streaming_client.responses.create.return_value = events
         client.with_options.return_value = streaming_client
-        return OpenAIResponseGateway(client=client)
+        return OpenAIGateway(client=client)
 
     client = Mock()
 
@@ -155,7 +155,7 @@ def test_response_provider_generates_complete_response(
         [ChatMessage(role=ChatRole.USER, content="Hello")],
         ModelId(
             "gpt-4.1-2025-04-14"
-            if isinstance(response_provider, OpenAIResponseGateway)
+            if isinstance(response_provider, OpenAIGateway)
             else "contract-model"
         ),
         GenerationConfiguration(temperature=0.3),
@@ -173,7 +173,7 @@ def test_response_provider_streams_response_chunks(
         [ChatMessage(role=ChatRole.USER, content="Hello")],
         ModelId(
             "gpt-4.1-2025-04-14"
-            if isinstance(response_provider, OpenAIResponseGateway)
+            if isinstance(response_provider, OpenAIGateway)
             else "contract-model"
         ),
         GenerationConfiguration(temperature=0.3),

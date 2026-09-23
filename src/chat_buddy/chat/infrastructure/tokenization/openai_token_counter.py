@@ -25,7 +25,7 @@ class TextEncoder(Protocol):
         ...
 
 
-class OpenAIResponsesTokenCounter:
+class OpenAITokenCounter:
     """Conservatively estimate framed OpenAI Responses input tokens."""
 
     def __init__(self, encoder: TextEncoder | None = None) -> None:
