@@ -7,6 +7,6 @@ CHARACTERS_SCHEMA = "characters"
 
 
 class CharactersBase(DeclarativeBase):
-    """Declarative base for future Characters persistence models."""
+    """Declarative base for Characters-owned persistence models."""
 
     metadata = MetaData(schema=CHARACTERS_SCHEMA)

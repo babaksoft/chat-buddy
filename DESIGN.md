@@ -237,6 +237,33 @@ a later design.
 
 A continuity cannot switch identity after it begins.
 
+Stage 4 Slice 1 implements identity management through a Characters-owned service
+and repository; its UI arrives in Slice 8. Authored values and persisted snapshots
+are frozen Pydantic models. Editing replaces all authored fields, retains the UUID,
+and increments a revision. Both the service and the repository reject frozen or
+stale edits; the repository uses a conditional write so competing edits cannot
+silently overwrite each other. Slice 3 will freeze identities during continuity
+creation using the same row and revision.
+
+Name is required. Gender, age/birth date, pronouns, preferred address, and timezone
+are optional; omitted demographics remain unknown. Text is trimmed and nonempty
+when supplied. Name and preferred address allow 128 characters; gender, pronouns, and
+timezone allow 64. Domain validation and variable-length database columns use the
+same limits. The internal default slot is constrained to `"you"`, so `default_key`
+retains its exact 3-character limit. Age is an integer from 0 through 130 and
+cannot accompany a birth date. Birth dates cannot exceed the current UTC date.
+Timezone must be an installed IANA identifier and is optional for Ongoing. This
+validation does not introduce Timeline time behavior.
+
+The default identity is created only on explicit Characters setup, initially named
+**You** with no demographic details. A database unique slot makes repeated and
+concurrent setup idempotent; editing its name retains its default designation.
+Duplicates copy only authored fields (with optional revisions), receive a new UUID,
+start at revision 1, and are editable and non-default. All authored fields freeze
+after first use, including display fields; there is no unfreeze operation. See
+[ADR 023](docs/decisions/023-characters-identity-management.md).
+
+
 ### Persona
 
 The global persona definition contains authored, long-term traits and is

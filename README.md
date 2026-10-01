@@ -64,8 +64,8 @@ Use the sidebar to switch between two areas:
 - **Chat** opens by default and provides the existing conversation history,
   streaming replies, renaming, and deletion. Switching areas preserves the selected
   conversation for the current browser session.
-- **Characters** is a landing-page scaffold for future character profiles and
-  conversations. Persona creation and character chat are not implemented yet.
+- **Characters** retains a landing page while identity management is available
+  through its backend service. Persona creation and character chat are not implemented yet.
   This area does not connect to PostgreSQL or Ollama.
 
 Start the application with the existing command:
@@ -139,7 +139,7 @@ CHAT_OPENAI_SMOKE_TEST=true uv run pytest -v -m openai_smoke
 ## Database setup
 
 Chat persistence has an independent migration history in the PostgreSQL
-`chat` schema, and Characters has its own empty migration history in the
+`chat` schema, and Characters has its own identity migration history in the
 `characters` schema. Stage 1 did not migrate data from the legacy public-schema
 tables, and Stage 3 does not convert the provisional key/value memory shape.
 Existing pre-split development databases must therefore be recreated before
@@ -167,3 +167,50 @@ reference.
 ```bash
 scripts/check.sh
 ```
+
+
+### Characters identity backend
+
+Apply the new Characters revision to an existing Stage 1–3 database with
+`uv run alembic -c alembic-characters.ini upgrade head`. It creates
+`characters.identities` and leaves Chat and legacy tables unchanged. No database
+reset is needed for this slice. No new runtime settings or Ollama setup is needed.
+The Characters UI remains a landing page until the later UI slice.
+
+Compose `IdentityService` from
+`chat_buddy.characters.application.identity_service` with
+`DbIdentityRepository` from
+`chat_buddy.characters.infrastructure.db.repositories.identity_repository` and
+`CharactersSessionLocal` from the Characters database package. The service exposes
+`create`, `list`, `inspect`, `edit`, `duplicate`, and `ensure_default` operations.
+Supply `IdentityDetails` values for authored fields and the last observed revision
+for edits. Default setup is explicit and idempotent; merely importing the service
+or using Chat does not create **You**. Frozen records can be duplicated but cannot
+be edited. First-use freezing is supplied by Slice 3.
+
+Portable Characters tests run without PostgreSQL or providers:
+
+```bash
+uv run pytest tests/characters tests/integration/characters -m 'not characters_postgres'
+```
+
+PostgreSQL acceptance uses an explicit test URL. Its database name must end in
+`_test`; the role must be able to create databases. Each test creates a unique
+scratch database, then drops it. To run the database validation locally:
+
+```bash
+docker run --detach --rm --name chat-buddy-characters-test \
+  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=characters_test \
+  -p 127.0.0.1:55432:5432 postgres:17
+# Wait until PostgreSQL is ready, then run all checks with database cases enabled.
+CHARACTERS_TEST_DATABASE_URL=postgresql+psycopg2://postgres:test@127.0.0.1:55432/characters_test \
+  scripts/check.sh
+docker stop chat-buddy-characters-test
+```
+
+Without this setting, PostgreSQL cases are skipped by ordinary tests. A slice's
+local database validation must run them explicitly before marking it verified.
+They exercise concurrent default setup and competing edits, fresh upgrade,
+baseline downgrade/re-upgrade, metadata parity, and preservation of a populated
+Chat schema including its migration version. Offline migration checks run in the
+ordinary suite.

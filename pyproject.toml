@@ -35,6 +35,7 @@ dependencies = [
     "openinference-instrumentation-llama-index",
     "prometheus_client",
     "psycopg2-binary",
+    "pydantic>=2.13.5",
     "python-dotenv",
     "requests",
     "sentence-transformers",
@@ -73,6 +74,7 @@ files = ["src", "tests"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
+    "characters_postgres: explicit disposable PostgreSQL migration and concurrency validation",
     "openai_smoke: explicitly enabled networked and billable OpenAI smoke test",
 ]
 
