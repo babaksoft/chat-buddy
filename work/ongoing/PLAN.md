@@ -19,7 +19,7 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slice 1 is
+This document records implementation scope and verification. Slices 1–2 are
 implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
 ADRs remain authoritative.
 
@@ -250,7 +250,7 @@ Implementation and local verification (2026-10-01):
 
 ### Slice 2 — Persona core management and edits before first use
 
-Status: Proposed
+Status: Implemented and verified (2026-10-01)
 
 Add persona identifiers and validated authored cores with a display name and
 authored definition/traits. Use frozen Pydantic authored values and snapshots with
@@ -289,6 +289,40 @@ Verification:
 Complete when reusable persona cores can be authored, inspected, edited before
 use, and duplicated through application services, with frozen/stale guards ready
 for Slice 3 and no edits permitted to a core already used by a continuity.
+
+Implementation and local verification (2026-10-01):
+
+- Branch: `feat/codex/stage4-characters-foundations-ongoing`; local work only,
+  no PR.
+- Added frozen Pydantic persona cores/snapshots, typed errors, an owning-domain
+  repository protocol, `PersonaService`, and `DbPersonaRepository`. Authored edits
+  preserve UUIDs and increment revisions through atomic revision/freeze guards.
+  Duplication copies only authored fields into an editable revision-1 record.
+  First-use freezing remains the transactional responsibility of Slice 3.
+- Documented required name/definition and optional free-form traits in DESIGN.md
+  before implementation. Domain and persistence limits match at 128/8192/4096
+  characters. README.md documents composition and migration commands. No UI or
+  runtime configuration changes.
+- Generated and reviewed migration `5cb588ac2285` after `d9fa8117ca0c` against
+  disposable PostgreSQL 17. It adds only `characters.personas`; applied, Chat,
+  and legacy migration files remain unchanged.
+- Added domain and service/repository tests for validation, immutability, complete
+  replacements, retained snapshots, deterministic listing, missing/frozen/stale
+  failures, and revised duplicates from a frozen revision-2 source.
+- PostgreSQL validation proved exactly one competing edit wins, maximum-length
+  round trips and overflow rejection, fresh upgrade, downgrade to the previous
+  head and re-upgrade, metadata parity, and preservation of identity rows and
+  populated Chat objects, columns, constraints, rows, and migration version.
+  Offline SQL and architecture tests prove Characters ownership and execution
+  without Chat imports.
+- `scripts/check.sh` with the disposable `CHARACTERS_TEST_DATABASE_URL`:
+  all formatting, import-order, lint, and typing checks passed;
+  **298 passed, 1 skipped**. All five Characters PostgreSQL cases ran; the sole
+  skip is the optional OpenAI smoke test. `git diff --check` passed.
+- Configuration incident: an initial CLI upgrade used an unsupported environment
+  override and applied the existing identity revision to the development database.
+  It did not apply the persona revision. All subsequent generation and migration
+  validation used an explicit Alembic test URL and disposable databases.
 
 ### Slice 3 — Transactional continuity lifecycle and starting relationship
 

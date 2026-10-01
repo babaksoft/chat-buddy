@@ -66,6 +66,7 @@ def test_fresh_upgrade_downgrade_and_reupgrade_preserve_populated_chat(
     assert inspector.get_table_names(schema="characters") == [
         "alembic_version",
         "identities",
+        "personas",
     ]
     assert inspector.get_foreign_keys("identities", schema="characters") == []
     string_lengths = {

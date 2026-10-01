@@ -65,8 +65,9 @@ Use the sidebar to switch between two areas:
   streaming replies, renaming, and deletion. Switching areas preserves the selected
   conversation for the current browser session.
 - **Characters** retains a landing page while identity management is available
-  through its backend service. Persona creation and character chat are not implemented yet.
-  This area does not connect to PostgreSQL or Ollama.
+  through its backend service. Persona cores can also be managed through backend
+  services; character chat is not implemented yet. The landing page does not
+  connect to PostgreSQL or Ollama.
 
 Start the application with the existing command:
 
@@ -188,6 +189,25 @@ for edits. Default setup is explicit and idempotent; merely importing the servic
 or using Chat does not create **You**. Frozen records can be duplicated but cannot
 be edited. First-use freezing is supplied by Slice 3.
 
+### Characters persona backend
+
+Apply revision `5cb588ac2285` with
+`uv run alembic -c alembic-characters.ini upgrade head`. It adds only
+`characters.personas` after the identity revision; no reset, new settings, or
+provider setup is needed. The UI remains the landing page.
+
+Compose `PersonaService` from
+`chat_buddy.characters.application.persona_service` with `DbPersonaRepository`
+from `chat_buddy.characters.infrastructure.db.repositories.persona_repository`
+and the Characters session factory. It exposes `create`, `list`, `inspect`,
+`edit`, and `duplicate`. Supply a `PersonaCore` with a required `name` and
+`definition`, plus optional free-form `traits`. Limits are 128, 8192, and 4096
+characters respectively; supplied fields are trimmed and must be nonblank.
+Edits replace the entire core at the expected revision. Duplicates may supply a
+revised core and always start editable at revision 1 under a new UUID. Both
+service and repository reject frozen or stale edits. Slice 3 supplies the
+permanent global first-use freeze; there is no unfreeze operation.
+
 Portable Characters tests run without PostgreSQL or providers:
 
 ```bash
@@ -210,7 +230,7 @@ docker stop chat-buddy-characters-test
 
 Without this setting, PostgreSQL cases are skipped by ordinary tests. A slice's
 local database validation must run them explicitly before marking it verified.
-They exercise concurrent default setup and competing edits, fresh upgrade,
-baseline downgrade/re-upgrade, metadata parity, and preservation of a populated
-Chat schema including its migration version. Offline migration checks run in the
+They exercise concurrent default setup and competing identity/persona edits, fresh
+upgrade, baseline and prior-head downgrade/re-upgrade, metadata parity, and
+preservation of a populated Chat schema including its migration version. Offline migration checks run in the
 ordinary suite.

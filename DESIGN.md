@@ -274,6 +274,12 @@ a draft start, or canceled confirmation does not freeze either profile. After fi
 use, changing the core requires creating or duplicating a persona; archiving all
 of its continuities does not make it editable again.
 
+A persona core requires a display name (up to 128 characters) and an authored
+definition (up to 8192 characters). Optional authored traits use up to 4096
+characters. These fields are trimmed, and supplied content must be nonblank.
+Traits are free-form authored text, not inferred adaptation or current state.
+Lists are ordered by name, then UUID; names need not be unique.
+
 Persona authored values and snapshots remain frozen Pydantic models. An edit
 replaces the persisted authored fields, retains the UUID, and increments a positive
 revision using the caller's expected revision. The revision detects stale writes

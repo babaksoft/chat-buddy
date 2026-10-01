@@ -28,6 +28,7 @@ def test_characters_migrations_remain_independent_from_chat() -> None:
     assert 'create schema if not exists "characters"' in sql
     assert "create table characters.alembic_version" in sql
     assert "create table characters.identities" in sql
+    assert "create table characters.personas" in sql
     assert "chat." not in sql
 
 

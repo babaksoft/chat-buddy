@@ -57,6 +57,7 @@ def test_characters_metadata_is_owned_and_independent() -> None:
     from chat_buddy.characters.infrastructure.db import models  # noqa: F401
 
     assert "characters.identities" in CharactersBase.metadata.tables
+    assert "characters.personas" in CharactersBase.metadata.tables
     for table in CharactersBase.metadata.tables.values():
         assert table.schema == CHARACTERS_SCHEMA
         for foreign_key in table.foreign_keys:
