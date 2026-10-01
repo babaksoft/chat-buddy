@@ -187,7 +187,7 @@ Compose `IdentityService` from
 Supply `IdentityDetails` values for authored fields and the last observed revision
 for edits. Default setup is explicit and idempotent; merely importing the service
 or using Chat does not create **You**. Frozen records can be duplicated but cannot
-be edited. First-use freezing is supplied by Slice 3.
+be edited. Starting a continuity now permanently freezes both reviewed profiles.
 
 ### Characters persona backend
 
@@ -205,8 +205,36 @@ and the Characters session factory. It exposes `create`, `list`, `inspect`,
 characters respectively; supplied fields are trimmed and must be nonblank.
 Edits replace the entire core at the expected revision. Duplicates may supply a
 revised core and always start editable at revision 1 under a new UUID. Both
-service and repository reject frozen or stale edits. Slice 3 supplies the
-permanent global first-use freeze; there is no unfreeze operation.
+service and repository reject frozen or stale edits. Starting a continuity
+permanently freezes the persona globally, including its display name; there is no
+unfreeze operation.
+
+### Characters Ongoing lifecycle backend
+
+Apply revision `83a2c09d7f41` with
+`uv run alembic -c alembic-characters.ini upgrade head`. It adds Characters-only
+continuities, sole conversations, and starting relationship snapshots, including
+the active Ongoing uniqueness constraint. No reset or new configuration is needed;
+Chat and legacy migration histories are unchanged. The UI remains a landing page.
+
+Compose `ContinuityService` from
+`chat_buddy.characters.application.continuity_service` with
+`DbContinuityRepository` from
+`chat_buddy.characters.infrastructure.db.repositories.continuity_repository`
+and the Characters session factory. `start` accepts a frozen `StartContinuity`
+value containing a confirmation UUID, both profile identifiers and reviewed
+revisions, and a `RelationshipSelection`. It transactionally freezes both profiles
+and creates all continuity records. Repeated identical confirmations return the
+original continuity; changed confirmations need a new UUID. Stale reviewed
+profiles require renewed review. Only Ongoing can be created.
+
+`resume` and `archive` require identity, persona, and continuity identifiers.
+`list_grouped` returns identity/persona groups including archived history.
+Archiving is permanent and read-only, keeps both profiles frozen, and releases the
+pair's active slot. A replacement needs explicit confirmation and an independent
+starting relationship. The vocabulary and compatibility table are in
+[DESIGN.md](DESIGN.md#ongoing-starting-relationship). No inferred evolution,
+messages, providers, or extracted memory are introduced by this slice.
 
 Portable Characters tests run without PostgreSQL or providers:
 
@@ -230,7 +258,8 @@ docker stop chat-buddy-characters-test
 
 Without this setting, PostgreSQL cases are skipped by ordinary tests. A slice's
 local database validation must run them explicitly before marking it verified.
-They exercise concurrent default setup and competing identity/persona edits, fresh
-upgrade, baseline and prior-head downgrade/re-upgrade, metadata parity, and
-preservation of a populated Chat schema including its migration version. Offline migration checks run in the
-ordinary suite.
+They exercise concurrent default setup, competing identity/persona edits, first-use
+races, shared-persona starts, confirmation collisions, active-only uniqueness,
+fresh upgrades, baseline and prior-head downgrade/re-upgrade, metadata parity, and
+preservation of a populated Chat schema including its migration version. Offline
+migration checks run in the ordinary suite.

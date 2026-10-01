@@ -429,9 +429,9 @@ The relationship is multidimensional rather than a single score.
 
 - **Social status:** stranger, acquaintance, casual friend, or close friend.
 - **Romantic status:** none, interest, dating, partner, engaged, or spouse.
-- **Current dynamic:** for example neutral, comfortable, affectionate, awkward,
+- **Current dynamic:** for example neutral, comfortable, awkward,
   tense, or estranged.
-- **Supporting dimensions:** qualitative familiarity, trust, and affection.
+- **Supporting dimensions:** qualitative trust and affection.
 - **Milestones and boundaries:** explicit events with provenance.
 
 Friendship and romance are related but independent tracks. Close friendship does
@@ -442,7 +442,42 @@ When creating a continuity, the user may choose platonic, open to romance,
 established relationship, or let it develop naturally. An established starting
 state is recorded as user-selected and does not invent background events.
 
-Familiarity, trust, affection, and the current dynamic can evolve gradually.
+#### Ongoing starting relationship
+
+Starting Ongoing freezes both reviewed profiles in the same transaction that
+creates its continuity, sole conversation, and independent starting snapshot.
+Identity rows are locked before persona rows; revision-checked edits serialize
+with these locks. Frozen profiles can be reused at their current revision.
+A confirmation UUID identifies the complete submitted request: an identical
+resubmission returns the original continuity even after archival; different
+submitted data using that UUID is rejected. Only one active Ongoing exists per
+identity/persona pair. Archive is permanent and read-only; a replacement requires
+a fresh confirmation. Lists group by identity and persona and retain archives.
+
+The initial vocabulary and compatibility rules are:
+
+| Field | Values | Default / validation |
+|---|---|---|
+| Intent | platonic, open_to_romance, established_relationship, let_it_develop_naturally | Required |
+| Social | stranger, acquaintance, casual_friend, close_friend | stranger; established requires explicit selection |
+| Romantic | none, interest, dating, partner, engaged, spouse | none; platonic requires none; established requires dating, partner, engaged, or spouse |
+| Dynamic | neutral, comfortable, awkward, tense, estranged | neutral |
+| Trust | unknown, cautious, trusting | unknown |
+| Affection | neutral, warm, affectionate | neutral; affection alone implies no romance |
+| Boundaries | no_romance, no_flirting, no_physical_intimacy | Empty; unique selections; no_romance requires romantic none; no_flirting rejects romantic interest |
+
+Social status represents familiarity; it has no separate dimension. Affection
+represents emotional warmth, while Dynamic describes the current interaction.
+Comfortable interaction can coexist with neutral affection.
+
+Other combinations are valid: social and romantic tracks remain independent,
+and no supporting dimension implies a status or a shared event. Each field records
+whether it was explicitly user-selected or defaulted. Established statuses have
+user provenance. These snapshots contain no invented milestones and have no
+update API; evolution belongs to a later stage. Storyline and Timeline mode
+values are reserved, but start rejects them.
+
+Trust, affection, and the current dynamic can evolve gradually.
 Status changes use conservative thresholds and hysteresis. Major romantic
 milestones require an explicit narrative event. Model-generated proposals are
 validated against relationship intent and domain transition rules before

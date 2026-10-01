@@ -1,8 +1,13 @@
-"""Characters-owned profile persistence contracts."""
+"""Characters-owned persistence contracts."""
 
 from typing import Protocol
 from uuid import UUID
 
+from chat_buddy.characters.domain.continuity import (
+    Continuity,
+    StartContinuity,
+    StartingRelationship,
+)
 from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
 
@@ -151,6 +156,106 @@ class PersonaRepository(Protocol):
                 If the persisted persona is frozen.
             StalePersonaError:
                 If a competing edit changed the revision.
+        """
+
+        ...
+
+
+class ContinuityRepository(Protocol):
+    """Persist lifecycle and ownership without exposing database objects."""
+
+    def start(
+        self, request: StartContinuity, relationship: StartingRelationship
+    ) -> Continuity:
+        """Atomically verify, freeze, and persist an idempotent confirmed start.
+
+        Args:
+            request:
+                Complete reviewed confirmation.
+            relationship:
+                Resolved starting state and provenance.
+
+        Returns:
+            New continuity or the original identical confirmation result.
+        """
+
+        ...
+
+    def find_confirmation(self, request: StartContinuity) -> Continuity | None:
+        """Read an identical persisted confirmation before preflight checks.
+
+        Args:
+            request:
+                Complete confirmed request.
+
+        Returns:
+            Original continuity, or None for a new confirmation.
+
+        Raises:
+            ConfirmationConflictError:
+                If submitted data differs from the persisted confirmation.
+        """
+
+        ...
+
+    def find_active(self, identity_id: UUID, persona_id: UUID) -> Continuity | None:
+        """Find the pair's active Ongoing for application preflight checks.
+
+        Args:
+            identity_id:
+                Selected identity owner.
+            persona_id:
+                Selected persona owner.
+
+        Returns:
+            Active Ongoing snapshot, or None if the pair has no active Ongoing.
+        """
+
+        ...
+
+    def get(
+        self, identity_id: UUID, persona_id: UUID, continuity_id: UUID
+    ) -> Continuity:
+        """Read within explicit identity/persona ownership, including archives.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            continuity_id:
+                Continuity to inspect.
+
+        Returns:
+            The owned continuity snapshot.
+        """
+
+        ...
+
+    def list(self) -> list[Continuity]:
+        """Read snapshots ordered by identity, persona, and continuity UUID.
+
+        Returns:
+            All independently owned lifecycle snapshots.
+        """
+
+        ...
+
+    def archive(
+        self, identity_id: UUID, persona_id: UUID, continuity_id: UUID
+    ) -> Continuity:
+        """Lock and permanently archive a continuity within its ownership scope.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            continuity_id:
+                Continuity to archive.
+
+        Returns:
+            The archived snapshot, including repeated archive requests.
         """
 
         ...

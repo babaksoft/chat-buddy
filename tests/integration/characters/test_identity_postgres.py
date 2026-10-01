@@ -63,10 +63,13 @@ def test_fresh_upgrade_downgrade_and_reupgrade_preserve_populated_chat(
     assert service.inspect(identity.id).details.age == 36
     assert service.ensure_default() == service.ensure_default()
     inspector = inspect(engine)
-    assert inspector.get_table_names(schema="characters") == [
+    assert sorted(inspector.get_table_names(schema="characters")) == [
         "alembic_version",
+        "continuities",
+        "conversations",
         "identities",
         "personas",
+        "starting_relationships",
     ]
     assert inspector.get_foreign_keys("identities", schema="characters") == []
     string_lengths = {

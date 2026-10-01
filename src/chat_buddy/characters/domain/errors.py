@@ -23,3 +23,23 @@ class FrozenPersonaError(ValueError):
 
 class StalePersonaError(ValueError):
     """An edit used an outdated persona revision."""
+
+
+class ContinuityNotFoundError(LookupError):
+    """No continuity exists within the submitted ownership scope."""
+
+
+class ActiveContinuityError(ValueError):
+    """An active Ongoing continuity already exists for the selected pair."""
+
+
+class ConfirmationConflictError(ValueError):
+    """A confirmation identifier was reused for different submitted data."""
+
+
+class UnsupportedContinuityModeError(ValueError):
+    """The requested continuity mode cannot yet be started."""
+
+
+class ArchivedContinuityError(ValueError):
+    """An archived continuity cannot accept writes."""

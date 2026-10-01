@@ -162,7 +162,7 @@ concurrency tests as verification.
 
 ### Slice 1 — Identity values and management
 
-Status: Implemented and verified (2026-10-01)
+Status: Complete
 
 Implement identity values, validation, Characters-owned repository protocols,
 SQLAlchemy mapping, migration, and application operations to create, list, inspect,
@@ -210,47 +210,9 @@ Verification:
 Complete when identity management works through the service and real repository,
 with its tests passing independently of persona or continuity implementation.
 
-Implementation and local verification (2026-10-01):
-
-- Branch: `feat/codex/stage4-characters-identities`; local work only, no PR.
-- Added frozen Pydantic identity values, typed failures, repository protocol,
-  management service, and SQLAlchemy repository with conditional edit revisions
-  and a unique default slot. First-use freezing remains in Slice 3.
-- Added migration `d9fa8117ca0c` after baseline `61a5c7060ad9`, generated and
-  reviewed against disposable PostgreSQL 17. Chat and legacy histories are unchanged.
-- Added lazy Chat fixtures, isolated Characters fixtures, explicit
-  `CHARACTERS_TEST_DATABASE_URL`/`characters_postgres` opt-in, and a subprocess
-  check that rejects Chat imports during Characters test collection and execution.
-- Focused identity/architecture/migration run: **37 passed**.
-- `scripts/check.sh` with the disposable PostgreSQL URL configured: formatting,
-  lint, typing, and **278 passed, 1 skipped**. The skip is the optional OpenAI
-  smoke test; all three Characters PostgreSQL cases executed successfully.
-- Verified forced concurrent default inserts and competing authored edits,
-  fresh upgrade, prior-head downgrade/re-upgrade, metadata parity, offline SQL
-  ownership, and preservation of Chat objects, columns, constraints, persisted
-  rows, and its migration version.
-- Documented authored validation, revision/default/freeze behavior in DESIGN.md
-  and ADR 023, and migration/backend/test setup in README.md. No UI changes.
-- Quality follow-up after reloading AGENTS.md: completed Pydantic `Attributes:`
-  and field descriptions, callable argument/error documentation and docstring
-  spacing, embedded-script annotations, and internal-helper ordering. A manual
-  audit of the current Python diff and `git diff --check` passed.
-- Follow-up `scripts/check.sh` without database opt-in: all formatting, lint,
-  and typing checks passed; **275 passed, 4 skipped** (three PostgreSQL opt-in
-  cases and the optional OpenAI smoke test). PostgreSQL verification is recorded
-  separately above.
-- Length-guideline follow-up: applied 128-character name/preferred-address limits
-  and 64-character gender/pronouns/timezone limits consistently in domain values,
-  persistence, and the unapplied identity revision. Retained `default_key` at 3.
-  Updated AGENTS.md and DESIGN.md. Boundary and round-trip tests, PostgreSQL
-  overflow rejection, migration reversal/metadata parity, and Chat preservation
-  passed. Latest `scripts/check.sh` with PostgreSQL opt-in: **284 passed, 1 skipped**
-  (the optional OpenAI smoke test); all static checks and database cases passed.
-
-
 ### Slice 2 — Persona core management and edits before first use
 
-Status: Implemented and verified (2026-10-01)
+Status: Complete
 
 Add persona identifiers and validated authored cores with a display name and
 authored definition/traits. Use frozen Pydantic authored values and snapshots with
@@ -290,43 +252,9 @@ Complete when reusable persona cores can be authored, inspected, edited before
 use, and duplicated through application services, with frozen/stale guards ready
 for Slice 3 and no edits permitted to a core already used by a continuity.
 
-Implementation and local verification (2026-10-01):
-
-- Branch: `feat/codex/stage4-characters-foundations-ongoing`; local work only,
-  no PR.
-- Added frozen Pydantic persona cores/snapshots, typed errors, an owning-domain
-  repository protocol, `PersonaService`, and `DbPersonaRepository`. Authored edits
-  preserve UUIDs and increment revisions through atomic revision/freeze guards.
-  Duplication copies only authored fields into an editable revision-1 record.
-  First-use freezing remains the transactional responsibility of Slice 3.
-- Documented required name/definition and optional free-form traits in DESIGN.md
-  before implementation. Domain and persistence limits match at 128/8192/4096
-  characters. README.md documents composition and migration commands. No UI or
-  runtime configuration changes.
-- Generated and reviewed migration `5cb588ac2285` after `d9fa8117ca0c` against
-  disposable PostgreSQL 17. It adds only `characters.personas`; applied, Chat,
-  and legacy migration files remain unchanged.
-- Added domain and service/repository tests for validation, immutability, complete
-  replacements, retained snapshots, deterministic listing, missing/frozen/stale
-  failures, and revised duplicates from a frozen revision-2 source.
-- PostgreSQL validation proved exactly one competing edit wins, maximum-length
-  round trips and overflow rejection, fresh upgrade, downgrade to the previous
-  head and re-upgrade, metadata parity, and preservation of identity rows and
-  populated Chat objects, columns, constraints, rows, and migration version.
-  Offline SQL and architecture tests prove Characters ownership and execution
-  without Chat imports.
-- `scripts/check.sh` with the disposable `CHARACTERS_TEST_DATABASE_URL`:
-  all formatting, import-order, lint, and typing checks passed;
-  **298 passed, 1 skipped**. All five Characters PostgreSQL cases ran; the sole
-  skip is the optional OpenAI smoke test. `git diff --check` passed.
-- Configuration incident: an initial CLI upgrade used an unsupported environment
-  override and applied the existing identity revision to the development database.
-  It did not apply the persona revision. All subsequent generation and migration
-  validation used an explicit Alembic test URL and disposable databases.
-
 ### Slice 3 — Transactional continuity lifecycle and starting relationship
 
-Status: Proposed
+Status: Complete
 
 Add continuity mode/lifecycle values, immutable ownership, relationship intents,
 qualitative starting-state values and provenance, and the sole Ongoing

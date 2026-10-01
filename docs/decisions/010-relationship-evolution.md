@@ -12,8 +12,9 @@ reducing an identity/persona relationship to a single score.
 ## Decision
 
 Store relationship state per identity, persona, and continuity. Represent social
-status, romantic status, current dynamic, qualitative familiarity/trust/
-affection, boundaries, and provenance-backed milestones. At continuity creation,
+status, romantic status, current dynamic, qualitative trust and affection,
+boundaries, and provenance-backed milestones. Social status covers familiarity;
+affection describes warmth, and current dynamic describes the interaction. At continuity creation,
 the user selects platonic, open to romance, established relationship, or let it
 develop naturally. Model-generated proposals are validated by application and
 domain rules before persistence. Major romantic milestones require an explicit
