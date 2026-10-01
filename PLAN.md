@@ -140,8 +140,11 @@ stored memory, and both a local and a cloud adapter pass the same contract tests
 - Add Characters-owned repository and LLM gateway protocols and infrastructure
   implementations.
 - Add SQLAlchemy models and repositories only to the `characters` schema.
-- Enforce identity freezing, immutable persona cores, continuity isolation, and
-  at most one active Ongoing continuity per identity/persona pair.
+- Allow revision-checked authored edits to identities and persona cores before
+  first continuity use; permanently freeze both transactionally at first use.
+  Require duplication for edits afterward and keep domain snapshots immutable.
+- Enforce continuity isolation and at most one active Ongoing continuity per
+  identity/persona pair.
 - Add the start flow: identity, persona, Ongoing mode, relationship intent,
   optional established state, and confirmation.
 - Implement grouped Identity → Persona → Ongoing navigation.

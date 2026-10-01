@@ -1,4 +1,4 @@
-# ADR 023: Manage Characters identities with immutable snapshots and revisions
+# ADR 023: Manage Characters identities with safe edits and default setup
 
 - Status: Accepted
 - Date: 2026-10-01
@@ -6,41 +6,30 @@
 
 ## Context
 
-ADR 007 requires identities to freeze at first continuity use. Before that point,
-concurrent edits must not silently overwrite each other. Default setup must be
-safe across application sessions without depending on Chat initialization.
+Identity edits before first use must not silently overwrite competing changes.
+Characters needs a default identity independent of Chat setup.
 
 ## Decision
 
-Use frozen Pydantic authored values and snapshots, separate from SQLAlchemy
-models. A snapshot carries a stable UUID, positive authored revision, permanent
-freeze flag, and default designation. Full authored replacements require an
-expected revision. The service checks edit eligibility; persistence repeats those
-guards in a conditional update, increments the revision, and reports missing,
-frozen, or stale identities through typed domain errors. Slice 3 will lock the
-same identity row and verify that revision at continuity start.
+Edits retain identity ownership and leave previously observed snapshots unchanged.
+Stale edits are rejected and require reloading. All authored fields freeze at
+first continuity use as specified in ADR 007.
 
-Create the Characters default identity explicitly on Characters demand. Initially
-it is named **You**, with all demographics unknown. A nullable unique database slot
-reserves the default designation independently of its editable display name.
-Concurrent insert conflicts return the committed winner. Duplicates copy only
-validated authored details, optionally revised, and receive new identifiers,
-revision 1, editable state, and no default designation or continuity history.
+Create the sole Characters default identity on Characters demand, initially named
+**You**, with unknown demographics. Repeated or concurrent setup returns the same
+identity; changing its display name retains its default designation.
 
-All authored fields are frozen after first use, including cosmetic fields, until
-a later decision introduces a distinction. No unfreeze API is provided.
+Duplicates copy only authored details, optionally revised, and start editable,
+non-default, and without continuity history. Demographics are optional; age and
+birth date are alternative inputs, and timezone is optional for Ongoing.
 
 ## Consequences
 
-- Old snapshots remain unchanged after an edit; callers reload on stale revision.
-- Database uniqueness, rather than process memory, enforces default setup.
-- Optional demographics allow setup without fabricated facts; age and birth date
-  remain alternative inputs, and timezone is optional for Ongoing.
-- This slice supplies backend identity operations. Continuity-driven freezing and
-  UI composition remain assigned to Slices 3 and 8.
+- Competing edits cannot silently discard another author's changes.
+- Characters setup works independently across application sessions.
+- Identity setup requires no fabricated personal information.
 
 ## Alternatives considered
 
-- Mutable domain values risk changing the meaning of already observed snapshots.
-- Last-write-wins updates lose competing edits and cannot verify reviewed starts.
-- A process-local default cache cannot enforce uniqueness across sessions.
+- Last-write-wins edits: silently lose competing changes.
+- Session-local default setup: can create multiple default identities.

@@ -6,10 +6,10 @@ Last updated: 2026-10-01
 
 ## Scope and starting point
 
-Deliver [Stage 4 of the master plan](../../PLAN.md): an identity and immutable
-persona can start, resume, and converse within an isolated Ongoing continuity.
-Starting a continuity freezes its identity transactionally. Each identity/persona
-pair has at most one active Ongoing continuity. Long conversations use a
+Deliver [Stage 4 of the master plan](../../PLAN.md): an identity and persona can
+start, resume, and converse within an isolated Ongoing continuity. Both profiles
+allow authored edits before first use; starting a continuity freezes its identity
+and persona transactionally. Each identity/persona pair has at most one active Ongoing continuity. Long conversations use a
 continuity-owned rolling summary, with no extracted long-term memory.
 
 Stages 0–3 are complete. At the start of Stage 4, Characters had empty domain,
@@ -28,7 +28,7 @@ ADRs remain authoritative.
 | Record | Stage 4 consequence |
 |---|---|
 | [006 — Continuity ownership](../../docs/decisions/006-continuity-ownership.md) | Continuity owns conversations, summaries, starting relationship state, and future adaptation. Every history/context operation requires continuity ownership. |
-| [007 — Identity and persona immutability](../../docs/decisions/007-identity-and-persona-immutability.md) | Freeze an identity at first continuity creation; never switch a continuity's identity. Persona changes create new persona records. |
+| [007 — Identity and persona first-use freezing](../../docs/decisions/007-identity-and-persona-immutability.md) | Allow authored identity/persona edits before first use; freeze both at first continuity creation. Never switch continuity ownership. After first use, authored changes require new or duplicated profiles. |
 | [008 — Mode context and memory](../../docs/decisions/008-mode-context-and-memory.md) | Preserve Characters context ordering. Ongoing has no extracted memory; eligibility, budgeting, and summarization are separate responsibilities. |
 | [009 — Branches and retries](../../docs/decisions/009-branches-and-retries.md) | Completed messages are immutable. Stage 4 has a sole conversation path; selected leaves, response alternatives, the three-retry allowance, and branch actions arrive in Stage 5. |
 | [010 — Relationship evolution](../../docs/decisions/010-relationship-evolution.md) | Persist relationship intent and a qualitative starting state per continuity. An established state is user-selected and invents no shared events. Evolution arrives in Stage 7. |
@@ -46,26 +46,34 @@ define Characters behavior or authorize Characters cloud adapters.
 
 These choices fill Stage 4 implementation gaps without changing accepted ADRs.
 Record them in Characters design documentation before implementing the affected
-slice; add a focused Characters ADR where a new durable behavioral contract needs
-one. Do not silently copy Chat lifecycle or context policy.
+slice; add a concise behavioral Characters ADR where a new durable contract needs
+one. Keep implementation details and verification in the master/stage plans.
+Do not silently copy Chat lifecycle or context policy.
 
 - Represent immutable domain values and application snapshots with frozen
-  Pydantic models. An editable identity is replaced by a validated value through
-  an application service, not mutated in memory. Declare Pydantic directly with
+  Pydantic models. An editable identity or persona is replaced by a validated value
+  through an application service, not mutated in memory. Declare Pydantic directly with
   `uv add` if needed rather than relying on a transitive dependency.
 - Create a Characters-owned default identity displayed as **You**, idempotently
   when Characters setup first needs it. Do not fabricate demographic details.
   Support name, optional gender, age or birth date, optional pronouns/preferred
   address, and an optional valid IANA timezone. Age and birth date are alternative
   inputs. Timezone is not required to start Ongoing.
-- Freeze all authored identity fields after first use for this stage. Identity
-  duplication creates an editable identity with a new identifier and no
-  continuity history. Persona duplication creates a new immutable core; it
-  carries no relationship state or adaptation.
+- Allow revision-checked edits to all authored identity and persona fields before
+  first continuity creation, then freeze all fields, including display fields.
+  Persona freezing is global on first use with any identity. Duplication copies
+  only authored fields, optionally revised, into an editable profile with a new
+  identifier, revision 1, and no continuity history, relationship state, adaptation,
+  or current state. Identity duplicates are non-default. Separate permanent freeze
+  flags enforce edit eligibility; revision counters detect stale edits and starts
+  without requiring historical authored revision storage.
 - Start creates an active Ongoing continuity, its sole conversation, and its
   starting relationship snapshot in one transaction. The same transaction freezes
-  the identity. A confirmation request identifier makes repeated submission
-  idempotent; reuse with different submitted data is rejected.
+  both selected profiles after locking their rows in a consistent order and
+  verifying both submitted revisions. Selection, draft starts, and canceled
+  confirmation do not freeze either profile; failures roll back freezing and
+  continuity creation together. A confirmation request identifier makes repeated
+  submission idempotent; reuse with different submitted data is rejected.
 - Offer all four relationship intents: platonic, open to romance, established
   relationship, and let it develop naturally. Non-established starts default to
   stranger social status, no romantic status, and a neutral current dynamic,
@@ -77,7 +85,8 @@ one. Do not silently copy Chat lifecycle or context policy.
 - Archiving is explicit and makes an Ongoing continuity read-only. Starting a
   replacement requires a new confirmation and fresh relationship state; it never
   silently archives an existing active continuity. Reactivation is deferred.
-  Identity freezing remains permanent even after all its continuities are archived.
+  Identity and persona freezing remain permanent even after all their continuities
+  are archived; there is no unfreeze operation.
 - Stage 4 exposes only Ongoing creation. Storyline and Timeline may exist in the
   mode enum but their creation requests are rejected until their stages ship.
 - Preserve completed messages as append-only records. A failed generation may be
@@ -141,7 +150,7 @@ concurrency tests as verification.
 | Slice | Self-contained outcome | Depends on | Database impact |
 |---|---|---|---|
 | 1 | Create, edit, list, and duplicate editable identities | Existing scaffold | Identity migration |
-| 2 | Create, list, and duplicate immutable persona cores | 1 | Persona migration |
+| 2 | Create, inspect, list, edit before use, and duplicate persona cores | 1 | Persona migration |
 | 3 | Start, resume, and archive isolated Ongoing continuities | 1–2 | Continuity, conversation, starting-state migration |
 | 4 | Resolve Characters response/summary providers independently | 1–3 | None |
 | 5 | Persist and stream durable Ongoing turns with failure recovery | 3–4 | Message and generation migration |
@@ -161,6 +170,20 @@ edit before use, and duplicate identities. Include frozen-state representation
 and reject editing a frozen record; Slice 3 supplies the first-use transition.
 Provide idempotent default **You** setup without initializing Characters on the
 Chat route.
+
+Use frozen Pydantic authored values and snapshots with stable UUIDs, positive
+revision counters, permanent freeze flags, and default designations. Full authored
+replacements require an expected revision. Services check edit eligibility;
+repositories repeat frozen/revision guards in conditional updates, increment the
+revision, and report missing, frozen, or stale identities through typed domain
+errors. Slice 3 locks and verifies both selected profile rows and revisions before
+freezing them during continuity creation.
+
+Reserve the default designation with a nullable unique database slot independent
+of display name; concurrent default insert conflicts return the committed winner.
+Duplicates copy only validated authored details, optionally revised, into new UUIDs
+at revision 1 with editable, non-default status and no continuity history. No
+unfreeze API is provided. UI composition remains assigned to Slice 8.
 
 Establish Characters test fixtures. The current root `tests/conftest.py` imports
 Chat metadata eagerly and installs a SQLite PRAGMA on every engine connection.
@@ -225,29 +248,47 @@ Implementation and local verification (2026-10-01):
   (the optional OpenAI smoke test); all static checks and database cases passed.
 
 
-### Slice 2 — Immutable persona cores
+### Slice 2 — Persona core management and edits before first use
 
 Status: Proposed
 
 Add persona identifiers and validated authored cores with a display name and
-authored definition/traits. Implement Characters-owned create, list, inspect,
-and duplicate-with-revisions operations, repository mapping, and a new migration.
-Do not offer an in-place core update API. Keep adaptation and current state out
-of the global persona definition.
+authored definition/traits. Use frozen Pydantic authored values and snapshots with
+a stable UUID, positive authored revision, and permanent freeze flag. Implement
+Characters-owned create, list, inspect, edit-before-use, and duplicate-with-revisions
+operations, repository mapping, and a new migration.
+
+An edit replaces authored fields under the same identifier, requires an expected
+revision, and increments the revision. Services check eligibility; repositories
+atomically reject missing, frozen, or stale personas through typed domain errors.
+All authored fields, including the display name, freeze globally when the first
+continuity using the persona is successfully created with any identity. Slice 3
+supplies that transactional freeze using the same row/lock and revision protocol.
+Archival never unfreezes a persona; there is no unfreeze API.
+
+Duplication copies only authored fields, optionally revised, into a new identifier
+at revision 1 with editable status and no continuity history. Keep relationship
+adaptation and current state out of the global persona definition. Immutable
+snapshots do not prevent authorized persisted replacements, and an authored
+revision counter does not require historical core storage.
 
 Verification:
 
-- Unit tests cover required authored content, immutable core values, and
-  duplicate-with-revisions producing a new identifier.
-- Service/repository integration tests prove the original core survives a
-  duplicate, independent reads round-trip its authored definition, and no
-  identity-specific state is copied or stored on a persona.
-- Repository contract tests demonstrate that changing authored core content is
-  expressed by creating another record, not updating the original.
+- Unit tests cover required authored content, immutable core values/snapshots,
+  edits retaining the identifier and incrementing the revision, and
+  duplicate-with-revisions producing a new editable identifier at revision 1.
+- Service/repository integration tests prove pre-use edits round-trip, previously
+  observed snapshots remain unchanged, and both layers reject frozen/stale edits.
+  Duplicates leave the original intact and copy no freeze state, continuity history,
+  relationship adaptation, current state, or identity-specific state.
+- Repository contract tests reject missing records and competing stale writes;
+  PostgreSQL races prove exactly one concurrent edit wins at a given revision.
+  After first use, authored changes require a new record, including display edits.
 - Migration and architecture checks confirm independent Characters ownership.
 
-Complete when reusable persona cores can be authored and duplicated through
-application services without rewriting any existing core.
+Complete when reusable persona cores can be authored, inspected, edited before
+use, and duplicated through application services, with frozen/stale guards ready
+for Slice 3 and no edits permitted to a core already used by a continuity.
 
 ### Slice 3 — Transactional continuity lifecycle and starting relationship
 
@@ -259,16 +300,19 @@ conversation. Define the initial supporting-dimension/boundary vocabulary and
 validation table before coding it; do not implement inferred evolution.
 
 Implement start, resume/read, grouped-list, and archive services and repository
-operations. The start transaction locks the identity, verifies the selected
-persona and submitted identity revision, freezes the identity, and creates the
-continuity, conversation, and starting relationship snapshot. Use a PostgreSQL
-partial unique index for active Ongoing ownership by identity/persona, in addition
+operations. The start transaction locks both selected identity and persona rows
+in a consistent order, verifies both submitted revisions, permanently freezes both
+profiles, and creates the continuity, conversation, and starting relationship
+snapshot. Persona freezing applies globally on first use with any identity. Use a
+PostgreSQL partial unique index for active Ongoing ownership by identity/persona, in addition
 to service checks. Use Characters-only constraints to prevent conversation or
 starting-state ownership mismatches. Confirmation idempotency is persisted.
 
-Identity edits must participate in the same lock/revision protocol as start so an
-edit racing first use cannot change the confirmed semantics. Archive and future
-message writes must serialize on the continuity so no write commits after archive.
+Identity and persona edits must participate in the same lock/revision protocol
+as start so an edit racing first use cannot change the confirmed semantics. If an
+edit wins, a start with the old revision fails; if start wins, the edit fails as
+frozen. An already frozen profile remains eligible for a new continuity at its
+current revision. Archive and future message writes must serialize on the continuity so no write commits after archive.
 Keep frozen identity and persona ownership immutable in repository write APIs.
 
 Verification:
@@ -277,15 +321,20 @@ Verification:
   archived lifecycle behavior, unsupported-mode rejection, and immutable
   identity/persona/mode bindings.
 - Service/repository integration tests prove start commits all records together;
-  an injected failure rolls everything back, including identity freezing.
+  an injected failure rolls everything back, including newly applied identity and
+  persona freezing. Previously frozen profiles remain frozen.
 - PostgreSQL races cover two starts for the same pair, default setup/start,
-  and identity edit versus start. Archive-versus-message races arrive in Slice 5
-  with the actual message repository operations.
-  Exactly one active continuity survives; no mixed identity snapshot is committed.
+  identity edit versus start, persona edit versus start, and two identities first
+  using the same persona. Archive-versus-message races arrive in Slice 5 with the
+  actual message repository operations. Exactly one active continuity survives for
+  the same pair; distinct pairs may both start with the same frozen persona.
+  No start commits against a stale reviewed identity or persona revision.
 - Repeated identical confirmation returns the original continuity. Conflicting
   reuse, a stale draft, and a second active start produce typed errors.
 - Archive, then explicitly start a replacement: old history remains readable,
-  the identity stays frozen, and the new starting state is independent.
+  both profiles stay frozen, and the new starting state is independent. First use
+  with one identity prevents persona edits for every other identity, including
+  display fields.
 - Two identities sharing a persona and two archived/current continuities for one
   pair cannot read or change each other's relationship or conversation records.
   An established start has user provenance and no invented milestone events.
@@ -455,22 +504,26 @@ Status: Proposed
 Replace the landing page with Characters-owned UI and lazy infrastructure
 composition. Show Identity → Persona → Ongoing groups, active and archived
 continuities, and the current identity/persona/mode visibly. Support default
-**You**, inline identity creation/editing before use, identity duplication, persona
-creation/duplication, and selection through application services.
+**You**, inline identity and persona creation/editing before use, duplication of
+both profiles, and selection through application services.
 
 Implement the start form: identity, persona, Ongoing mode, relationship intent,
 optional established-state inputs, then a review/confirmation step. Explain what
 carries forward and that Ongoing has no extracted memory. Confirmation alone
-calls start; retain its request identifier across reruns. Handle stale profiles,
+calls start; retain its request identifier and both reviewed profile revisions
+across reruns. Explain that confirmation permanently freezes both profiles and
+that later authored changes require duplication. Handle stale profiles,
 active-continuity conflicts, and validation errors without double creation.
 Allow explicit archive and resume/read selection; an archive never starts a new
 continuity implicitly. Keep all widget/session keys Characters-owned.
 
 Verification:
 
-- Streamlit tests cover empty setup, **You**, inline creation, frozen-edit handling,
-  duplication, all intents, established-state review, cancel, confirm, and repeated
-  reruns. Canceling a start neither creates continuity nor freezes the identity.
+- Streamlit tests cover empty setup, **You**, inline creation, identity/persona
+  edits before use, frozen-edit handling and duplication for both profiles, all
+  intents, established-state review, cancel, confirm, and repeated reruns.
+  Selection and cancel neither create continuity nor freeze either profile.
+  Edits after review produce a stale confirmation requiring renewed review.
 - UI service-call assertions prove grouped selection uses the correct ownership
   identifiers and archive/active-conflict outcomes remain visible.
 - An integration test exercises the reviewed application request through real
@@ -515,9 +568,10 @@ resume and visible incomplete-turn recovery.
 
 Status: Proposed
 
-Add one milestone integration scenario covering profile setup, confirmation,
-first-use freeze, streamed turns, rolling summary, restart/resume, failed-turn
-continuation, archive, and explicit fresh start for the same identity/persona.
+Add one milestone integration scenario covering profile setup, authored edits to
+both profiles before use, confirmation, first-use freezing of both, streamed turns,
+rolling summary, restart/resume, failed-turn continuation, archive, and explicit
+fresh start for the same identity/persona.
 Add negative ownership cases beside that scenario and close gaps found by it.
 
 Run Characters services and tests in an isolated process that rejects Chat module
@@ -530,8 +584,9 @@ both area migration commands, and the new workflow in README/design documentatio
 Verification:
 
 - Unit and integration suites demonstrate all Stage 4 invariants, including
-  concurrent first use/start, archived writability, immutable profile ownership,
-  summary provenance, and independent starting states across continuities.
+  concurrent edits and first use/start for both profiles, permanent global persona
+  freezing across identities and archival, archived writability, immutable profile
+  ownership, summary provenance, and independent starting states across continuities.
 - The milestone runs with deterministic fake providers; a documented local Ollama
   smoke run confirms streaming when the configured service is available, without
   making ordinary tests depend on it.

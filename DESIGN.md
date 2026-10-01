@@ -242,8 +242,8 @@ and repository; its UI arrives in Slice 8. Authored values and persisted snapsho
 are frozen Pydantic models. Editing replaces all authored fields, retains the UUID,
 and increments a revision. Both the service and the repository reject frozen or
 stale edits; the repository uses a conditional write so competing edits cannot
-silently overwrite each other. Slice 3 will freeze identities during continuity
-creation using the same row and revision.
+silently overwrite each other. Slice 3 will lock and verify the selected identity
+and persona rows and revisions, then freeze both during continuity creation.
 
 Name is required. Gender, age/birth date, pronouns, preferred address, and timezone
 are optional; omitted demographics remain unknown. Text is trimmed and nonempty
@@ -266,8 +266,26 @@ after first use, including display fields; there is no unfreeze operation. See
 
 ### Persona
 
-The global persona definition contains authored, long-term traits and is
-immutable. Editing a persona initially means duplicating it into a new persona.
+The global persona definition contains authored, long-term traits. All authored
+fields, including the display name, are editable until the first continuity using
+that persona is successfully created with any identity. That transaction freezes
+the persona globally and permanently, alongside the selected identity. Selection,
+a draft start, or canceled confirmation does not freeze either profile. After first
+use, changing the core requires creating or duplicating a persona; archiving all
+of its continuities does not make it editable again.
+
+Persona authored values and snapshots remain frozen Pydantic models. An edit
+replaces the persisted authored fields, retains the UUID, and increments a positive
+revision using the caller's expected revision. The revision detects stale writes
+and stale start confirmations; a separate permanent freeze flag controls edit
+eligibility. Both service and repository reject frozen or stale edits. Continuity
+creation locks both profile rows in a consistent order, verifies both submitted
+revisions, and freezes both in the same transaction. Failed starts roll back all
+changes. This does not require retaining historical authored revisions.
+
+Duplication copies only authored core fields, optionally revised, into a new UUID
+at revision 1 with editable status and no continuity history, relationship
+adaptation, or current state.
 
 Persona behavior is divided into three layers:
 
@@ -464,7 +482,10 @@ Chat area.
 - In Chat, expose the active model and make summaries and extracted memory
   inspectable.
 - In Characters, make the active identity, persona, continuity, and mode visible.
-- Explain what carries forward before a Characters continuity begins.
+- Support authored identity and persona edits before first continuity use; offer
+  duplication once frozen.
+- Explain what carries forward and that successful confirmation permanently freezes
+  both selected profiles before a Characters continuity begins.
 - Prefer archives and branches over destructive history changes.
 - Never leak records across areas, identities, or continuities.
 - Show the source of inferred memory and relationship information.

@@ -68,3 +68,10 @@ uv run pytest -v
 Add focused unit tests beside the affected area and layer; add an integration test when a change crosses service and repository boundaries. Add architecture coverage for import and schema isolation when boundaries change. Use shared fixtures from `tests/conftest.py` and keep the full suite passing without requiring unstated local state.
 
 Commit subjects in this repository are short, imperative, and scoped when useful (for example, `Add memory repository` or `Refactor context builder`). Keep each commit cohesive. Pull requests should explain the user-visible or architectural change, list validation run, link the relevant issue when one exists, and include Streamlit screenshots for UI changes. Call out migrations, model/configuration changes, and any required Ollama or database setup explicitly.
+
+## ADR Writing
+
+Keep new and updated ADRs concise and minimal. State the behavioral decision and
+its rationale in plain language. Put implementation details, slice assignments,
+and verification procedures in the master or stage plans. Apply this rule when
+adding or updating an ADR; do not rewrite otherwise untouched ADRs solely for style.
