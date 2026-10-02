@@ -43,3 +43,19 @@ class UnsupportedContinuityModeError(ValueError):
 
 class ArchivedContinuityError(ValueError):
     """An archived continuity cannot accept writes."""
+
+
+class ModelResolutionError(ValueError):
+    """The provider/model selection is not configured."""
+
+
+class UnsupportedGenerationError(ValueError):
+    """A capability, parameter, or output reserve is unsupported."""
+
+
+class ProviderInvocationError(RuntimeError):
+    """A provider failed; the message contains no provider payload or secrets."""
+
+
+class InvalidProviderResponseError(ProviderInvocationError):
+    """A provider returned malformed or empty summary output."""

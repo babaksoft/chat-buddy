@@ -484,6 +484,29 @@ validated against relationship intent and domain transition rules before
 persistence, and every accepted change has inspectable provenance and can be
 corrected by the user.
 
+### Characters provider capabilities
+
+Characters owns separate streaming response, summary, model-resolution, and token
+counting contracts. A response provider need not support summaries. Immutable
+model descriptors declare operations, optional parameters, context windows, and
+default output limits. Resolution merges requested overrides with defaults and
+rejects unsupported settings before invocation. The effective snapshot contains
+no endpoint, authentication, client, or secret. Output capacity is always reserved
+and enforced through an explicit provider output limit.
+
+Stage 4 uses Ollama with independently configured response and summary defaults.
+Composition reads Characters-only settings lazily; importing the factory or
+selecting Chat creates no Characters clients. Adapters receive assembled prompts,
+release streams on completion, failure, or cancellation, and expose safe Characters
+errors rather than raw provider payloads. Summary output is nonempty plain text;
+summary prompt policy belongs to the later summarization service.
+
+The initial local token estimator counts one token per UTF-8 byte plus eight tokens
+per message, role bytes, and eight fixed framing tokens. This conservative estimate
+is deterministic, not an exact model tokenizer or measured usage. A future adapter
+can supply its own counter through the same contract. Context budgeting remains
+an application responsibility separate from token counting.
+
 ### Context composition
 
 Characters context is assembled in a stable order:

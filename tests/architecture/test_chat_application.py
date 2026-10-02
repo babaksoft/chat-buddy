@@ -115,15 +115,16 @@ def test_chat_ui_views_do_not_import_infrastructure() -> None:
 
 
 def test_ollama_sdk_is_confined_to_its_infrastructure_adapter() -> None:
-    """Prevent provider SDK imports from escaping the concrete adapter."""
+    """Confine Ollama SDK imports to the two area-owned concrete adapters."""
 
-    allowed_path = (
-        PACKAGE_ROOT / "chat" / "infrastructure" / "llm" / "ollama_gateway.py"
-    )
+    allowed_paths = {
+        PACKAGE_ROOT / area / "infrastructure" / "llm" / "ollama_gateway.py"
+        for area in ("chat", "characters")
+    }
     violations = [
         f"{path.relative_to(PACKAGE_ROOT)} imports {imported_module}"
         for path in sorted(PACKAGE_ROOT.rglob("*.py"))
-        if path != allowed_path
+        if path not in allowed_paths
         for imported_module in sorted(_imports(path))
         if imported_module == "ollama" or imported_module.startswith("ollama.")
     ]

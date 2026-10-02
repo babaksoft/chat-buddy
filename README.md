@@ -263,3 +263,34 @@ races, shared-persona starts, confirmation collisions, active-only uniqueness,
 fresh upgrades, baseline and prior-head downgrade/re-upgrade, metadata parity, and
 preservation of a populated Chat schema including its migration version. Offline
 migration checks run in the ordinary suite.
+
+### Characters provider backend
+
+Slice 4 adds Characters-owned streaming response and summary capabilities without
+schema changes. No running Ollama service is needed for ordinary tests. The UI
+continues to use its landing page until the later UI slices.
+
+Call `create_model_resolver()` from
+`chat_buddy.characters.infrastructure.llm.configured_providers` only when composing
+Characters services. `resolve_default("response")` and `resolve_default("summary")`
+return independent effective selections. `resolve` also accepts an explicit
+configured provider/model pair and generation overrides. Select the matching
+`response_gateway`, `summary_gateway`, and `token_counter` using the effective
+model's provider key. Response adapters yield text through `stream`; callers must
+close the iterator when abandoning output. Summary adapters accept an assembled
+prompt and return nonempty plain text.
+
+Environment settings are read when the factory is called:
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `CHARACTERS_OLLAMA_ENDPOINT_URL` | `http://localhost:11434` | Local Ollama endpoint |
+| `CHARACTERS_RESPONSE_MODEL` | `mistral` | Default persona response model |
+| `CHARACTERS_SUMMARY_MODEL` | `mistral` | Default summary model |
+| `CHARACTERS_CONTEXT_TOKENS` | `8192` | Configured total model context window |
+| `CHARACTERS_OUTPUT_TOKENS` | `1024` | Default enforced output token limit |
+
+Pull both selected models with `ollama pull <model>` before local invocation.
+Set context limits to values supported by the selected models. The local counter
+uses a conservative UTF-8 byte estimate with framing overhead, not exact usage.
+These settings and clients are independent of Chat configuration.

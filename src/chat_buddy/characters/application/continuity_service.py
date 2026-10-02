@@ -11,11 +11,11 @@ from chat_buddy.characters.domain.continuity import (
     StartingOrigins,
     StartingRelationship,
 )
-from chat_buddy.characters.domain.repositories import ContinuityRepository
 from chat_buddy.characters.domain.errors import (
     ActiveContinuityError,
     UnsupportedContinuityModeError,
 )
+from chat_buddy.characters.domain.repositories import ContinuityRepository
 
 
 class ContinuityService:

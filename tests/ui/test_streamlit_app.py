@@ -107,6 +107,25 @@ def test_chat_is_default_area(app: AppTest, services: Mock) -> None:
     services.assert_called_once_with()
 
 
+def test_selecting_chat_does_not_construct_characters_clients(services: Mock) -> None:
+    """Render Chat while rejecting Characters client construction.
+
+    Args:
+        services:
+            Chat application service factory double.
+    """
+
+    with patch(
+        "chat_buddy.characters.infrastructure.llm.ollama_gateway.Client",
+        side_effect=AssertionError("Chat constructed a Characters client"),
+    ) as client:
+        app = AppTest.from_function(_render_app, default_timeout=10).run()
+    assert not app.exception
+    assert app.title[0].value == "💬 Chat"
+    services.assert_called_once_with()
+    client.assert_not_called()
+
+
 def test_characters_opens_without_services(services: Mock) -> None:
     services.side_effect = AssertionError("Characters must not initialize services")
     app = AppTest.from_function(_render_app, default_timeout=10)

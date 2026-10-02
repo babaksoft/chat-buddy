@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 ## Scope and starting point
 
@@ -19,7 +19,7 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slices 1–2 are
+This document records implementation scope and verification. Slices 1–4 are
 implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
 ADRs remain authoritative.
 
@@ -307,7 +307,7 @@ and lifecycle/ownership failures are deterministic under concurrency.
 
 ### Slice 4 — Characters-owned LLM capabilities and Ollama adapter
 
-Status: Proposed
+Status: Complete
 
 Define narrow domain protocols for streaming persona responses, summary generation,
 provider/model resolution, and token counting. Add immutable effective generation
