@@ -6,25 +6,23 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from chat_buddy.characters.domain.errors import (
-    InvalidProviderResponseError,
-    ModelResolutionError,
-    ProviderInvocationError,
-    UnsupportedGenerationError,
-)
-from chat_buddy.characters.domain.llm import (
+from chat_buddy.characters.domain import (
     EffectiveGeneration,
     GenerationConfiguration,
-    ModelCapabilities,
+    InvalidProviderResponseError,
+    ModelDescriptor,
+    ModelResolutionError,
     PromptMessage,
+    ProviderInvocationError,
     ResponseGateway,
+    UnsupportedGenerationError,
 )
-from chat_buddy.characters.infrastructure.llm.configured_providers import (
-    create_model_resolver,
+from chat_buddy.characters.infrastructure.llm import (
+    ConfiguredModelRegistry,
+    OllamaGateway,
+    Utf8TokenCounter,
+    create_model_registry,
 )
-from chat_buddy.characters.infrastructure.llm.ollama_gateway import OllamaGateway
-from chat_buddy.characters.infrastructure.llm.resolver import ConfiguredModelResolver
-from chat_buddy.characters.infrastructure.llm.token_counter import Utf8TokenCounter
 
 PROMPT = (PromptMessage(role="user", content="Hello"),)
 
@@ -51,7 +49,7 @@ class FakeResponseProvider:
         yield generation.model.model
 
 
-def model(provider: str = "ollama", name: str = "local") -> ModelCapabilities:
+def model(provider: str = "ollama", name: str = "local") -> ModelDescriptor:
     """Build configured local capabilities.
 
     Args:
@@ -64,7 +62,7 @@ def model(provider: str = "ollama", name: str = "local") -> ModelCapabilities:
         Immutable descriptor.
     """
 
-    return ModelCapabilities(
+    return ModelDescriptor(
         provider=provider,
         model=name,
         context_tokens=256,
@@ -77,7 +75,7 @@ def model(provider: str = "ollama", name: str = "local") -> ModelCapabilities:
     )
 
 
-def resolver(gateway: OllamaGateway) -> ConfiguredModelResolver:
+def _registry(gateway: OllamaGateway) -> ConfiguredModelRegistry:
     """Compose both providers without external calls.
 
     Args:
@@ -85,10 +83,10 @@ def resolver(gateway: OllamaGateway) -> ConfiguredModelResolver:
             Mocked local adapter.
 
     Returns:
-        Configured resolver.
+        Configured model registry.
     """
 
-    return ConfiguredModelResolver(
+    return ConfiguredModelRegistry(
         (model(), model(name="summary"), model("fake")),
         {"ollama": gateway, "fake": FakeResponseProvider()},
         {"ollama": gateway},
@@ -99,7 +97,7 @@ def resolver(gateway: OllamaGateway) -> ConfiguredModelResolver:
 def test_resolution_merges_defaults_and_reserves_output() -> None:
     """Effective settings preserve defaults and honor explicit output limits."""
 
-    registry = resolver(OllamaGateway("unused", MagicMock()))
+    registry = _registry(OllamaGateway("unused", MagicMock()))
     selected = registry.resolve(
         "ollama", "local", "response", GenerationConfiguration(max_output_tokens=64)
     )
@@ -133,7 +131,7 @@ def test_unsupported_requests_fail_before_provider_calls(
     """
 
     client = MagicMock()
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     with pytest.raises(UnsupportedGenerationError):
         registry.resolve("ollama", "local", "response", requested)
     client.chat.assert_not_called()
@@ -168,7 +166,7 @@ def test_response_only_provider_substitutes_the_same_contract() -> None:
     client.chat.return_value = iter(
         [{"message": {"content": "Hello"}}, {"message": {"content": "local"}}]
     )
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     for provider in ("ollama", "fake"):
         gateway: ResponseGateway = registry.response_gateway(provider)
         selected = registry.resolve(
@@ -208,7 +206,7 @@ def test_provider_failure_is_safe_and_closes_stream(partial: bool) -> None:
 
     client = MagicMock()
     client.chat.return_value = failing_stream()
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     iterator = registry.response_gateway("ollama").stream(
         PROMPT,
         registry.resolve("ollama", "local", "response", GenerationConfiguration()),
@@ -231,7 +229,7 @@ def test_consumer_close_releases_stream_and_effective_options_are_sent() -> None
     )
     client = MagicMock()
     client.chat.return_value = upstream
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     stream = registry.response_gateway("ollama").stream(
         PROMPT,
         registry.resolve("ollama", "local", "response", GenerationConfiguration()),
@@ -257,7 +255,7 @@ def test_summary_parsing_and_separate_model_selection(content: object) -> None:
 
     client = MagicMock()
     client.chat.return_value = {"message": {"content": content}}
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     selected = registry.resolve(
         "ollama", "summary", "summary", GenerationConfiguration()
     )
@@ -277,7 +275,7 @@ def test_call_failures_and_malformed_stream_are_normalized() -> None:
 
     client = MagicMock()
     gateway = OllamaGateway("unused", client)
-    registry = resolver(gateway)
+    registry = _registry(gateway)
     response = registry.resolve(
         "ollama", "local", "response", GenerationConfiguration()
     )
@@ -323,7 +321,7 @@ def test_composition_reads_characters_settings_lazily(
     with patch(
         "chat_buddy.characters.infrastructure.llm.ollama_gateway.Client"
     ) as client:
-        registry = create_model_resolver()
+        registry = create_model_registry()
         assert [item.model for item in registry.list_models()] == [
             "response-local",
             "summary-local",
@@ -338,15 +336,15 @@ def test_invalid_model_declarations_and_bindings_fail() -> None:
     """Reject contradictory model defaults and missing capability bindings."""
 
     with pytest.raises(ValidationError):
-        ModelCapabilities.model_validate({**model().model_dump(), "output_tokens": 256})
+        ModelDescriptor.model_validate({**model().model_dump(), "output_tokens": 256})
     with pytest.raises(ValidationError):
-        ModelCapabilities.model_validate(
+        ModelDescriptor.model_validate(
             {**model().model_dump(), "parameters": frozenset()}
         )
     with pytest.raises(ValueError, match="Duplicate"):
-        ConfiguredModelResolver((model(), model()), {}, {}, {})
+        ConfiguredModelRegistry((model(), model()), {}, {}, {})
     with pytest.raises(ValueError, match="Missing"):
-        ConfiguredModelResolver((model(),), {}, {}, {})
+        ConfiguredModelRegistry((model(),), {}, {}, {})
 
 
 def test_successful_stream_closes_and_ignores_empty_chunks() -> None:
@@ -362,7 +360,7 @@ def test_successful_stream_closes_and_ignores_empty_chunks() -> None:
         ]
     )
     client.chat.return_value = upstream
-    registry = resolver(OllamaGateway("unused", client))
+    registry = _registry(OllamaGateway("unused", client))
     selected = registry.resolve(
         "ollama", "local", "response", GenerationConfiguration()
     )

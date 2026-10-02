@@ -1,6 +1,6 @@
 """Deterministic conservative local prompt accounting."""
 
-from chat_buddy.characters.domain.llm import PromptMessage
+from chat_buddy.characters.domain import PromptMessage
 
 
 class Utf8TokenCounter:

@@ -1,4 +1,4 @@
-"""Immutable authored identity values owned by Characters."""
+"""Immutable authored identity values."""
 
 from datetime import UTC, date, datetime
 from typing import Self

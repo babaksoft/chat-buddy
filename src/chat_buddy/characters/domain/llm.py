@@ -1,4 +1,4 @@
-"""Provider-neutral Characters generation values and narrow capabilities."""
+"""Provider-neutral generation values and narrow capabilities."""
 
 from collections.abc import Iterator
 from typing import Literal, Protocol, Self
@@ -50,8 +50,8 @@ class GenerationConfiguration(BaseModel):
     seed: int | None = Field(default=None, ge=0, description="Sampling seed.")
 
 
-class ModelCapabilities(BaseModel):
-    """Configured local model capabilities and deterministic budget.
+class ModelDescriptor(BaseModel):
+    """Configured local model descriptor and deterministic budget.
 
     Attributes:
         provider:
@@ -115,7 +115,7 @@ class EffectiveGeneration(BaseModel):
 
     Attributes:
         model:
-            Selected model capabilities.
+            Selected model descriptor.
         configuration:
             Merged validated settings with an explicit output limit.
         capability:
@@ -126,7 +126,7 @@ class EffectiveGeneration(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model: ModelCapabilities = Field(description="Selected capabilities.")
+    model: ModelDescriptor = Field(description="Selected capabilities.")
     configuration: GenerationConfiguration = Field(description="Effective settings.")
     capability: Literal["response", "summary"] = Field(
         description="Selected operation."
@@ -160,7 +160,7 @@ class EffectiveGeneration(BaseModel):
 
 
 class ResponseGateway(Protocol):
-    """Stream persona text without requiring summary support."""
+    """Stream persona answer in a conversation."""
 
     def stream(
         self, messages: tuple[PromptMessage, ...], generation: EffectiveGeneration
@@ -174,7 +174,7 @@ class ResponseGateway(Protocol):
                 Resolved response settings.
 
         Returns:
-            Text iterator whose failures use Characters domain errors.
+            Text iterator whose failures use domain errors.
         """
 
         ...
@@ -218,10 +218,10 @@ class TokenCounter(Protocol):
         ...
 
 
-class ModelResolver(Protocol):
+class ModelRegistry(Protocol):
     """Resolve selectable models and effective generation settings."""
 
-    def list_models(self) -> tuple[ModelCapabilities, ...]:
+    def list_models(self) -> tuple[ModelDescriptor, ...]:
         """List configured models.
 
         Returns:

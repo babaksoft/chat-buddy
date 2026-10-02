@@ -1,4 +1,4 @@
-"""Typed Characters profile management failures."""
+"""Typed validation, operational and management failures."""
 
 
 class IdentityNotFoundError(LookupError):

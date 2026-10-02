@@ -1,19 +1,21 @@
-"""Characters-owned persistence contracts."""
+"""Persistence contracts."""
 
 from typing import Protocol
 from uuid import UUID
 
-from chat_buddy.characters.domain.continuity import (
+from chat_buddy.characters.domain import (
     Continuity,
+    Identity,
+    IdentityDetails,
+    Persona,
+    PersonaCore,
     StartContinuity,
     StartingRelationship,
 )
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
 
 
 class IdentityRepository(Protocol):
-    """Store identity snapshots without exposing persistence models."""
+    """Manage identity snapshots while exposing domain models only."""
 
     def create(self, details: IdentityDetails) -> Identity:
         """Persist a new editable identity.
@@ -55,7 +57,7 @@ class IdentityRepository(Protocol):
         ...
 
     def list(self) -> list[Identity]:
-        """Read identities ordered default-first, then name and identifier.
+        """Read identities ordered by default-first, then by name and identifier.
 
         Returns:
             Deterministically ordered snapshots.
@@ -92,7 +94,7 @@ class IdentityRepository(Protocol):
 
 
 class PersonaRepository(Protocol):
-    """Store persona snapshots without exposing persistence models."""
+    """Manage persona snapshots while exposing domain models only."""
 
     def create(self, core: PersonaCore) -> Persona:
         """Persist a new editable persona.
@@ -162,7 +164,7 @@ class PersonaRepository(Protocol):
 
 
 class ContinuityRepository(Protocol):
-    """Persist lifecycle and ownership without exposing database objects."""
+    """Manage continuity lifecycle and ownership while exposing domain objects only."""
 
     def start(
         self, request: StartContinuity, relationship: StartingRelationship

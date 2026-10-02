@@ -11,19 +11,19 @@ from chat_buddy.characters.domain.errors import (
 from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
     GenerationConfiguration,
-    ModelCapabilities,
+    ModelDescriptor,
     ResponseGateway,
     SummaryGateway,
     TokenCounter,
 )
 
 
-class ConfiguredModelResolver:
-    """Resolve models without importing or constructing any provider SDK."""
+class ConfiguredModelRegistry:
+    """Resolve models using configured model registry."""
 
     def __init__(
         self,
-        models: tuple[ModelCapabilities, ...],
+        models: tuple[ModelDescriptor, ...],
         responses: dict[str, ResponseGateway],
         summaries: dict[str, SummaryGateway],
         counters: dict[str, TokenCounter],
@@ -53,6 +53,7 @@ class ConfiguredModelResolver:
         self._summaries = dict(summaries)
         self._counters = dict(counters)
         self._defaults = dict(defaults or {})
+
         if len(self._models) != len(models):
             raise ValueError("Duplicate configured model.")
         for item in models:
@@ -62,12 +63,14 @@ class ConfiguredModelResolver:
                 or ("summary" in item.capabilities and item.provider not in summaries)
             ):
                 raise ValueError("Missing model capability binding.")
+
         for capability in self._defaults:
             if capability not in {"response", "summary"}:
                 raise ValueError("Unknown default capability.")
+
             self.resolve_default(capability)
 
-    def list_models(self) -> tuple[ModelCapabilities, ...]:
+    def list_models(self) -> tuple[ModelDescriptor, ...]:
         """List configured models in selection order.
 
         Returns:
@@ -109,6 +112,7 @@ class ConfiguredModelResolver:
         values = descriptor.defaults.model_dump(exclude_none=True)
         values.update(requested.model_dump(exclude_none=True))
         values.setdefault("max_output_tokens", descriptor.output_tokens)
+
         try:
             configuration = GenerationConfiguration.model_validate(values)
             return EffectiveGeneration(
@@ -153,7 +157,7 @@ class ConfiguredModelResolver:
         )
 
     def response_gateway(self, provider: str) -> ResponseGateway:
-        """Select a response implementation independently of summaries.
+        """Select a response implementation.
 
         Args:
             provider:
@@ -169,10 +173,11 @@ class ConfiguredModelResolver:
 
         if provider not in self._responses:
             raise UnsupportedGenerationError("Response capability is unavailable.")
+
         return self._responses[provider]
 
     def summary_gateway(self, provider: str) -> SummaryGateway:
-        """Select a summary implementation independently of responses.
+        """Select a summary implementation.
 
         Args:
             provider:
@@ -188,6 +193,7 @@ class ConfiguredModelResolver:
 
         if provider not in self._summaries:
             raise UnsupportedGenerationError("Summary capability is unavailable.")
+
         return self._summaries[provider]
 
     def token_counter(self, provider: str) -> TokenCounter:
@@ -207,9 +213,10 @@ class ConfiguredModelResolver:
 
         if provider not in self._counters:
             raise ModelResolutionError("Unknown token counter provider.")
+
         return self._counters[provider]
 
-    def _get_model(self, provider: str, model: str) -> ModelCapabilities:
+    def _get_model(self, provider: str, model: str) -> ModelDescriptor:
         """Look up an exact configured provider/model pair.
 
         Args:
@@ -227,5 +234,6 @@ class ConfiguredModelResolver:
         """
 
         if (provider, model) not in self._models:
-            raise ModelResolutionError("Unknown Characters provider/model selection.")
+            raise ModelResolutionError("Unknown provider/model selection.")
+
         return self._models[provider, model]

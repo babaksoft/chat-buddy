@@ -2,20 +2,20 @@
 
 import os
 
-from chat_buddy.characters.domain.llm import ModelCapabilities
+from chat_buddy.characters.domain import ModelDescriptor
 from chat_buddy.characters.infrastructure.llm.ollama_gateway import OllamaGateway
-from chat_buddy.characters.infrastructure.llm.resolver import ConfiguredModelResolver
+from chat_buddy.characters.infrastructure.llm.registry import ConfiguredModelRegistry
 from chat_buddy.characters.infrastructure.llm.token_counter import Utf8TokenCounter
 
 
-def create_model_resolver() -> ConfiguredModelResolver:
-    """Compose Characters local providers only when explicitly requested.
+def create_model_registry() -> ConfiguredModelRegistry:
+    """Compose local providers only when explicitly requested.
 
     Environment settings are Characters-owned and read at composition time.
     Neither importing this module nor selecting the Chat route creates clients.
 
     Returns:
-        Resolver supporting independently selected response and summary models.
+        Registry supporting independently selected response and summary models.
 
     Raises:
         ValueError:
@@ -27,7 +27,7 @@ def create_model_resolver() -> ConfiguredModelResolver:
     context = int(os.environ.get("CHARACTERS_CONTEXT_TOKENS", "8192"))
     output = int(os.environ.get("CHARACTERS_OUTPUT_TOKENS", "1024"))
     models = tuple(
-        ModelCapabilities(
+        ModelDescriptor(
             provider="ollama",
             model=name,
             context_tokens=context,
@@ -40,7 +40,7 @@ def create_model_resolver() -> ConfiguredModelResolver:
     gateway = OllamaGateway(
         host=os.environ.get("CHARACTERS_OLLAMA_ENDPOINT_URL", "http://localhost:11434")
     )
-    return ConfiguredModelResolver(
+    return ConfiguredModelRegistry(
         models=models,
         responses={"ollama": gateway},
         summaries={"ollama": gateway},

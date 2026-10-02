@@ -1,4 +1,4 @@
-"""Immutable global authored persona cores owned by Characters."""
+"""Immutable global authored persona cores."""
 
 from uuid import UUID
 
