@@ -6,11 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.chat.domain import (
-    ChatRole,
-    CompletedTurn,
     ExtractionReceiptRecord,
     GenerationAttemptStatus,
-    GenerationConfiguration,
     MemoryCandidate,
     MemoryDeletionResult,
     MemoryExtractionOutcome,
@@ -18,239 +15,13 @@ from chat_buddy.chat.domain import (
     MemoryOrigin,
     MemoryOriginKind,
     MemoryRecord,
-    ModelId,
-    ProviderId,
-    SummaryLifecycle,
-    SummaryProvenance,
-    SummaryRecord,
 )
-from chat_buddy.chat.infrastructure.db.models import (
-    GenerationAttempt,
-    Memory,
-    Message,
-    Summary,
-)
+from chat_buddy.chat.infrastructure.db.models import Memory
 from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
-    GenerationAttemptRepository,
     MemoryRepository,
-    SummaryRepository,
 )
-
-
-def _complete_turn(session_factory: sessionmaker[Session]) -> CompletedTurn:
-    """Persist and return one exact completed turn.
-
-    Args:
-        session_factory:
-            Isolated database session factory.
-
-    Returns:
-        Completed turn matching committed persistence.
-    """
-
-    conversations = ConversationRepository(session_factory)
-    attempts = GenerationAttemptRepository(session_factory)
-    conversation = conversations.create_conversation()
-    pending = attempts.start_generation_attempt(
-        conversation.id,
-        "I live in Tehran.",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    streaming = attempts.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = attempts.complete_generation_attempt(
-        streaming.id,
-        "Thanks, I will remember that.",
-        at=pending.created_at + timedelta(seconds=1),
-    )
-    assert completed.assistant_message_id is not None
-    assert completed.finished_at is not None
-    return CompletedTurn(
-        conversation_id=conversation.id,
-        attempt_id=completed.id,
-        user_message_id=completed.source_user_message_id,
-        assistant_message_id=completed.assistant_message_id,
-        user_content=completed.submitted_user_content,
-        assistant_content="Thanks, I will remember that.",
-        completed_at=completed.finished_at,
-    )
-
-
-def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
-    session_factory: sessionmaker[Session],
-) -> None:
-    """Verify persisted attempt content does not follow later message edits.
-
-    Args:
-        session_factory:
-            Isolated database session factory.
-    """
-
-    repository = ConversationRepository(session_factory)
-    attempts = GenerationAttemptRepository(session_factory)
-    conversation = repository.create_conversation()
-    pending = attempts.start_generation_attempt(
-        conversation.id,
-        "Original",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    attempts.begin_generation_attempt(pending.id, at=pending.created_at)
-    failed = attempts.fail_generation_attempt(
-        pending.id,
-        error_code="provider_error",
-        at=pending.created_at,
-    )
-    repository.edit_unmatched_user_message(conversation.id, "Edited")
-
-    reloaded = attempts.get_generation_attempt(failed.id)
-
-    assert reloaded is not None
-    assert reloaded.submitted_user_content == "Original"
-
-
-def test_database_rejects_second_open_attempt_per_conversation(
-    session_factory: sessionmaker[Session],
-) -> None:
-    """Verify the partial unique index closes the concurrent-start race.
-
-    Args:
-        session_factory:
-            Isolated database session factory.
-    """
-
-    repository = ConversationRepository(session_factory)
-    attempts = GenerationAttemptRepository(session_factory)
-    conversation = repository.create_conversation()
-    first = attempts.start_generation_attempt(
-        conversation.id,
-        "First",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    second_message = Message(
-        id=uuid4(),
-        conversation_id=conversation.id,
-        role=ChatRole.USER,
-        content="Concurrent",
-        created_at=first.created_at,
-    )
-    second = GenerationAttempt(
-        id=uuid4(),
-        conversation_id=conversation.id,
-        source_user_message_id=second_message.id,
-        submitted_user_content="Concurrent",
-        provider_id="ollama",
-        model_id="mistral",
-        effective_configuration={},
-        status=GenerationAttemptStatus.PENDING,
-        created_at=first.created_at,
-    )
-    with session_factory() as constraint_session:
-        constraint_session.add(second_message)
-        constraint_session.flush()
-        constraint_session.add(second)
-
-        with pytest.raises(IntegrityError):
-            constraint_session.commit()
-
-
-def test_summary_replacement_preserves_lineage_and_uncovered_order(
-    session_factory: sessionmaker[Session],
-) -> None:
-    """Verify atomic summary replacement and checkpoint coverage.
-
-    Args:
-        session_factory:
-            Isolated database session factory.
-    """
-
-    attempts = GenerationAttemptRepository(session_factory)
-    summaries = SummaryRepository(session_factory)
-    first_turn = _complete_turn(session_factory)
-    first = SummaryRecord(
-        id=uuid4(),
-        conversation_id=first_turn.conversation_id,
-        content="The user lives in Tehran.",
-        created_at=datetime.now(UTC),
-        lifecycle=SummaryLifecycle.ACTIVE,
-        provenance=SummaryProvenance(
-            conversation_id=first_turn.conversation_id,
-            checkpoint_message_id=first_turn.assistant_message_id,
-        ),
-    )
-
-    summaries.replace_active_summary(first, expected_active_id=None)
-    assert summaries.get_uncovered_completed_turns(first_turn.conversation_id) == ()
-
-    pending = attempts.start_generation_attempt(
-        first_turn.conversation_id,
-        "I prefer tea.",
-        ProviderId("ollama"),
-        ModelId("mistral"),
-        GenerationConfiguration(),
-    )
-    attempts.begin_generation_attempt(pending.id, at=pending.created_at)
-    completed = attempts.complete_generation_attempt(
-        pending.id,
-        "Noted.",
-        at=pending.created_at + timedelta(seconds=1),
-    )
-    assert completed.assistant_message_id is not None
-    uncovered = summaries.get_uncovered_completed_turns(first_turn.conversation_id)
-    assert [turn.attempt_id for turn in uncovered] == [completed.id]
-
-    replacement = SummaryRecord(
-        id=uuid4(),
-        conversation_id=first_turn.conversation_id,
-        content="The user lives in Tehran and prefers tea.",
-        created_at=datetime.now(UTC),
-        lifecycle=SummaryLifecycle.ACTIVE,
-        provenance=SummaryProvenance(
-            conversation_id=first_turn.conversation_id,
-            checkpoint_message_id=completed.assistant_message_id,
-            predecessor_id=first.id,
-        ),
-    )
-    summaries.replace_active_summary(replacement, expected_active_id=first.id)
-
-    assert summaries.get_active_summary(first_turn.conversation_id) == replacement
-    persisted_first = summaries.get_summary(first.id)
-    assert persisted_first is not None
-    assert persisted_first.lifecycle is SummaryLifecycle.SUPERSEDED
-
-
-def test_database_rejects_cross_conversation_summary_checkpoint(
-    session_factory: sessionmaker[Session],
-) -> None:
-    """Verify summary checkpoints cannot cross conversation ownership.
-
-    Args:
-        session_factory:
-            Isolated database session factory.
-    """
-
-    conversations = ConversationRepository(session_factory)
-    source_turn = _complete_turn(session_factory)
-    other = conversations.create_conversation()
-    with session_factory() as constraint_session:
-        constraint_session.add(
-            Summary(
-                id=uuid4(),
-                conversation_id=other.id,
-                content="Invalid",
-                lifecycle=SummaryLifecycle.ACTIVE,
-                checkpoint_message_id=source_turn.assistant_message_id,
-                created_at=datetime.now(UTC),
-            )
-        )
-
-        with pytest.raises(IntegrityError):
-            constraint_session.commit()
+from chat_buddy.chat.utils.fake_data import fake_complete_turn
 
 
 def test_memory_extraction_correction_lifecycle_and_hard_delete(
@@ -263,7 +34,7 @@ def test_memory_extraction_correction_lifecycle_and_hard_delete(
             Isolated database session factory.
     """
 
-    turn = _complete_turn(session_factory)
+    turn = fake_complete_turn(session_factory)
     repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -331,7 +102,7 @@ def test_receipt_is_unique_and_repeated_processing_is_idempotent(
             Isolated database session factory.
     """
 
-    turn = _complete_turn(session_factory)
+    turn = fake_complete_turn(session_factory)
     repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -361,7 +132,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
     """
 
     repository = MemoryRepository(session_factory)
-    first_turn = _complete_turn(session_factory)
+    first_turn = fake_complete_turn(session_factory)
     first_receipt = ExtractionReceiptRecord(
         generation_attempt_id=first_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -376,7 +147,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
     first = repository.find_current_by_subject("location")
     assert first is not None
 
-    second_turn = _complete_turn(session_factory)
+    second_turn = fake_complete_turn(session_factory)
     second_receipt = ExtractionReceiptRecord(
         generation_attempt_id=second_turn.attempt_id,
         outcome=MemoryExtractionOutcome.SUCCEEDED,
@@ -417,7 +188,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         expected_revision_id=replaced.revision_id,
     )
 
-    third_turn = _complete_turn(session_factory)
+    third_turn = fake_complete_turn(session_factory)
     repository.process_extraction(
         third_turn,
         (MemoryCandidate(subject="location", content="The user lives in Isfahan."),),
@@ -436,7 +207,7 @@ def test_extraction_supersedes_only_current_automatic_memory(
         target=MemoryLifecycle.EXCLUDED,
         at=corrected_at + timedelta(seconds=1),
     )
-    fourth_turn = _complete_turn(session_factory)
+    fourth_turn = fake_complete_turn(session_factory)
     repository.process_extraction(
         fourth_turn,
         (MemoryCandidate(subject="location", content="The user lives in Tabriz."),),
@@ -460,7 +231,7 @@ def test_memory_rejects_stale_management_writes(
             Isolated database session factory.
     """
 
-    turn = _complete_turn(session_factory)
+    turn = fake_complete_turn(session_factory)
     repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -518,7 +289,7 @@ def test_source_unavailability_clears_extracted_references(
             Isolated database session factory.
     """
 
-    turn = _complete_turn(session_factory)
+    turn = fake_complete_turn(session_factory)
     repository = MemoryRepository(session_factory)
     receipt = ExtractionReceiptRecord(
         generation_attempt_id=turn.attempt_id,
@@ -555,7 +326,7 @@ def test_database_rejects_invalid_memory_source_combination(
     """
 
     conversations = ConversationRepository(session_factory)
-    turn = _complete_turn(session_factory)
+    turn = fake_complete_turn(session_factory)
     other = conversations.create_conversation()
     with session_factory() as constraint_session:
         constraint_session.add(

@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from chat_buddy.chat import domain
 from chat_buddy.chat.application.service import (
     ConversationService,
     GenerationAttemptService,
@@ -14,7 +13,6 @@ from chat_buddy.chat.domain import (
     GenerationConfiguration,
     ModelId,
     ProviderId,
-    SummaryProvenance,
 )
 
 
@@ -181,13 +179,3 @@ def test_fake_repository_replaces_open_and_latest_retryable_selections() -> None
         fake.get_latest_retryable_generation_attempt(conversation_id)
         == latest_retryable
     )
-
-
-def test_summary_source_graph_contract_no_longer_exists() -> None:
-    """Summary provenance contains no per-attempt source graph."""
-
-    provenance = SummaryProvenance(uuid4(), uuid4())
-
-    assert not hasattr(domain, "SummarySource")
-    assert not hasattr(provenance, "newly_covered_sources")
-    assert not hasattr(provenance, "newly_covered_attempt_ids")

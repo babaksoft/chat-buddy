@@ -1,0 +1,97 @@
+from uuid import uuid4
+
+import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
+
+from chat_buddy.chat.domain import (
+    ChatRole,
+    ConversationRepository,
+    GenerationAttemptRepository,
+    GenerationAttemptStatus,
+    GenerationConfiguration,
+    ModelId,
+    ProviderId,
+)
+from chat_buddy.chat.infrastructure.db.models import GenerationAttempt, Message
+
+
+def test_attempt_snapshot_remains_immutable_after_failed_tail_edit(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Verify persisted attempt content does not follow later message edits.
+
+    Args:
+        session_factory:
+            Isolated database session factory.
+    """
+
+    repository = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
+    conversation = repository.create_conversation()
+    pending = attempts.start_generation_attempt(
+        conversation.id,
+        "Original",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    attempts.begin_generation_attempt(pending.id, at=pending.created_at)
+    failed = attempts.fail_generation_attempt(
+        pending.id,
+        error_code="provider_error",
+        at=pending.created_at,
+    )
+    repository.edit_unmatched_user_message(conversation.id, "Edited")
+
+    reloaded = attempts.get_generation_attempt(failed.id)
+
+    assert reloaded is not None
+    assert reloaded.submitted_user_content == "Original"
+
+
+def test_database_rejects_second_open_attempt_per_conversation(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Verify the partial unique index closes the concurrent-start race.
+
+    Args:
+        session_factory:
+            Isolated database session factory.
+    """
+
+    repository = ConversationRepository(session_factory)
+    attempts = GenerationAttemptRepository(session_factory)
+    conversation = repository.create_conversation()
+    first = attempts.start_generation_attempt(
+        conversation.id,
+        "First",
+        ProviderId("ollama"),
+        ModelId("mistral"),
+        GenerationConfiguration(),
+    )
+    second_message = Message(
+        id=uuid4(),
+        conversation_id=conversation.id,
+        role=ChatRole.USER,
+        content="Concurrent",
+        created_at=first.created_at,
+    )
+    second = GenerationAttempt(
+        id=uuid4(),
+        conversation_id=conversation.id,
+        source_user_message_id=second_message.id,
+        submitted_user_content="Concurrent",
+        provider_id="ollama",
+        model_id="mistral",
+        effective_configuration={},
+        status=GenerationAttemptStatus.PENDING,
+        created_at=first.created_at,
+    )
+    with session_factory() as constraint_session:
+        constraint_session.add(second_message)
+        constraint_session.flush()
+        constraint_session.add(second)
+
+        with pytest.raises(IntegrityError):
+            constraint_session.commit()
