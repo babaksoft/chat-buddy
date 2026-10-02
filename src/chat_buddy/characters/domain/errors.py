@@ -74,4 +74,8 @@ class AttemptConflictError(ValueError):
 
 
 class ContextCapacityError(ValueError):
-    """Required prompt and complete history exceed the input capacity."""
+    """Required prompt context cannot be represented within input capacity."""
+
+
+class SummaryConflictError(ValueError):
+    """A summary replacement used stale lineage or an invalid checkpoint."""

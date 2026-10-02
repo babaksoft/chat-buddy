@@ -38,6 +38,7 @@ from chat_buddy.characters.domain.errors import (
     ProviderInvocationError,
     StaleIdentityError,
     StalePersonaError,
+    SummaryConflictError,
     UnsupportedContinuityModeError,
     UnsupportedGenerationError,
 )
@@ -64,6 +65,13 @@ from chat_buddy.characters.domain.repositories import (
     ConversationRepository,
     IdentityRepository,
     PersonaRepository,
+    SummaryRepository,
+)
+from chat_buddy.characters.domain.summary import (
+    CompletedTurn,
+    ContextSelection,
+    EligibleContext,
+    SummaryRevision,
 )
 
 __all__ = [
@@ -71,8 +79,10 @@ __all__ = [
     "ArchivedContinuityError",
     "AttemptConflictError",
     "AttemptStatus",
+    "CompletedTurn",
     "ConfirmationConflictError",
     "ContextCapacityError",
+    "ContextSelection",
     "Continuity",
     "ContinuityGroup",
     "ContinuityLifecycle",
@@ -85,6 +95,7 @@ __all__ = [
     "ConversationScope",
     "ConversationSettings",
     "EffectiveGeneration",
+    "EligibleContext",
     "FrozenIdentityError",
     "FrozenPersonaError",
     "GenerationAttempt",
@@ -114,7 +125,10 @@ __all__ = [
     "StartingOrigins",
     "StartingRelationship",
     "SubmittedInput",
+    "SummaryConflictError",
     "SummaryGateway",
+    "SummaryRepository",
+    "SummaryRevision",
     "TokenCounter",
     "UnsupportedContinuityModeError",
     "UnsupportedGenerationError",

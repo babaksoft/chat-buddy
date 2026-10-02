@@ -384,7 +384,7 @@ adapter, including restart, interruption, and isolated incomplete-turn recovery.
 
 ### Slice 6 — Rolling summaries and deterministic context budgeting
 
-Status: Proposed
+Status: Complete
 
 Add immutable summary revisions with conversation/continuity ownership, predecessor,
 last covered complete-turn checkpoint, and generation provenance. Persist one

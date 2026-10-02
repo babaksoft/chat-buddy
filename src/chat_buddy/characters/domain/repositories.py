@@ -20,6 +20,7 @@ from chat_buddy.characters.domain.conversation import (
 from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.domain.summary import SummaryRevision
 
 
 class IdentityRepository(Protocol):
@@ -405,6 +406,45 @@ class ConversationRepository(Protocol):
 
         Returns:
             Detached domain snapshot.
+        """
+
+        ...
+
+
+class SummaryRepository(Protocol):
+    """Persist immutable rolling-summary revisions under explicit ownership."""
+
+    def get_active(self, scope: ConversationScope) -> SummaryRevision | None:
+        """Load the active revision for an owned conversation.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Active revision when one exists.
+        """
+
+        ...
+
+    def replace(
+        self,
+        replacement: SummaryRevision,
+        expected_revision: int | None,
+        expected_checkpoint_id: UUID | None,
+    ) -> SummaryRevision:
+        """Atomically replace the active revision under a lineage guard.
+
+        Args:
+            replacement:
+                Proposed active successor.
+            expected_revision:
+                Previously observed active revision, absent on first creation.
+            expected_checkpoint_id:
+                Previously observed checkpoint, absent on first creation.
+
+        Returns:
+            Persisted active revision.
         """
 
         ...

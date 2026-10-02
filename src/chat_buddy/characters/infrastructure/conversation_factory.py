@@ -11,6 +11,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import (
     create_model_registry,
@@ -38,5 +39,6 @@ def create_conversation_service(
         DbContinuityRepository(session_factory),
         DbIdentityRepository(session_factory),
         DbPersonaRepository(session_factory),
+        DbSummaryRepository(session_factory),
         create_model_registry(),
     )

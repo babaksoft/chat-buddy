@@ -34,7 +34,9 @@ def test_characters_migrations_remain_independent_from_chat() -> None:
     assert "create table characters.starting_relationships" in sql
     assert "create table characters.messages" in sql
     assert "create table characters.generation_attempts" in sql
+    assert "create table characters.summary_revisions" in sql
     assert "create unique index uq_open_conversation_attempt" in sql
+    assert "create unique index uq_active_conversation_summary" in sql
     assert "create unique index uq_active_ongoing_pair" in sql
     assert "chat." not in sql
 

@@ -11,6 +11,7 @@ from chat_buddy.characters.infrastructure.db.models.message import (
     MessageModel,
 )
 from chat_buddy.characters.infrastructure.db.models.persona import PersonaModel
+from chat_buddy.characters.infrastructure.db.models.summary import SummaryRevisionModel
 
 __all__ = [
     "ContinuityModel",
@@ -20,4 +21,5 @@ __all__ = [
     "MessageModel",
     "PersonaModel",
     "StartingRelationshipModel",
+    "SummaryRevisionModel",
 ]

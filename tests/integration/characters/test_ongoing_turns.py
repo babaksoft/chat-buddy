@@ -28,6 +28,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import (
     ConfiguredModelRegistry,
@@ -397,6 +398,7 @@ def test_mocked_ollama_stream_uses_durable_service_contract(
         DbContinuityRepository(factory),
         DbIdentityRepository(factory),
         DbPersonaRepository(factory),
+        DbSummaryRepository(factory),
         models,
     )
     attempt = app.send(scope, SubmittedInput(content="Hi"))

@@ -606,3 +606,27 @@ reserve. Slice 5 includes all history and rejects overflow before reserving an
 attempt or invoking a provider; Slice 6 supplies summary compression. Partial
 output, other continuities, extracted memory, and synthetic shared events never
 enter this prompt.
+
+#### Ongoing context budgeting and summaries
+
+Ongoing reserves the fixed prompt overhead and response output limit before
+selecting conversation context. Its mandatory context is the four fixed system
+blocks, the active summary when present, the latest complete turn, and the current
+user message. Earlier uncovered complete turns are considered newest first and
+rendered chronologically as one contiguous suffix. When that full context does
+not fit, the omitted oldest prefix is incorporated into a new durable summary
+before response generation. Messages are never split or truncated.
+
+Summary revisions belong to one continuity and its sole conversation. Each
+revision records its predecessor, monotonically increasing revision number, last
+covered persona-message checkpoint, effective summary generation, and creation
+time. Atomic replacement leaves one active revision. A replacement prompt contains
+only the prior summary and newly covered complete turns. Unmatched user messages,
+failed or partial attempts, and already covered turns are excluded.
+
+Summary input uses its independently configured model budget and advances through
+the largest chronological prefix that fits. If mandatory response context, one
+new complete turn for summarization, or the generated summary cannot fit, response
+generation fails before provider invocation. Summary generation or persistence
+failure preserves the prior active revision and committed history; no uncovered
+turn is silently omitted. Ongoing does not extract or query long-term memory.

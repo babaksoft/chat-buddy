@@ -18,6 +18,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import ConfiguredModelRegistry
 from chat_buddy.characters.prompts import assemble_ongoing_prompt
@@ -122,6 +123,7 @@ def test_capacity_boundary_includes_fixed_overhead_and_output_reserve(
         DbContinuityRepository(factory),
         DbIdentityRepository(factory),
         DbPersonaRepository(factory),
+        DbSummaryRepository(factory),
         models,
     )
     if extra:

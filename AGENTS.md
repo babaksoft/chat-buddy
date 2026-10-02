@@ -33,6 +33,10 @@ During the Stage 1 split, recreate the development database and apply both area 
   method returns `None`.
 - Always add a single blank line after docstrings.
 - Use absolute package-level imports everywhere; do not use relative imports.
+- Export main architecture types and symbols at their owning package boundary
+  (`__init__.py`).
+- Import main architecture types and symbols from their owning package boundary,
+  except when used inside the same package.
 - Name modules and functions in `snake_case`, classes in `PascalCase`, test modules
   as `test_<behavior>.py`, and test cases as `test_<expected_behavior>()`.
 - Prefix new database-backed repository implementation classes with `Db`

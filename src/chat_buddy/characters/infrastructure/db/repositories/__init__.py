@@ -12,10 +12,14 @@ from chat_buddy.characters.infrastructure.db.repositories.identity_repository im
 from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
     DbPersonaRepository,
 )
+from chat_buddy.characters.infrastructure.db.repositories.summary_repository import (
+    DbSummaryRepository,
+)
 
 __all__ = [
     "DbContinuityRepository",
     "DbConversationRepository",
     "DbIdentityRepository",
     "DbPersonaRepository",
+    "DbSummaryRepository",
 ]

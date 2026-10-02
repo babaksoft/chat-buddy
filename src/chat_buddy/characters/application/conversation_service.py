@@ -4,6 +4,13 @@ from collections.abc import Generator, Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from chat_buddy.characters.application.context_service import (
+    OngoingContextBudgeter,
+    OngoingContextEligibility,
+)
+from chat_buddy.characters.application.rolling_summary_service import (
+    RollingSummaryService,
+)
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     AttemptConflictError,
@@ -21,10 +28,7 @@ from chat_buddy.characters.domain import (
     PersonaRepository,
     PromptMessage,
     SubmittedInput,
-)
-from chat_buddy.characters.prompts import (
-    PROMPT_OVERHEAD_TOKENS,
-    assemble_ongoing_prompt,
+    SummaryRepository,
 )
 
 
@@ -37,6 +41,7 @@ class ConversationService:
         continuities: ContinuityRepository,
         identities: IdentityRepository,
         personas: PersonaRepository,
+        summaries: SummaryRepository,
         models: ModelRegistry,
     ) -> None:
         """Bind Characters-owned contracts only.
@@ -50,6 +55,8 @@ class ConversationService:
                 Frozen identity reader.
             personas:
                 Frozen persona reader.
+            summaries:
+                Owned rolling-summary persistence.
             models:
                 Replaceable provider/model capabilities.
         """
@@ -59,6 +66,9 @@ class ConversationService:
         self._identities = identities
         self._personas = personas
         self._models = models
+        self._eligibility = OngoingContextEligibility()
+        self._budgeter = OngoingContextBudgeter()
+        self._summaries = RollingSummaryService(summaries, models)
 
     def history(self, scope: ConversationScope) -> ConversationHistory:
         """Inspect committed history and incomplete output separately.
@@ -262,10 +272,16 @@ class ConversationService:
             raise ArchivedContinuityError("Archived continuity is read-only")
         persona = self._personas.get(scope.persona_id)
         identity = self._identities.get(scope.identity_id)
-        prompt = assemble_ongoing_prompt(
-            persona, identity, continuity, history.messages, current_input
+        counter = self._models.token_counter(generation.model.provider)
+        active = self._summaries.active(scope)
+        for _ in range(len(history.messages) // 2 + 1):
+            eligible = self._eligibility.select(history, active, current_input)
+            selection = self._budgeter.assemble(
+                persona, identity, continuity, eligible, generation, counter
+            )
+            if not selection.omitted_turns:
+                return selection.prompt
+            active = self._summaries.advance(scope, active, selection.omitted_turns)
+        raise ContextCapacityError(
+            "Conversation summary did not make bounded progress."
         )
-        tokens = self._models.token_counter(generation.model.provider).count(prompt)
-        if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
-            raise ContextCapacityError("Required context exceeds this model's capacity")
-        return prompt

@@ -22,6 +22,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import (
     ConfiguredModelRegistry,
@@ -124,6 +125,7 @@ def service(
         DbContinuityRepository(factory),
         DbIdentityRepository(factory),
         DbPersonaRepository(factory),
+        DbSummaryRepository(factory),
         registry(gateway, context),
     )
 
