@@ -1,17 +1,25 @@
 """Persistence contracts."""
 
-from typing import Protocol
+from datetime import datetime
+from typing import Literal, Protocol
 from uuid import UUID
 
-from chat_buddy.characters.domain import (
+from chat_buddy.characters.domain.continuity import (
     Continuity,
-    Identity,
-    IdentityDetails,
-    Persona,
-    PersonaCore,
     StartContinuity,
     StartingRelationship,
 )
+from chat_buddy.characters.domain.conversation import (
+    ConversationHistory,
+    ConversationScope,
+    ConversationSettings,
+    GenerationAttempt,
+    Message,
+    SubmittedInput,
+)
+from chat_buddy.characters.domain.identity import Identity, IdentityDetails
+from chat_buddy.characters.domain.llm import EffectiveGeneration
+from chat_buddy.characters.domain.persona import Persona, PersonaCore
 
 
 class IdentityRepository(Protocol):
@@ -258,6 +266,145 @@ class ContinuityRepository(Protocol):
 
         Returns:
             The archived snapshot, including repeated archive requests.
+        """
+
+        ...
+
+
+class ConversationRepository(Protocol):
+    """Serialize message and attempt writes with continuity archival."""
+
+    def history(self, scope: ConversationScope) -> ConversationHistory:
+        """Read committed history and attempt provenance.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached domain snapshot.
+        """
+
+        ...
+
+    def configure(
+        self, scope: ConversationScope, settings: ConversationSettings
+    ) -> None:
+        """Save next-attempt defaults on a writable conversation.
+
+        Args:
+            scope:
+                Complete required ownership.
+            settings:
+                Validated requested selection.
+        """
+
+        ...
+
+    def begin(
+        self,
+        scope: ConversationScope,
+        generation: EffectiveGeneration,
+        settings: ConversationSettings,
+        expected_sequence: int,
+        submitted: SubmittedInput | None,
+    ) -> GenerationAttempt:
+        """Atomically reserve an attempt and optionally append its user message.
+
+        Args:
+            scope:
+                Complete required ownership.
+            generation:
+                Immutable effective response configuration.
+            settings:
+                Current requested selection to persist.
+            expected_sequence:
+                Last message position observed during prompt preflight.
+            submitted:
+                New input, or None to continue the existing unmatched tail.
+
+        Returns:
+            Detached domain snapshot.
+        """
+
+        ...
+
+    def claim(self, scope: ConversationScope, attempt_id: UUID) -> GenerationAttempt:
+        """Atomically transition a pending attempt to streaming.
+
+        Args:
+            scope:
+                Complete required ownership.
+            attempt_id:
+                Pending attempt identifier.
+
+        Returns:
+            Detached domain snapshot.
+        """
+
+        ...
+
+    def append(self, scope: ConversationScope, attempt_id: UUID, chunk: str) -> None:
+        """Persist progress and refresh its heartbeat.
+
+        Args:
+            scope:
+                Complete required ownership.
+            attempt_id:
+                Streaming attempt identifier.
+            chunk:
+                New output text.
+        """
+
+        ...
+
+    def complete(self, scope: ConversationScope, attempt_id: UUID) -> Message:
+        """Atomically append a persona message and complete its attempt.
+
+        Args:
+            scope:
+                Complete required ownership.
+            attempt_id:
+                Streaming attempt identifier.
+
+        Returns:
+            Detached domain snapshot.
+        """
+
+        ...
+
+    def stop(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        status: Literal["failed", "interrupted"],
+    ) -> None:
+        """Terminate an open attempt without modifying committed history.
+
+        Args:
+            scope:
+                Complete required ownership.
+            attempt_id:
+                Attempt to terminate.
+            status:
+                Terminal failure or interruption status.
+        """
+
+        ...
+
+    def reconcile(
+        self, scope: ConversationScope, inactive_before: datetime
+    ) -> ConversationHistory:
+        """Interrupt expired attempts while fencing their late output.
+
+        Args:
+            scope:
+                Complete required ownership.
+            inactive_before:
+                Only heartbeats at or before this UTC cutoff are abandoned.
+
+        Returns:
+            Detached domain snapshot.
         """
 
         ...

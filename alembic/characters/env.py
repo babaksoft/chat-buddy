@@ -14,7 +14,7 @@ sys.path.insert(0, str(SRC_PATH))
 
 # Import the model registry so future Characters tables attach to the metadata.
 import chat_buddy.characters.infrastructure.db.models  # noqa: F401
-from chat_buddy.characters.infrastructure.db.base import (
+from chat_buddy.characters.infrastructure.db import (
     CHARACTERS_SCHEMA,
     CharactersBase,
 )

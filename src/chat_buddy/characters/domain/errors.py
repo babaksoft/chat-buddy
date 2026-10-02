@@ -59,3 +59,19 @@ class ProviderInvocationError(RuntimeError):
 
 class InvalidProviderResponseError(ProviderInvocationError):
     """A provider returned malformed or empty summary output."""
+
+
+class ConversationNotFoundError(LookupError):
+    """The conversation or attempt does not match the supplied ownership."""
+
+
+class IncompleteTurnError(ValueError):
+    """An unmatched user tail must be continued before sending again."""
+
+
+class AttemptConflictError(ValueError):
+    """An open, terminal, or stale attempt prevents the requested operation."""
+
+
+class ContextCapacityError(ValueError):
+    """Required prompt and complete history exceed the input capacity."""

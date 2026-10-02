@@ -13,11 +13,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm import sessionmaker
 
-from chat_buddy.characters.application.identity_service import IdentityService
-from chat_buddy.characters.domain.errors import StaleIdentityError
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
+from chat_buddy.characters.application import IdentityService
+from chat_buddy.characters.domain import Identity, IdentityDetails, StaleIdentityError
 from chat_buddy.characters.infrastructure.db.models import IdentityModel
-from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
 )
 
@@ -67,7 +66,9 @@ def test_fresh_upgrade_downgrade_and_reupgrade_preserve_populated_chat(
         "alembic_version",
         "continuities",
         "conversations",
+        "generation_attempts",
         "identities",
+        "messages",
         "personas",
         "starting_relationships",
     ]

@@ -11,14 +11,27 @@ from chat_buddy.characters.domain.continuity import (
     StartingOrigins,
     StartingRelationship,
 )
+from chat_buddy.characters.domain.conversation import (
+    AttemptStatus,
+    ConversationHistory,
+    ConversationScope,
+    ConversationSettings,
+    GenerationAttempt,
+    Message,
+    SubmittedInput,
+)
 from chat_buddy.characters.domain.errors import (
     ActiveContinuityError,
     ArchivedContinuityError,
+    AttemptConflictError,
     ConfirmationConflictError,
+    ContextCapacityError,
     ContinuityNotFoundError,
+    ConversationNotFoundError,
     FrozenIdentityError,
     FrozenPersonaError,
     IdentityNotFoundError,
+    IncompleteTurnError,
     InvalidProviderResponseError,
     ModelResolutionError,
     PersonaNotFoundError,
@@ -28,7 +41,10 @@ from chat_buddy.characters.domain.errors import (
     UnsupportedContinuityModeError,
     UnsupportedGenerationError,
 )
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
+from chat_buddy.characters.domain.identity import (
+    Identity,
+    IdentityDetails,
+)
 from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
     GenerationConfiguration,
@@ -39,31 +55,54 @@ from chat_buddy.characters.domain.llm import (
     SummaryGateway,
     TokenCounter,
 )
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.domain.persona import (
+    Persona,
+    PersonaCore,
+)
+from chat_buddy.characters.domain.repositories import (
+    ContinuityRepository,
+    ConversationRepository,
+    IdentityRepository,
+    PersonaRepository,
+)
 
 __all__ = [
     "ActiveContinuityError",
     "ArchivedContinuityError",
+    "AttemptConflictError",
+    "AttemptStatus",
     "ConfirmationConflictError",
+    "ContextCapacityError",
     "Continuity",
     "ContinuityGroup",
     "ContinuityLifecycle",
     "ContinuityMode",
     "ContinuityNotFoundError",
+    "ContinuityRepository",
+    "ConversationHistory",
+    "ConversationNotFoundError",
+    "ConversationRepository",
+    "ConversationScope",
+    "ConversationSettings",
     "EffectiveGeneration",
     "FrozenIdentityError",
     "FrozenPersonaError",
+    "GenerationAttempt",
     "GenerationConfiguration",
     "Identity",
     "IdentityDetails",
     "IdentityNotFoundError",
+    "IdentityRepository",
+    "IncompleteTurnError",
     "InvalidProviderResponseError",
+    "Message",
     "ModelDescriptor",
     "ModelRegistry",
     "ModelResolutionError",
     "Persona",
     "PersonaCore",
     "PersonaNotFoundError",
+    "PersonaRepository",
     "PromptMessage",
     "ProviderInvocationError",
     "RelationshipIntent",
@@ -74,6 +113,7 @@ __all__ = [
     "StartContinuity",
     "StartingOrigins",
     "StartingRelationship",
+    "SubmittedInput",
     "SummaryGateway",
     "TokenCounter",
     "UnsupportedContinuityModeError",

@@ -179,9 +179,9 @@ reset is needed for this slice. No new runtime settings or Ollama setup is neede
 The Characters UI remains a landing page until the later UI slice.
 
 Compose `IdentityService` from
-`chat_buddy.characters.application.identity_service` with
+`chat_buddy.characters.application` with
 `DbIdentityRepository` from
-`chat_buddy.characters.infrastructure.db.repositories.identity_repository` and
+`chat_buddy.characters.infrastructure.db.repositories` and
 `CharactersSessionLocal` from the Characters database package. The service exposes
 `create`, `list`, `inspect`, `edit`, `duplicate`, and `ensure_default` operations.
 Supply `IdentityDetails` values for authored fields and the last observed revision
@@ -197,8 +197,8 @@ Apply revision `5cb588ac2285` with
 provider setup is needed. The UI remains the landing page.
 
 Compose `PersonaService` from
-`chat_buddy.characters.application.persona_service` with `DbPersonaRepository`
-from `chat_buddy.characters.infrastructure.db.repositories.persona_repository`
+`chat_buddy.characters.application` with `DbPersonaRepository`
+from `chat_buddy.characters.infrastructure.db.repositories`
 and the Characters session factory. It exposes `create`, `list`, `inspect`,
 `edit`, and `duplicate`. Supply a `PersonaCore` with a required `name` and
 `definition`, plus optional free-form `traits`. Limits are 128, 8192, and 4096
@@ -218,9 +218,9 @@ the active Ongoing uniqueness constraint. No reset or new configuration is neede
 Chat and legacy migration histories are unchanged. The UI remains a landing page.
 
 Compose `ContinuityService` from
-`chat_buddy.characters.application.continuity_service` with
+`chat_buddy.characters.application` with
 `DbContinuityRepository` from
-`chat_buddy.characters.infrastructure.db.repositories.continuity_repository`
+`chat_buddy.characters.infrastructure.db.repositories`
 and the Characters session factory. `start` accepts a frozen `StartContinuity`
 value containing a confirmation UUID, both profile identifiers and reviewed
 revisions, and a `RelationshipSelection`. It transactionally freezes both profiles
@@ -270,8 +270,8 @@ Slice 4 adds Characters-owned streaming response and summary capabilities withou
 schema changes. No running Ollama service is needed for ordinary tests. The UI
 continues to use its landing page until the later UI slices.
 
-Call `create_model_resolver()` from
-`chat_buddy.characters.infrastructure.llm.configured_providers` only when composing
+Call `create_model_registry()` from
+`chat_buddy.characters.infrastructure.llm` only when composing
 Characters services. `resolve_default("response")` and `resolve_default("summary")`
 return independent effective selections. `resolve` also accepts an explicit
 configured provider/model pair and generation overrides. Select the matching
@@ -294,3 +294,37 @@ Pull both selected models with `ollama pull <model>` before local invocation.
 Set context limits to values supported by the selected models. The local counter
 uses a conservative UTF-8 byte estimate with framing overhead, not exact usage.
 These settings and clients are independent of Chat configuration.
+
+### Characters durable Ongoing backend
+
+Slice 5 adds migration `f71d92ab0c55`: conversation generation defaults,
+append-only messages, and a separate generation ledger. Apply it with
+`uv run alembic -c alembic-characters.ini upgrade head`; Chat migrations and
+configuration are independent. Existing continuities remain usable. No additional
+provider settings are required, and the UI remains the landing page until the UI
+slices.
+
+Compose the backend lazily with `create_conversation_service()` from
+`chat_buddy.characters.infrastructure`. Every operation
+requires a `ConversationScope` containing identity, persona, continuity, and
+conversation identifiers. `send(scope, SubmittedInput(content=...))` commits the
+input and returns a pending attempt. Exhaust `stream(scope, attempt.id)` to commit
+the persona response; use `contextlib.closing` when consumption may stop early.
+`history` returns saved messages and attempts separately. `configure` validates
+and saves a `ConversationSettings` selection for the next attempt without changing
+past effective settings.
+
+`resume` reloads history and interrupts attempts whose progress heartbeat is at
+least five minutes old. Closing a consumed stream interrupts it immediately.
+`continue_incomplete_turn` reserves a fresh attempt for the existing unmatched
+user input, preserving previous failures and partial output. Another send must
+wait for that input to complete. Archived history remains readable and cannot
+accept generation writes. Completion checks archival again after the provider
+returns.
+
+The prompt includes required persona, identity, starting relationship, fixed
+presentation, and all committed history. Partial output stays outside it. Token
+accounting reserves output capacity and 64 additional overhead tokens; overflow
+raises `ContextCapacityError` before saving an attempt or calling a provider.
+Rolling summaries arrive in Slice 6. Ongoing performs no memory extraction or
+relationship/persona evolution.

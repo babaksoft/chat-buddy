@@ -338,7 +338,7 @@ adapters without a Chat service or a running external model.
 
 ### Slice 5 — Durable Ongoing turns, streaming, and incomplete-turn recovery
 
-Status: Proposed
+Status: Complete
 
 Add immutable user/persona message values and persistence plus a Characters-owned
 generation ledger. Record submitted input, effective provider/model/configuration,

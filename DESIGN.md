@@ -578,3 +578,31 @@ The following details will be refined when their implementation stage begins:
 - Memory categories, confidence, and review workflow in each area.
 - Branch visualization and naming.
 - Archival and duplication UX for Characters continuities and personas.
+
+
+#### Durable Ongoing turns
+
+Characters records committed messages in a deterministic sole path, separately
+from its generation ledger. A send commits the user input and pending attempt
+together. Exhausting a stream commits the persona message and completed attempt
+together. Failed or interrupted output remains attempt evidence and never enters
+history or provider context. Each conversation permits one open attempt and one
+unmatched user tail. Continuation retries that input; it cannot regenerate a
+completed response. All writes serialize with archival on the continuity row.
+
+The conversation saves requested provider/model defaults for future attempts;
+each attempt retains an immutable effective selection and submitted input.
+Closing a consumed stream interrupts it. Resume interrupts pending or streaming
+attempts with no persisted progress for five minutes. Progress refreshes that
+heartbeat. Reconciliation fences late output, so an expired provider stream
+cannot commit a response after continuation or archival. A quiet live provider
+may expire; its caller receives a conflict and can continue the saved input.
+
+Prompt order is persona core, identity, relationship intent and starting state,
+fixed response presentation, then complete committed history and current input.
+No evolved current-state inputs exist yet. Token counting includes provider
+framing, a fixed additional 64-token overhead reserve, and the effective output
+reserve. Slice 5 includes all history and rejects overflow before reserving an
+attempt or invoking a provider; Slice 6 supplies summary compression. Partial
+output, other continuities, extracted memory, and synthetic shared events never
+enter this prompt.

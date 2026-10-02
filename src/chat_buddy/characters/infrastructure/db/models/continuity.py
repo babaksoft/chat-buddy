@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from chat_buddy.characters.infrastructure.db.base import CharactersBase
+from chat_buddy.characters.infrastructure.db import CharactersBase
 
 
 class ContinuityModel(CharactersBase):
@@ -69,6 +69,7 @@ class ConversationModel(CharactersBase):
 
     __tablename__ = "conversations"
     __table_args__ = (
+        UniqueConstraint("id", "continuity_id", name="uq_conversation_scope"),
         ForeignKeyConstraint(
             ["continuity_id", "identity_id", "persona_id"],
             [
@@ -94,6 +95,10 @@ class ConversationModel(CharactersBase):
     )
     persona_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Persona matching continuity ownership."
+    )
+
+    generation_settings: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, doc="Requested provider model and defaults for future attempts."
     )
 
 

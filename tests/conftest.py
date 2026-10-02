@@ -53,7 +53,7 @@ def characters_session_factory() -> Generator[sessionmaker[Session], None, None]
     """
 
     from chat_buddy.characters.infrastructure.db import models  # noqa: F401
-    from chat_buddy.characters.infrastructure.db.base import (
+    from chat_buddy.characters.infrastructure.db import (
         CHARACTERS_SCHEMA,
         CharactersBase,
     )

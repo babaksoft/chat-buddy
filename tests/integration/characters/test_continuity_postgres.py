@@ -15,35 +15,31 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application.continuity_service import ContinuityService
-from chat_buddy.characters.domain.continuity import (
-    Continuity,
-    RelationshipIntent,
-    RelationshipSelection,
-    StartContinuity,
-)
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.application import ContinuityService
+from chat_buddy.characters.domain import (
     ActiveContinuityError,
     ConfirmationConflictError,
+    Continuity,
     FrozenIdentityError,
     FrozenPersonaError,
+    Identity,
+    IdentityDetails,
+    Persona,
+    PersonaCore,
+    RelationshipIntent,
+    RelationshipSelection,
     StaleIdentityError,
     StalePersonaError,
+    StartContinuity,
 )
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityModel,
     ConversationModel,
     StartingRelationshipModel,
 )
-from chat_buddy.characters.infrastructure.db.repositories.continuity_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
-)
-from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
     DbIdentityRepository,
-)
-from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
     DbPersonaRepository,
 )
 
@@ -489,8 +485,7 @@ def test_slice_three_uses_one_revision_with_final_relationship_values(
     engine = characters_postgres_engine
     configuration = _configuration(engine)
     history = ScriptDirectory.from_config(configuration)
-    assert history.get_heads() == ["83a2c09d7f41"]
-    revision = history.get_revision("head")
+    revision = history.get_revision("83a2c09d7f41")
     assert revision is not None and revision.down_revision == PRIOR_HEAD
     command.upgrade(configuration, PRIOR_HEAD)
     command.upgrade(configuration, "head")
