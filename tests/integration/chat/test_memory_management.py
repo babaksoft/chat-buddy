@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.chat.application.schemas import MemoryManagementOutcome
+from chat_buddy.chat.application import MemoryManagementOutcome
 from chat_buddy.chat.application.service import MemoryManagementService
 from chat_buddy.chat.domain import (
     CompletedTurn,

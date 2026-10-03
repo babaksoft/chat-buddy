@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 
-PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
+PACKAGE_ROOT = Path(__file__).parents[3] / "src" / "chat_buddy"
 CHAT_ROOT = PACKAGE_ROOT / "chat"
 FORBIDDEN_DEPENDENCIES = (
     "chat_buddy.characters",

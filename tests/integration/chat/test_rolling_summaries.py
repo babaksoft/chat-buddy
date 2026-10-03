@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.chat.application.config import RollingSummaryConfig
+from chat_buddy.chat.application import RollingSummaryConfig
 from chat_buddy.chat.application.service import RollingSummaryService
 from chat_buddy.chat.domain import (
     ChatMessage,

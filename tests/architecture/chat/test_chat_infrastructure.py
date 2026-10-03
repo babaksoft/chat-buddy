@@ -7,7 +7,7 @@ from typing import get_args, get_origin, get_type_hints
 
 from sqlalchemy.orm import Session, sessionmaker
 
-PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
+PACKAGE_ROOT = Path(__file__).parents[3] / "src" / "chat_buddy"
 CHAT_INFRASTRUCTURE_ROOT = PACKAGE_ROOT / "chat" / "infrastructure"
 ALLOWED_CHAT_DEPENDENCIES = (
     "chat_buddy.chat.domain",
@@ -169,7 +169,7 @@ def test_chat_generation_migration_isolated_from_characters() -> None:
     """Verify the Stage 2 generation migration owns only Chat objects."""
 
     migration = (
-        Path(__file__).parents[2]
+        Path(__file__).parents[3]
         / "alembic"
         / "chat"
         / "versions"
@@ -184,7 +184,7 @@ def test_stage_three_persistence_migration_isolated_from_characters() -> None:
     """Verify the Slice 3 migration owns only Chat schema objects."""
 
     migration = (
-        Path(__file__).parents[2]
+        Path(__file__).parents[3]
         / "alembic"
         / "chat"
         / "versions"

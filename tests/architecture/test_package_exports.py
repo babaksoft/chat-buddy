@@ -1,9 +1,5 @@
 """Architecture symbols use their owning package's explicit public boundary."""
 
-# NOTE: This module is temporarily disabled, because a `/btw` Codex prompt didn't
-# work as expected and produced a huge diff (which I discarded until later)
-
-DISABLED = '''
 import ast
 from pathlib import Path
 
@@ -94,5 +90,3 @@ def _exports(path: Path) -> set[tuple[str, str]]:
         for symbol in node.names
         if (symbol.asname or symbol.name) in public
     }
-
-'''

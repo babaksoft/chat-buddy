@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parents[2]
+PROJECT_ROOT = Path(__file__).parents[3]
 
 
 def test_characters_domain_imports_no_outward_layers() -> None:

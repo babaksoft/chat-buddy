@@ -9,7 +9,7 @@ from pathlib import Path
 def test_ui_uses_application_services_without_database_or_provider_access() -> None:
     """Reject persistence, SDK, and cross-area imports in Characters UI."""
 
-    root = Path(__file__).parents[2] / "src/chat_buddy/characters/ui"
+    root = Path(__file__).parents[3] / "src/chat_buddy/characters/ui"
     forbidden = (
         "sqlalchemy",
         "ollama",

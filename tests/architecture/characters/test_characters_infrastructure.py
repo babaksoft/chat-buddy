@@ -12,10 +12,10 @@ from chat_buddy.characters.infrastructure.db import (
 )
 from chat_buddy.chat.infrastructure.db import ChatBase
 
-PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
+PACKAGE_ROOT = Path(__file__).parents[3] / "src" / "chat_buddy"
 CHARACTERS_INFRASTRUCTURE_ROOT = PACKAGE_ROOT / "characters" / "infrastructure"
 CHARACTERS_MIGRATION_ENV = (
-    Path(__file__).parents[2] / "alembic" / "characters" / "env.py"
+    Path(__file__).parents[3] / "alembic" / "characters" / "env.py"
 )
 ALLOWED_CHARACTERS_DEPENDENCIES = (
     "chat_buddy.characters",

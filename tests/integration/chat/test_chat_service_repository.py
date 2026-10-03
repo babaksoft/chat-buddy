@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.chat.application.schemas import ChatRequest
+from chat_buddy.chat.application import ChatRequest
 from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,
@@ -28,7 +28,7 @@ from chat_buddy.chat.infrastructure.db.repositories import (
     ConversationRepository,
     GenerationAttemptRepository,
 )
-from chat_buddy.chat.infrastructure.llm.provider_registry import (
+from chat_buddy.chat.infrastructure.llm import (
     StaticProviderRegistry,
     StaticResponseGatewayResolver,
 )

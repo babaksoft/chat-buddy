@@ -12,7 +12,7 @@ sys.path.insert(0, str(SRC_PATH))
 
 # Import the model registry so all Chat tables are attached to the metadata.
 import chat_buddy.chat.infrastructure.db.models  # noqa: F401
-from chat_buddy.chat.infrastructure.db.base import (
+from chat_buddy.chat.infrastructure.db import (
     CHAT_SCHEMA,
     ChatBase,
 )

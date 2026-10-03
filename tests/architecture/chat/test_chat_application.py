@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 
-PACKAGE_ROOT = Path(__file__).parents[2] / "src" / "chat_buddy"
+PACKAGE_ROOT = Path(__file__).parents[3] / "src" / "chat_buddy"
 APPLICATION_ROOT = PACKAGE_ROOT / "chat" / "application"
 UI_ROOTS = (PACKAGE_ROOT / "chat" / "ui", PACKAGE_ROOT / "ui")
 PROVISIONAL_PATHS = (

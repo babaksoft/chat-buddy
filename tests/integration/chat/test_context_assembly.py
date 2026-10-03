@@ -6,11 +6,12 @@ from uuid import UUID
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.chat.application.config import ContextBudgetConfig, RollingSummaryConfig
-from chat_buddy.chat.application.context_builder import (
+from chat_buddy.chat.application import (
     ContextAssemblyService,
+    ContextBudgetConfig,
     DefaultContextBudgeter,
     DefaultContextEligibility,
+    RollingSummaryConfig,
 )
 from chat_buddy.chat.application.service import RollingSummaryService
 from chat_buddy.chat.domain import (

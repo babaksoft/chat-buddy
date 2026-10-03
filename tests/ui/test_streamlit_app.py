@@ -10,7 +10,7 @@ from streamlit.util import calc_hash
 
 from chat_buddy.characters.domain import Identity, IdentityDetails, Persona, PersonaCore
 from chat_buddy.characters.ui import page as characters_page
-from chat_buddy.chat.application.schemas import (
+from chat_buddy.chat.application import (
     ChatRequest,
     GenerationSelection,
     ManagedMemory,
