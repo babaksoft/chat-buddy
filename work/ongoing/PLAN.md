@@ -1,580 +1,415 @@
-# Stage 4 Execution Plan — Characters foundations and Ongoing mode
+# Stage 5 Execution Plan — Characters retry and branching
 
-Status: Complete
+Status: Proposed
 
 Last updated: 2026-10-03
 
 ## Scope and starting point
 
-Deliver [Stage 4 of the master plan](../../PLAN.md): an identity and persona can
-start, resume, and converse within an isolated Ongoing continuity. Both profiles
-allow authored edits before first use; starting a continuity freezes its identity
-and persona transactionally. Each identity/persona pair has at most one active Ongoing continuity. Long conversations use a
-continuity-owned rolling summary, with no extracted long-term memory.
+Deliver [Stage 5 of the master plan](../../PLAN.md): Characters messages become
+immutable nodes in a recoverable conversation graph, each conversation records one
+selected leaf, completed persona responses can have at most three retry
+alternatives, and users can branch from an earlier point without deleting either
+future. Only the selected root-to-leaf path may enter context, rolling summaries,
+or later derivation.
 
-Stages 0–3 are complete. At the start of Stage 4, Characters had empty domain,
-application, and prompt packages, a landing page, independent database
-configuration and metadata, and an empty Alembic baseline at `61a5c7060ad9`. It
-had no profile, continuity, conversation, message, gateway, or summary implementation. Build on that scaffold
-and the existing area-isolation checks. Existing Chat implementations are useful
-behavioral references, but are not dependencies of Characters.
+Stage 4 is complete. It supplies one Ongoing conversation per continuity, a linear
+alternating message history, durable generation attempts, immutable effective
+provider/model configuration, rolling summaries, and a usable Streamlit workflow.
+Its schema already has message-to-conversation ownership, persona responses linked
+to their user message, globally unique message sequence positions, one response per
+user message, and one active summary per conversation. Those linear constraints
+must be migrated rather than worked around.
 
-This document records implementation scope and verification. Slices 1–10 and
-Stage 4 are complete. The master plan and accepted ADRs remain authoritative.
+Storyline and Timeline creation do not exist yet. Stage 5 therefore implements and
+tests their branching decision contract without inventing placeholder scenes, days,
+or forks. Stage 6 must connect older-scene decisions to a real Storyline fork, and
+Stage 8 must connect closed-day decisions to a real Timeline fork. Until then such
+requests fail closed with an explicit `fork_required` result; they must never fall
+back to an in-place branch.
 
-## ADR constraints
+The master plan and accepted ADRs remain authoritative. Before implementation,
+record the detailed graph, retry-counting, selection, and summary-lineage behavior
+below in a concise Characters ADR or the Characters design section.
 
-| Record | Stage 4 consequence |
-|---|---|
-| [006 — Continuity ownership](../../docs/decisions/006-continuity-ownership.md) | Continuity owns conversations, summaries, starting relationship state, and future adaptation. Every history/context operation requires continuity ownership. |
-| [007 — Identity and persona first-use freezing](../../docs/decisions/007-identity-and-persona-immutability.md) | Allow authored identity/persona edits before first use; freeze both at first continuity creation. Never switch continuity ownership. After first use, authored changes require new or duplicated profiles. |
-| [008 — Mode context and memory](../../docs/decisions/008-mode-context-and-memory.md) | Preserve Characters context ordering. Ongoing has no extracted memory; eligibility, budgeting, and summarization are separate responsibilities. |
-| [009 — Branches and retries](../../docs/decisions/009-branches-and-retries.md) | Completed messages are immutable. Stage 4 has a sole conversation path; selected leaves, response alternatives, the three-retry allowance, and branch actions arrive in Stage 5. |
-| [010 — Relationship evolution](../../docs/decisions/010-relationship-evolution.md) | Persist relationship intent and a qualitative starting state per continuity. An established state is user-selected and invents no shared events. Evolution arrives in Stage 7. |
-| [011 — Timeline time and closure](../../docs/decisions/011-timeline-time-and-closure.md) | Reserve Timeline as a mode value, but defer dated conversations, timezone-boundary behavior, closure, and DST handling to Stage 8. |
-| [012 — Legacy migration](../../docs/decisions/012-legacy-data-migration.md) | Superseded: do not import legacy rows, create archived default continuities, or transfer Chat memory. |
-| [013 — Independent areas](../../docs/decisions/013-separate-chat-and-characters-areas.md) | Use Ongoing terminology, Characters-owned layers and schema, and the shared routing shell. No Chat imports, queries, foreign keys, services, prompts, or runtime initialization. |
-| [014 — Provider-neutral access](../../docs/decisions/014-provider-neutral-llm-access.md) | Own Characters gateway contracts and adapters. Start with Ollama and prove substitution using a test provider. Cloud vendors require a Characters-applicable follow-up ADR. |
+## Behavioral contract to record
 
-Use the [Characters sections of DESIGN.md](../../DESIGN.md#characters-area) for
-identity attributes, persona layers, the navigation hierarchy, starting
-relationship fields, and context order. Chat ADRs 015–022 do not automatically
-define Characters behavior or authorize Characters cloud adapters.
-
-## Proposed Stage 4 behavior
-
-These choices fill Stage 4 implementation gaps without changing accepted ADRs.
-Record them in Characters design documentation before implementing the affected
-slice; add a concise behavioral Characters ADR where a new durable contract needs
-one. Keep implementation details and verification in the master/stage plans.
-Do not silently copy Chat lifecycle or context policy.
-
-- Represent immutable domain values and application snapshots with frozen
-  Pydantic models. An editable identity or persona is replaced by a validated value
-  through an application service, not mutated in memory. Declare Pydantic directly with
-  `uv add` if needed rather than relying on a transitive dependency.
-- Create a Characters-owned default identity displayed as **You**, idempotently
-  when Characters setup first needs it. Do not fabricate demographic details.
-  Support name, optional gender, age or birth date, optional pronouns/preferred
-  address, and an optional valid IANA timezone. Age and birth date are alternative
-  inputs. Timezone is not required to start Ongoing.
-- Allow revision-checked edits to all authored identity and persona fields before
-  first continuity creation, then freeze all fields, including display fields.
-  Persona freezing is global on first use with any identity. Duplication copies
-  only authored fields, optionally revised, into an editable profile with a new
-  identifier, revision 1, and no continuity history, relationship state, adaptation,
-  or current state. Identity duplicates are non-default. Separate permanent freeze
-  flags enforce edit eligibility; revision counters detect stale edits and starts
-  without requiring historical authored revision storage.
-- Start creates an active Ongoing continuity, its sole conversation, and its
-  starting relationship snapshot in one transaction. The same transaction freezes
-  both selected profiles after locking their rows in a consistent order and
-  verifying both submitted revisions. Selection, draft starts, and canceled
-  confirmation do not freeze either profile; failures roll back freezing and
-  continuity creation together. A confirmation request identifier makes repeated
-  submission idempotent; reuse with different submitted data is rejected.
-- Offer all four relationship intents: platonic, open to romance, established
-  relationship, and let it develop naturally. Non-established starts default to
-  stranger social status, no romantic status, and a neutral current dynamic,
-  without implied shared history. Established starts require explicit social and
-  romantic starting statuses. Reject romantic states under platonic intent.
-  Supporting dimensions and boundaries use validated qualitative values; capture
-  their initial vocabulary and compatibility cases in Slice 3. Every snapshot
-  records user-selected/default origin, without synthetic narrative milestones.
-- Archiving is explicit and makes an Ongoing continuity read-only. Starting a
-  replacement requires a new confirmation and fresh relationship state; it never
-  silently archives an existing active continuity. Reactivation is deferred.
-  Identity and persona freezing remain permanent even after all their continuities
-  are archived; there is no unfreeze operation.
-- Stage 4 exposes only Ongoing creation. Storyline and Timeline may exist in the
-  mode enum but their creation requests are rejected until their stages ship.
-- Preserve completed messages as append-only records. A failed generation may be
-  continued for its existing unmatched user message without creating another
-  user message. This recovers an incomplete turn; it cannot regenerate a completed
-  persona response or consume Stage 5's response-alternative allowance.
-- Use Characters-owned prompts in this order: persona core, identity,
-  relationship intent/starting state, applicable current-state inputs, fixed
-  response presentation, then summary and recent messages. Omit the empty memory
-  slot and scene setup absent from Ongoing. Stage 4 has no style controls or
-  conversation-driven state evolution.
-- Keep summaries derived and continuity/conversation-scoped. They cover only
-  committed complete turns on the sole path. Retain immutable source checkpoints
-  so Stage 5 can add branch-aware eligibility/invalidation through a later
-  migration rather than treating a summary as global memory.
+- A conversation has an implicit root. A message has one optional parent in the
+  same conversation and continuity; persisted root children are user messages.
+  Roles alternate along every edge: user messages descend from persona messages,
+  and persona messages descend from user messages. Siblings are alternatives; rows
+  and parent links are immutable after insertion.
+- `sequence` becomes path depth, not a conversation-wide ordinal. Siblings have the
+  same depth. Existing Stage 4 rows are backfilled into one parent chain without
+  changing identifiers, contents, timestamps, or generation-attempt links.
+- A conversation stores one nullable selected leaf. Empty conversations have no
+  leaf. A new user message, completed response, selected retry alternative, or
+  accepted branch action advances or replaces that pointer atomically. Reads return
+  the selected root-to-leaf path in depth order; graph/alternative inspection is a
+  separate repository operation so unselected nodes cannot accidentally enter a
+  prompt.
+- Branch and alternative selection use an expected selected-leaf identifier as a
+  compare-and-swap guard. A stale browser tab or competing action receives a typed
+  conflict and cannot silently change the active path.
+- **Retry persona response** applies only to the selected path's final completed
+  persona response. It creates a new generation attempt for the same parent user
+  message, never a duplicate user message. A successful completion creates a
+  sibling persona node and selects it. Failed or interrupted attempts remain
+  attempt evidence, create no message, do not change selection, and do not consume
+  an alternative slot.
+- The initial persona response plus at most three successful retries permits four
+  persona siblings for one user message. The repository enforces this limit inside
+  the same transaction that reserves a retry attempt. Retry availability is derived
+  from durable completed siblings, not Streamlit state. Incomplete-turn continuation
+  remains distinct and does not consume this allowance.
+- **Select alternative** selects an exact existing persona node. Selecting a sibling
+  itself makes that response the leaf; selecting one of its saved descendant leaves
+  restores that exact future. The implementation must not guess among multiple
+  descendant futures.
+- **Branch from here** accepts the empty root or a persona message on the selected
+  path. It changes the selected leaf to that point under the compare-and-swap guard;
+  the next send creates a new user child. A user-message branch point is represented
+  by persona-response alternatives and is not a second branch command. Moving the
+  selection alone does not delete nodes, attempts, or summaries.
+- A persona message stores its immutable response provenance directly: effective
+  provider, model, generation configuration/budget, fixed Stage 5 response-style
+  snapshot, strategy name/version, and completing generation-attempt identifier.
+  The attempt ledger remains the source for streaming lifecycle and partial output.
+  Stage 5 records the current fixed style; editable style controls remain Stage 8.
+- A rolling summary is eligible only when its checkpoint message is an ancestor of
+  the selected leaf and its summarized source path matches that checkpoint's unique
+  ancestry. Switching paths never edits a prior summary. The resolver chooses the
+  deepest eligible checkpoint and creates a new immutable lineage when no saved
+  summary covers the selected path. Unselected alternatives and partial attempts
+  never enter response or summary prompts.
+- Ongoing always branches in place. The mode policy returns `in_place` for the
+  latest Storyline scene and an open Timeline day, and `fork_required` for an older
+  Storyline scene with dependent scenes or a closed Timeline day. A caller cannot
+  override a fork-required decision. Storyline/Timeline persistence integration is
+  deferred to their owning stages.
 
 ## Delivery and verification rules
 
-Implement slices in sequence. Each slice is a cohesive change that can be tested
-and inspected locally on top of completed predecessors, leaves the application
-runnable, and does not depend on a later slice to satisfy its own acceptance
-criteria.
-Earlier backend slices can leave the Characters landing page in place.
+Implement the slices in order. Every slice must leave the application runnable,
+have focused automated acceptance criteria, and avoid relying on a later slice for
+its claimed outcome.
 
-For every implementation slice:
+For every slice:
 
-- Add focused tests under `tests/characters/domain/`, `application/`,
-  `infrastructure/`, or `ui/`, with service/repository scenarios under
-  `tests/integration/characters/`. Extend `tests/architecture/` when boundaries
-  change. Keep existing Chat tests intact except for necessary fixture or shell
-  assertion adjustments.
-- Keep business rules in Characters application services, repository and gateway
-  protocols in its domain, SQLAlchemy access in repositories, provider SDK access
-  in infrastructure, and composition in Characters infrastructure. UI calls
-  application services; the shared shell only routes areas.
-- Use complete type hints, absolute imports, repository docstring conventions,
-  and concise `doc` descriptions on every persistence column and relationship.
-- Run focused unit/integration tests and `scripts/check.sh`. Ordinary tests use
-  isolated databases and fake/mocked providers, without running Ollama or cloud
-  APIs. Streamlit tests use application-service doubles.
-- Document configuration, migrations, and visible behavior introduced by the
-  slice. Keep each stage on its own branch. There is no PR workflow; record local
-  verification here and retain screenshots for UI changes when applicable.
+- Put immutable values and repository protocols in Characters domain packages,
+  orchestration and policy in Characters application services, SQLAlchemy access in
+  Characters repositories, and widgets in Characters UI. Do not import Chat.
+- Add focused tests under `tests/characters/` and cross-layer scenarios under
+  `tests/integration/characters/`. Use fake providers for ordinary tests and
+  application-service doubles for Streamlit tests.
+- Require explicit identity, persona, continuity, and conversation ownership on
+  every graph operation. Reject foreign parents, leaves, attempts, checkpoints, and
+  alternatives with typed errors.
+- Preserve archive serialization and the one-open-attempt rule. Provider calls stay
+  outside database transactions; completion must recheck ownership, writability,
+  retry capacity, and the expected branch state.
+- Run the slice's focused tests and `scripts/check.sh`. A slice that changes
+  persistence also runs its PostgreSQL migration and concurrency tests; skipped
+  PostgreSQL cases do not count as verification.
 
-For each persistence slice, add a new revision under `alembic/characters/versions/`
-and run it through `alembic-characters.ini`. Never edit the applied baseline,
-Chat migrations, or legacy history. Verify fresh upgrade, upgrade from the prior
-Characters head, downgrade to that head, and re-upgrade on disposable PostgreSQL.
-Compare Chat schema objects, representative Chat rows, and `chat.alembic_version`
-before and after. Render offline SQL and reject cross-schema references.
-
-SQLite repository tests may provide fast portable coverage, but PostgreSQL tests
-are required for partial uniqueness, row locking, race outcomes, and migrations.
-Provide an explicit test database setting/marker and documented disposable setup;
-normal tests must not connect to the development database. The slice's local
-database validation run must actually run the PostgreSQL cases, not count skipped
-concurrency tests as verification.
+For each persistence change, add a new revision under
+`alembic/characters/versions/` and use `alembic-characters.ini`. Never edit an
+applied migration. Verify fresh upgrade, upgrade from the Stage 4 head, downgrade,
+and re-upgrade on disposable PostgreSQL. Compare representative Chat rows, schema
+objects, and `chat.alembic_version` before and after, and reject cross-schema SQL in
+offline migration output.
 
 ## Slice sequence
 
 | Slice | Self-contained outcome | Depends on | Database impact |
 |---|---|---|---|
-| 1 | Create, edit, list, and duplicate editable identities | Existing scaffold | Identity migration |
-| 2 | Create, inspect, list, edit before use, and duplicate persona cores | 1 | Persona migration |
-| 3 | Start, resume, and archive isolated Ongoing continuities | 1–2 | Continuity, conversation, starting-state migration |
-| 4 | Resolve Characters response/summary providers independently | 1–3 | None |
-| 5 | Persist and stream durable Ongoing turns with failure recovery | 3–4 | Message and generation migration |
-| 6 | Compress long Ongoing context within a deterministic budget | 4–5 | Rolling-summary migration |
-| 7 | Define a replaceable, versioned evolution strategy seam | 3–6 | None; no evolution writes |
-| 8 | Confirm starts and navigate Identity → Persona → Ongoing | 1–3 | Existing repository operations only |
-| 9 | Converse, resume, and recover in the Ongoing UI | 4–8 | Existing repository operations only |
-| 10 | Prove the Stage 4 milestone and independent operation | 1–9 | Verification only |
+| 1 | Freeze graph, retry, selection, provenance, and mode-policy contracts | Stage 4 | None |
+| 2 | Persist and read a selected immutable message graph while preserving Stage 4 behavior | 1 | Message, conversation, attempt, and summary migration |
+| 3 | Assemble and summarize only the selected path | 2 | Existing graph/summary operations only |
+| 4 | Create and select bounded persona-response alternatives | 2–3 | Existing graph/attempt operations only |
+| 5 | Branch Ongoing from an earlier persona point without deleting either future | 2–4 | Existing graph operations only |
+| 6 | Enforce mode-specific in-place versus fork-required decisions | 1, 5 | None; future mode adapters use the contract |
+| 7 | Expose retries, alternatives, provenance, and branch controls in Ongoing UI | 4–6 | Existing application operations only |
+| 8 | Prove Stage 5 branch isolation, recovery, and migration safety | 1–7 | Verification only |
 
-### Slice 1 — Identity values and management
+### Slice 1 — Domain graph and branching decisions
 
-Status: Complete
+Status: Proposed
 
-Implement identity values, validation, Characters-owned repository protocols,
-SQLAlchemy mapping, migration, and application operations to create, list, inspect,
-edit before use, and duplicate identities. Include frozen-state representation
-and reject editing a frozen record; Slice 3 supplies the first-use transition.
-Provide idempotent default **You** setup without initializing Characters on the
-Chat route.
+Add frozen domain values for message parents, selected paths, alternative groups,
+response provenance, retry availability, branch requests/results, and typed stale
+selection, invalid-parent, retry-limit, and fork-required failures. Extend the
+repository protocol with deliberately separate selected-path and graph-inspection
+reads. Define the mode-policy input so Storyline can report dependent later scenes
+and Timeline can report a closed day without importing future persistence models.
 
-Use frozen Pydantic authored values and snapshots with stable UUIDs, positive
-revision counters, permanent freeze flags, and default designations. Full authored
-replacements require an expected revision. Services check edit eligibility;
-repositories repeat frozen/revision guards in conditional updates, increment the
-revision, and report missing, frozen, or stale identities through typed domain
-errors. Slice 3 locks and verifies both selected profile rows and revisions before
-freezing them during continuity creation.
-
-Reserve the default designation with a nullable unique database slot independent
-of display name; concurrent default insert conflicts return the committed winner.
-Duplicates copy only validated authored details, optionally revised, into new UUIDs
-at revision 1 with editable, non-default status and no continuity history. No
-unfreeze API is provided. UI composition remains assigned to Slice 8.
-
-Establish Characters test fixtures. The current root `tests/conftest.py` imports
-Chat metadata eagerly and installs a SQLite PRAGMA on every engine connection.
-Make Chat fixture imports lazy or scope them to Chat tests, add a separate
-Characters session fixture, and ensure the SQLite hook does not run against
-PostgreSQL. Preserve existing test behavior. SQLAlchemy models stay separate from
-Pydantic values.
+Keep generation-attempt lifecycle separate from completed alternatives. Define
+exactly which effective generation, style, and strategy fields are copied to a
+persona node at completion. Update package-boundary exports and architecture rules.
 
 Verification:
 
-- Unit tests validate identity attributes, invalid age/date/timezone inputs,
-  and immutable value behavior. Service/repository tests verify editable
-  replacements, frozen-edit rejection, and duplication without frozen status
-  or relationship history.
-- Repository and service integration tests round-trip every field, preserve stable
-  identifiers, return deterministic lists, and create **You** once under repeated
-  and concurrent setup.
-- Architecture tests prove Characters domain imports no outward layers and that
-  fixture collection for Characters does not initialize Chat infrastructure.
-- Migration checks prove identity tables and foreign keys are Characters-owned.
-  Replace the obsolete assertion that Characters metadata is empty with ownership
-  and independence assertions as tables are introduced.
+- Domain tests accept valid alternating trees from the implicit root and reject
+  cross-scope parents, multiple root nodes in one selected path, role violations,
+  invalid depths, and mutable values.
+- Policy tests cover Ongoing, latest and older Storyline scenes, open and closed
+  Timeline days, including the fail-closed result when required facts are absent.
+- Contract tests distinguish initial generation, incomplete-turn continuation,
+  completed-response retry, alternative selection, and branch-from-here.
+- Architecture tests prove the contracts import no application, infrastructure,
+  UI, Chat, or future Storyline/Timeline model.
 
-Complete when identity management works through the service and real repository,
-with its tests passing independently of persona or continuity implementation.
+Complete when the graph and mode decisions are unambiguous and executable in unit
+tests without persistence or UI.
 
-### Slice 2 — Persona core management and edits before first use
+### Slice 2 — Graph persistence and Stage 4 compatibility
 
-Status: Complete
+Status: Proposed
 
-Add persona identifiers and validated authored cores with a display name and
-authored definition/traits. Use frozen Pydantic authored values and snapshots with
-a stable UUID, positive authored revision, and permanent freeze flag. Implement
-Characters-owned create, list, inspect, edit-before-use, and duplicate-with-revisions
-operations, repository mapping, and a new migration.
+Add the Characters migration and repository implementation for generalized parent
+links, path depth, the selected conversation leaf, and persona-message provenance.
+Remove the global `(conversation_id, sequence)` and one-response-per-user
+constraints; replace them with ownership, parent-role/depth, response-attempt, and
+appropriate sibling/index constraints. Backfill each existing Stage 4 conversation
+into its exact linear chain and point selection at its final message. Empty
+conversations remain unselected. Backfill completed persona provenance from its
+generation attempt plus the fixed style and baseline strategy version.
 
-An edit replaces authored fields under the same identifier, requires an expected
-revision, and increments the revision. Services check eligibility; repositories
-atomically reject missing, frozen, or stale personas through typed domain errors.
-All authored fields, including the display name, freeze globally when the first
-continuity using the persona is successfully created with any identity. Slice 3
-supplies that transactional freeze using the same row/lock and revision protocol.
-Archival never unfreezes a persona; there is no unfreeze API.
+Make summary rows branch-addressable in the same migration. Preserve their
+immutable checkpoint/source data, remove the assumption that one conversation-wide
+active summary is valid for every future branch, and add indexes needed to resolve
+eligible checkpoints by selected ancestry. Do not discard existing summaries.
 
-Duplication copies only authored fields, optionally revised, into a new identifier
-at revision 1 with editable status and no continuity history. Keep relationship
-adaptation and current state out of the global persona definition. Immutable
-snapshots do not prevent authorized persisted replacements, and an authored
-revision counter does not require historical core storage.
+Implement repository operations to load the selected path, inspect children and
+persona siblings, compare-and-swap the selected leaf, append a child, reserve an
+attempt against a specific user node, and atomically complete an attempt with
+provenance. Adapt existing send/continue/stream code to these operations while
+retaining the linear Stage 4 user experience; no retry or branch button ships yet.
 
 Verification:
 
-- Unit tests cover required authored content, immutable core values/snapshots,
-  edits retaining the identifier and incrementing the revision, and
-  duplicate-with-revisions producing a new editable identifier at revision 1.
-- Service/repository integration tests prove pre-use edits round-trip, previously
-  observed snapshots remain unchanged, and both layers reject frozen/stale edits.
-  Duplicates leave the original intact and copy no freeze state, continuity history,
-  relationship adaptation, current state, or identity-specific state.
-- Repository contract tests reject missing records and competing stale writes;
-  PostgreSQL races prove exactly one concurrent edit wins at a given revision.
-  After first use, authored changes require a new record, including display edits.
-- Migration and architecture checks confirm independent Characters ownership.
+- Repository tests round-trip a multi-level tree and prove selected-path reads omit
+  siblings while graph inspection can recover every node and attempt.
+- Upgrade tests preserve all Stage 4 identifiers, content, timestamps, attempt
+  links, selected history, summary checkpoints, and effective generation data.
+- Fresh, upgrade, downgrade, and re-upgrade tests verify Characters constraints and
+  leave the populated Chat schema and migration head unchanged.
+- PostgreSQL tests reject cross-conversation parents/selections, wrong role/depth,
+  duplicate attempt completion, stale selected-leaf updates, and completion after
+  archive. Concurrent selection or append actions have one deterministic winner.
+- Existing Stage 4 conversation, recovery, summary, UI, and acceptance tests pass
+  with unchanged visible behavior.
 
-Complete when reusable persona cores can be authored, inspected, edited before
-use, and duplicated through application services, with frozen/stale guards ready
-for Slice 3 and no edits permitted to a core already used by a continuity.
+Complete when production data has a valid immutable graph and selected leaf, but
+ordinary send/resume still behaves like Stage 4.
 
-### Slice 3 — Transactional continuity lifecycle and starting relationship
+### Slice 3 — Selected-path context and branch-correct summaries
 
-Status: Complete
+Status: Proposed
 
-Add continuity mode/lifecycle values, immutable ownership, relationship intents,
-qualitative starting-state values and provenance, and the sole Ongoing
-conversation. Define the initial supporting-dimension/boundary vocabulary and
-validation table before coding it; do not implement inferred evolution.
+Change context eligibility and rolling-summary resolution to consume only the
+repository's selected path. Resolve the deepest saved summary whose checkpoint is
+on that path; when branching before a checkpoint, fall back to an eligible ancestor
+summary or create a new lineage from selected messages. Summary advancement records
+the exact selected checkpoint/source path and never deactivates or rewrites a
+summary belonging to another future.
 
-Implement start, resume/read, grouped-list, and archive services and repository
-operations. The start transaction locks both selected identity and persona rows
-in a consistent order, verifies both submitted revisions, permanently freezes both
-profiles, and creates the continuity, conversation, and starting relationship
-snapshot. Persona freezing applies globally on first use with any identity. Use a
-PostgreSQL partial unique index for active Ongoing ownership by identity/persona, in addition
-to service checks. Use Characters-only constraints to prevent conversation or
-starting-state ownership mismatches. Confirmation idempotency is persisted.
-
-Identity and persona edits must participate in the same lock/revision protocol
-as start so an edit racing first use cannot change the confirmed semantics. If an
-edit wins, a start with the old revision fails; if start wins, the edit fails as
-frozen. An already frozen profile remains eligible for a new continuity at its
-current revision. Archive and future message writes must serialize on the continuity so no write commits after archive.
-Keep frozen identity and persona ownership immutable in repository write APIs.
+Keep complete-turn budgeting semantics from Stage 4. A selected user leaf remains
+an incomplete turn; siblings, descendants of an unselected sibling, failed output,
+and abandoned attempts are excluded. Prepare the same selected-path snapshot and
+expected leaf for attempt reservation so a selection race cannot send a prompt for
+one path and persist it on another.
 
 Verification:
 
-- Unit tests cover every intent, valid/invalid starting-state combination,
-  archived lifecycle behavior, unsupported-mode rejection, and immutable
-  identity/persona/mode bindings.
-- Service/repository integration tests prove start commits all records together;
-  an injected failure rolls everything back, including newly applied identity and
-  persona freezing. Previously frozen profiles remain frozen.
-- PostgreSQL races cover two starts for the same pair, default setup/start,
-  identity edit versus start, persona edit versus start, and two identities first
-  using the same persona. Archive-versus-message races arrive in Slice 5 with the
-  actual message repository operations. Exactly one active continuity survives for
-  the same pair; distinct pairs may both start with the same frozen persona.
-  No start commits against a stale reviewed identity or persona revision.
-- Repeated identical confirmation returns the original continuity. Conflicting
-  reuse, a stale draft, and a second active start produce typed errors.
-- Archive, then explicitly start a replacement: old history remains readable,
-  both profiles stay frozen, and the new starting state is independent. First use
-  with one identity prevents persona edits for every other identity, including
-  display fields.
-- Two identities sharing a persona and two archived/current continuities for one
-  pair cannot read or change each other's relationship or conversation records.
-  An established start has user provenance and no invented milestone events.
-- Migration tests exercise the active-only uniqueness constraint directly.
+- Unit tests build two branches with contradictory content and assert that response
+  and summary prompts contain only the selected ancestry.
+- Tests switch before, at, and after summary checkpoints and verify deepest-ancestor
+  reuse, new-lineage creation, chronological rendering, and no stale-summary leak.
+- Integration tests restart the service, change selection, force compression on
+  both branches, and recover each branch's correct summary and recent tail.
+- A PostgreSQL race between prompt preparation and selection change rejects the
+  stale reservation without calling the provider or changing either path.
+- Existing capacity, summary failure, incomplete-turn, and ownership guarantees
+  remain intact.
 
-Complete when start/resume/archive works transactionally through real repositories
-and lifecycle/ownership failures are deterministic under concurrency.
+Complete when selected-path isolation is the only route into provider context and
+rolling summaries are recoverable and correct on every stored branch.
 
-### Slice 4 — Characters-owned LLM capabilities and Ollama adapter
+### Slice 4 — Bounded persona-response retries
 
-Status: Complete
+Status: Proposed
 
-Define narrow domain protocols for streaming persona responses, summary generation,
-provider/model resolution, and token counting. Add immutable effective generation
-configuration and model budget/capability values plus Characters-owned errors.
-Provide an Ollama adapter and configured resolver in Characters infrastructure.
-Response and summary capabilities may use separately configured local models.
+Add application operations to inspect retry availability, begin a retry of the
+selected terminal persona response, stream it through the existing gateway, and
+complete it as a sibling of the original response. Retry uses current saved
+provider/model settings for the new attempt and stores that attempt's immutable
+effective generation, fixed response style, and strategy version on the resulting
+persona message. On successful completion, select the new alternative.
 
-Keep provider clients, model configuration, authentication, and normalized failures
-in infrastructure. Share only genuinely generic low-level utilities if useful;
-do not import Chat token counters, registries, gateway contracts, or prompts.
-Keep area composition lazy. No cloud adapter or additional vendor dependency is
-needed in this stage.
+Enforce three successful retries per user turn in both service policy and the
+repository transaction. Recheck the expected selected leaf and sibling count at
+reservation and completion. Failed/interrupted output stays separately recoverable
+as attempt evidence but does not change the selected path or alternative count.
+Do not route retry through incomplete-turn continuation.
 
 Verification:
 
-- Unit tests validate model lookup, effective configuration, output-token reserve,
-  unsupported capabilities/parameters, and safe error normalization.
-- Adapter contract tests use a mocked Ollama client and a fake second response
-  provider; both stream through the same Characters contract. A response-only
-  provider need not implement summarization.
-- Tests cover error before output, error after partial output, stream closure,
-  summary parsing, and token accounting without network calls.
-- Architecture tests reject SDK imports in domain/application/UI and Chat imports
-  anywhere in Characters; selecting Chat does not construct Characters clients.
+- Unit tests cover availability from zero through three retries, current settings
+  versus immutable old provenance, and rejection when the selected leaf is not a
+  completed persona response.
+- Integration tests create four persona siblings for one user, select each one,
+  and reject a fifth while retaining every response and attempt.
+- Failure before output, partial failure, cancellation, restart, and stale-selection
+  cases preserve the original selected response and retry allowance.
+- PostgreSQL races at the final slot cannot exceed four completed siblings; an
+  archive race cannot commit or select the retry.
+- Captured fake-provider prompts prove an unselected alternative never influences
+  its sibling retry.
 
-Complete when Characters can select and invoke replaceable response and summary
-adapters without a Chat service or a running external model.
+Complete when a completed persona turn has up to three durable alternatives with
+exact provenance and deterministic recovery, selection, and limits.
 
-### Slice 5 — Durable Ongoing turns, streaming, and incomplete-turn recovery
+### Slice 5 — Ongoing branch-from-here and alternative selection
 
-Status: Complete
+Status: Proposed
 
-Add immutable user/persona message values and persistence plus a Characters-owned
-generation ledger. Record submitted input, effective provider/model/configuration,
-timestamps, pending/streaming/completed/failed/interrupted status, and incomplete
-output separately from committed persona messages. Use deterministic message
-ordering on the sole path; parent-node/selected-leaf APIs remain Stage 5 work.
-Persist current provider/model/requested defaults on the conversation; changing
-them affects the next attempt and never rewrites past effective snapshots.
+Add application operations to select an exact persona alternative or saved leaf and
+to branch an active Ongoing conversation from the implicit root or any persona node
+on the selected path.
+Both operations require the expected selected leaf and apply the mode policy before
+changing selection. The next send attaches to the newly selected point. Preserve
+the abandoned future, its alternatives, attempts, provenance, and summaries.
 
-Implement send, stream, inspect history, resume/reconcile abandoned attempts, and
-continue-incomplete-turn services. Atomically create the user message and attempt;
-atomically commit the persona message and completed attempt. Allow one open
-attempt and one unmatched user tail per conversation. Recovery reuses that tail,
-retains historical attempt provenance, and never modifies a completed message.
-Reject another send until the tail completes, and reject writes to archives.
-
-Use Characters-owned prompt assembly and a minimal deterministic token-budget
-policy: reserve fixed prompt overhead and output capacity, include the required
-prompt blocks and complete recent history, and reject overflow before generation.
-Slice 6 adds summary compression rather than introducing an unbounded interim
-prompt path. Provider calls occur outside database transactions; completion
-rechecks continuity writability and ownership before committing.
+Return a graph view sufficient for UI rendering: selected path, alternatives at
+each user turn, whether each node is selected, branchable points, and retry counts.
+Keep it detached from SQLAlchemy and deterministically ordered by creation time and
+identifier. Archived continuities remain inspectable but cannot change selection,
+retry, branch, or send.
 
 Verification:
 
-- Unit tests cover prompt ordering, intent/starting-state inclusion, input
-  validation, budget overflow, lifecycle transitions, and partial-output exclusion.
-- Integration tests stream a complete turn, reload it in a fresh service/session,
-  and verify exact history and immutable generation provenance.
-- Failure-before-output, partial failure, consumer cancellation, and abandoned
-  attempts leave no completed persona response. Continuation creates one response
-  for the existing user message, with no duplicate user or completed response.
-- Concurrent send/completion and archive-during-generation tests prove the open
-  attempt limit and prevent a persona message committing after archive.
-- Context and history queries reject foreign continuity/conversation identifiers.
-  Records from another continuity or Chat never reach a fake provider's captured
-  input. Completed messages cannot be edited or regenerated by this API.
-- No memory extraction or relationship/persona mutation runs after completion.
-  Migration checks verify ownership, attempt constraints, and both atomic writes.
+- Application tests branch from the root, middle, and current leaf; send a distinct
+  future; switch between futures; and recover exact histories after restart.
+- Selecting an alternative with descendants never guesses a descendant. Choosing
+  the alternative itself truncates the selected path there; choosing an exact saved
+  leaf restores that future. A later branch/send builds only under the chosen node.
+- Tests reject user-node branch commands, foreign/off-path nodes, stale leaf guards,
+  active attempts, unmatched user tails where the action is ambiguous, and archives.
+- Repository/application integration tests prove no branch action updates or
+  deletes an existing message, parent, attempt, summary, or provenance snapshot.
+- Concurrent branch/select/send actions serialize to one selected future without
+  orphaning a committed write.
 
-Complete when durable Ongoing conversation works through a fake and mocked Ollama
-adapter, including restart, interruption, and isolated incomplete-turn recovery.
+Complete when Ongoing users can create and revisit divergent futures without
+destructive history changes or cross-branch context.
 
-### Slice 6 — Rolling summaries and deterministic context budgeting
+### Slice 6 — Mode-specific branch policy seam
 
-Status: Complete
+Status: Proposed
 
-Add immutable summary revisions with conversation/continuity ownership, predecessor,
-last covered complete-turn checkpoint, and generation provenance. Persist one
-active revision per conversation through atomic replacement. Add a Characters
-summary gateway prompt and application service separate from context eligibility
-and token budgeting.
+Integrate the pure branching policy into every retry and branch application entry
+point. Ongoing returns an in-place authorization. Define adapter-facing results for
+latest versus older Storyline scenes and open versus closed Timeline days. A
+fork-required result contains the source continuity/conversation/message references
+needed by the owning future workflow, but performs no persistence itself.
 
-Use a deterministic policy recorded before implementation: reserve mandatory
-prompt blocks and output capacity; retain the latest complete turn and current
-user message; select additional complete turns newest-first within the budget,
-then render them chronologically. Compress an uncovered older complete-turn prefix
-when full eligible history would overflow, using the prior summary plus only new
-covered turns. Never split arbitrary messages or inject covered turns twice.
-If mandatory blocks, the retained tail, or the resulting summary cannot fit,
-return a typed context-capacity failure before response generation.
-
-A summary failure leaves its prior active revision intact. Use the existing
-summary only if it and all required uncovered context still fit; otherwise expose
-a recoverable context failure, without sending an oversized or silently incomplete
-prompt. Incomplete attempts/partial output never enter summary inputs. Protect
-replacement with an expected-checkpoint/revision check to reject stale writers.
+Do not add Storyline scene tables, Timeline day/timezone fields, synthetic
+continuities, or generic copy-all repository methods. Stage 6 will implement the
+Storyline fork transaction after scenes exist; Stage 8 will implement Timeline
+closure and fork transactions with its clock and timezone rules.
 
 Verification:
 
-- Unit tests cover exact block order, token boundaries/output reserves, retained
-  recent turns, chronological rendering, compression inputs, oversized current
-  input, and summary failure policy with fake counters/gateways.
-- Service/repository integration tests force multiple summary revisions and prove
-  monotonic checkpoints, active-revision uniqueness, no duplicate coverage, and
-  atomic replacement/rollback. Concurrent stale replacement cannot win.
-- A fresh service resumes the saved summary and uncovered tail with no dependency
-  on Streamlit session state. Two continuities with the same identity/persona
-  cannot share summaries or consume each other's turns.
-- Failed/interrupted generation never changes the complete-turn checkpoint.
-  Summary generation or persistence failure preserves committed conversation
-  history and exposes the documented recovery behavior.
-- Tests prove Ongoing neither creates memory rows nor invokes extraction, and
-  summary queries require both conversation and continuity ownership.
-- Migration checks cover source ownership and independent Characters history.
+- Table-driven unit tests cover every mode/state decision and reject incomplete or
+  contradictory facts.
+- Application contract tests prove retry/branch invokes policy before any graph
+  mutation and that `fork_required` leaves selection and attempts unchanged.
+- Ongoing integration tests prove all valid actions remain in the same continuity.
+- Architecture tests ensure the policy stays Characters-owned and has no dependency
+  on future infrastructure or Chat.
 
-Complete when long Ongoing conversations remain bounded and resumable using their
-own durable summary, with deterministic failure behavior and no extracted memory.
+Complete when current Ongoing behavior is authorized through the same fail-closed
+contract that later Storyline and Timeline workflows must obey.
 
-### Slice 7 — Versioned evolution strategy interface
+### Slice 7 — Ongoing retry and branch UI
 
-Status: Complete
+Status: Proposed
 
-Define a Characters-owned application strategy interface with a stable name and
-version, immutable scoped inputs, and structured proposal outputs. Inputs carry
-identity/persona/continuity references, core and starting-state snapshots, and
-eligible conversation evidence. Outputs describe proposed adaptation or
-relationship changes with source references; they do not contain persistence
-models or mutate repositories.
+Render the selected path by default and expose alternatives at their persona turn.
+Show the initial response plus used/remaining retry count, immutable provider/model,
+strategy version, fixed response-style summary, and generation details. Add
+**Retry response**, **Select alternative**, and **Branch from here** controls only
+when their application preconditions hold. Require a clear branch confirmation
+because changing selection alters subsequent context, but never imply that the old
+future will be deleted.
 
-Provide a baseline no-change strategy and a test implementation proving
-substitution. Stage 4 does not invoke experimental evolution after turns or apply
-proposals. Stage 7 will implement transition validation, proposal persistence,
-append-only events, projections, and corrections; this slice establishes the seam
-without claiming those safeguards already exist.
+Keep incomplete-turn continuation visually distinct from completed-response retry.
+Disable graph mutations during an active attempt and for archives. Use scoped
+widget keys so reruns, continuity switches, and area switches cannot replay an
+action or show another continuity's alternatives. Surface stale-selection conflicts
+by reloading the graph rather than retrying the mutation automatically.
 
 Verification:
 
-- Unit contract tests require stable strategy identity/version, immutable inputs,
-  scoped evidence references, and structured outputs traceable to that version.
-- A composition/integration test substitutes a test strategy using only Characters
-  contracts and fixtures, without constructing Chat, an SDK, or a database client
-  inside the strategy.
-- The production Ongoing workflow leaves starting relationship state and persona
-  cores unchanged after turns; a proposal cannot become durable state through
-  existing service APIs.
+- Streamlit tests cover retry counts, four alternatives, selection, branch
+  confirmation/cancel, retained old futures, provenance display, and reruns.
+- Tests distinguish failed-turn continuation from completed-response retry and
+  verify the appropriate control is shown for each state.
+- Archived, active-attempt, unmatched-tail, retry-exhausted, and stale-browser states
+  expose no invalid write path and present a useful explanation.
+- Switching identities, continuities, or product areas clears graph-specific UI
+  state and never calls a service with stale ownership.
+- UI architecture tests continue to reject repositories, SQLAlchemy, provider SDKs,
+  and Chat imports.
 
-Complete when the future strategy can be replaced and tested within Characters
-without adding Stage 7 evolution behavior to Stage 4.
+Complete when Ongoing branching and alternatives are usable and their limits,
+selection, and provenance are visible without exposing persistence details.
 
-### Slice 8 — Confirmed start flow and grouped navigation
+### Slice 8 — Stage 5 acceptance and regression proof
 
-Status: Complete
+Status: Proposed
 
-Replace the landing page with Characters-owned UI and lazy infrastructure
-composition. Show Identity → Persona → Ongoing groups, active and archived
-continuities, and the current identity/persona/mode visibly. Support default
-**You**, inline identity and persona creation/editing before use, duplication of
-both profiles, and selection through application services.
+Add one milestone scenario that starts an Ongoing continuity, creates enough turns
+to summarize, retries one persona response three times, selects an alternative,
+branches from before the summary checkpoint, creates a contradictory future,
+switches between both futures after service restart, and verifies the exact prompt,
+summary, provenance, and graph each time. Include incomplete generation recovery,
+archival, and negative ownership cases.
 
-Implement the start form: identity, persona, Ongoing mode, relationship intent,
-optional established-state inputs, then a review/confirmation step. Explain what
-carries forward and that Ongoing has no extracted memory. Confirmation alone
-calls start; retain its request identifier and both reviewed profile revisions
-across reruns. Explain that confirmation permanently freezes both profiles and
-that later authored changes require duplication. Handle stale profiles,
-active-continuity conflicts, and validation errors without double creation.
-Allow explicit archive and resume/read selection; an archive never starts a new
-continuity implicitly. Keep all widget/session keys Characters-owned.
+Exercise the complete Characters migration chain on disposable PostgreSQL beside a
+populated Chat schema. Document branch/retry behavior and the explicit handoff of
+Storyline/Timeline fork persistence to Stages 6 and 8. Update the master plan only
+after every Stage 5 completion criterion is demonstrated.
 
 Verification:
 
-- Streamlit tests cover empty setup, **You**, inline creation, identity/persona
-  edits before use, frozen-edit handling and duplication for both profiles, all
-  intents, established-state review, cancel, confirm, and repeated reruns.
-  Selection and cancel neither create continuity nor freeze either profile.
-  Edits after review produce a stale confirmation requiring renewed review.
-- UI service-call assertions prove grouped selection uses the correct ownership
-  identifiers and archive/active-conflict outcomes remain visible.
-- An integration test exercises the reviewed application request through real
-  repositories and returns the confirmed continuity for selection.
-- Shell tests switch areas and preserve each area's selection without calling the
-  other area's service factory. Replace scaffold-specific Characters assertions
-  while retaining their no-Chat-initialization guarantee.
+- The milestone proves prior paths remain recoverable and no unselected response,
+  descendant, summary, partial output, or foreign record enters current context.
+- Repository and application suites cover branch selection, retry limits,
+  compare-and-swap conflicts, archive serialization, and immutable provenance.
+- Migration tests prove Stage 4 data survives graph backfill and that Chat objects,
+  rows, and migration version remain unchanged.
+- Characters tests run without importing or initializing Chat. Existing Chat,
+  shell-routing, architecture, and Stage 4 regression tests remain green.
+- `scripts/check.sh` and the non-skipped PostgreSQL migration/concurrency suite pass;
+  a mocked Ollama contract test confirms retries use the existing provider seam.
 
-Complete when users can create/select profiles, deliberately start or archive
-Ongoing, and navigate its history without UI database/provider access.
-
-### Slice 9 — Ongoing conversation and recovery UI
-
-Status: Complete
-
-Render saved history and streaming persona replies for the selected continuity.
-Restore its configured model selection, relationship starting state, and history
-on resume. Apply supported generation configuration to the next attempt through
-application services. Show incomplete output separately, support continuation of
-the unmatched turn, and report provider/context/summary errors with useful actions.
-
-Disable sending while an attempt is active or a continuity is archived. Archived
-history remains readable. Do not expose completed-response retries, branch controls,
-memory controls, inferred relationship changes, or response-style controls.
-
-Verification:
-
-- Streamlit tests cover new and resumed turns, streamed chunks, model selection,
-  immutable prior provenance, failure, interruption, unmatched-turn continuation,
-  context-capacity errors, and archived read-only history.
-- Switching between identities/continuities and between product areas does not
-  render stale transcript, starting state, or partial output from another scope.
-- Service/repository integration tests cover the same request sequence after a
-  fresh service restart, including a conversation that has a saved summary.
-- UI architecture checks reject SQLAlchemy, provider SDK, repository, and Chat
-  service imports. Shell routing initializes only the selected area.
-
-Complete when the complete Ongoing workflow is usable through the UI with durable
-resume and visible incomplete-turn recovery.
-
-### Slice 10 — Stage 4 acceptance and independent-operation proof
-
-Status: Complete
-
-Add one milestone integration scenario covering profile setup, authored edits to
-both profiles before use, confirmation, first-use freezing of both, streamed turns,
-rolling summary, restart/resume, failed-turn continuation, archive, and explicit
-fresh start for the same identity/persona.
-Add negative ownership cases beside that scenario and close gaps found by it.
-
-Run Characters services and tests in an isolated process that rejects Chat module
-imports. Verify metadata and all foreign keys are Characters-owned, repository
-queries stay within its schema, and no shared business prompts/contracts appeared.
-Run the complete Characters migration chain on disposable PostgreSQL alongside an
-unchanged populated Chat schema. Document Characters settings, local Ollama setup,
-both area migration commands, and the new workflow in README/design documentation.
-
-Verification:
-
-- Unit and integration suites demonstrate all Stage 4 invariants, including
-  concurrent edits and first use/start for both profiles, permanent global persona
-  freezing across identities and archival, archived writability, immutable profile
-  ownership, summary provenance, and independent starting states across continuities.
-- The milestone runs with deterministic fake providers; a documented local Ollama
-  smoke run confirms streaming when the configured service is available, without
-  making ordinary tests depend on it.
-- PostgreSQL migration/concurrency tests execute successfully. Chat objects, rows,
-  and migration head are unchanged; legacy migrations remain untouched.
-- Existing Chat regression tests, both-area shell tests, architecture checks, and
-  `scripts/check.sh` pass. Characters can be tested and composed without Chat.
-- The delivered feature has no extracted Ongoing memory and no prematurely exposed
-  Stage 5–8 workflows. Record remaining work in its owning later stage.
-
-Complete when the master Stage 4 completion criteria are demonstrated by automated
-tests and documented operation. Only then update this stage, its delivered slices,
-and the master Stage 4 status to Complete.
+Complete when the master Stage 5 criteria are met for the implemented Ongoing
+workflow, the future mode rules fail closed through a tested contract, and no later
+stage behavior has been simulated with placeholder persistence.
 
 ## Deferred scope
 
-- Stage 5: parent-message graphs, selected conversation leaves, completed persona
-  response alternatives, the visible three-retry limit, branch actions, and
-  branch-correct summary handling/provenance.
-- Stage 6: Storylines, ordered scenes, extracted continuity memories, temporal
-  eligibility, and memory inspection/correction/exclusion/deletion.
-- Stage 7: relationship events/projections, validated inferred transitions,
-  milestones/hysteresis, adaptation persistence, correction, and experiments.
-- Stage 8: Timeline day records/closure/forks, timezone changes/DST, and adjustable
-  response-style controls with per-response effective style.
-- Stage 9: broad hardening, observability, export/deletion, and standalone packaging.
-  Stage 4 still supplies the isolation and PostgreSQL tests needed to verify its
-  own behavior now.
-- Characters cloud adapters require their own applicable provider decision;
-  legacy data conversion remains superseded, not deferred.
+- Stage 6 owns Storyline creation, ordered scenes, actual older-scene continuity
+  forks, branch-scoped extracted memory, temporal eligibility, and memory controls.
+- Stage 7 owns relationship/persona proposals, events, projections, correction, and
+  rebuilding derived state after selection or continuity forks. Stage 5 only
+  guarantees that these consumers can request the selected path.
+- Stage 8 owns Timeline creation, local dates, closure, timezone/DST behavior,
+  actual closed-day forks, and user-editable response-style controls. Stage 5 stores
+  the fixed effective style needed for provenance compatibility.
+- Stage 9 owns broad observability, export/deletion, and extraction hardening beyond
+  the focused isolation and migration proof required here.
+- Branch visualization beyond a selected transcript with per-turn alternatives and
+  branch controls remains a later UX decision. Branch naming is not introduced.

@@ -2,665 +2,525 @@
 
 Status: Living design
 
-Last updated: 2026-09-19
+Last updated: 2026-10-03
 
-## Purpose
+## Purpose and scope
 
-Chat Buddy is a local-first application shell containing two product areas with
-distinct, non-overlapping purposes:
+Chat Buddy is a local-first application containing two independent product areas:
 
-- **Chat** provides persistent conversations with local and cloud LLMs. It owns
-  conversation history, automatic context management, rolling summaries, and
-  extracted user memory.
-- **Characters** maintains user identities, LLM personas, and continuities
-  between them. It is the only area where persona and relationship evolution is
-  researched, evaluated, and delivered as a product feature.
+- **Chat** provides persistent general-purpose conversations, provider selection,
+  automatic context management, rolling summaries, and user-controlled memory.
+- **Characters** provides authored identities and personas, isolated relationship
+  continuities, narrative conversation modes, and versioned persona and
+  relationship evolution.
 
-The areas initially share a repository, process, and architectural style to make
-experimentation convenient. Characters is expected to become a standalone
-application, so convenience must not create domain or persistence coupling.
+This document defines the intended product behavior, domain model, ownership
+boundaries, and architectural constraints. It describes the design that
+implementation must converge on, whether or not every capability is currently
+delivered.
 
-This document is the current product and architecture source of truth. When a
-design decision changes, update this document in the same change that implements
-or plans the decision.
+This document does not track delivery status, implementation slices, setup
+instructions, migration revision history, or method-level APIs. Those concerns
+belong to the execution plans, README, migrations, and source documentation.
 
-## Application boundaries
+## Design goals and constraints
 
-The application is a thin shell around two bounded areas:
+The design optimizes for:
 
-```text
-Chat Buddy shell
-├── Chat
-│   ├── Conversations and messages
-│   ├── LLM provider selection
-│   ├── Context budgeting and summaries
-│   └── Chat-wide extracted memory
-└── Characters
-    ├── Identities and personas
-    ├── Continuities and conversations
-    ├── Relationship and persona evolution
-    └── Ongoing, Storyline, and Timeline modes
-```
+- Local-first operation with explicit opt-in to external providers.
+- Durable, resumable conversations with visible recovery from partial failure.
+- User control over inferred personal information.
+- Strict isolation between Chat and Characters.
+- Strict isolation among Characters identities, personas, and continuities.
+- Explainable derived state with source provenance.
+- Provider-neutral application behavior.
+- Safe experimentation with replaceable, versioned Characters strategies.
+- Eventual extraction of Characters into an independent application.
 
-Each area follows the same inward-facing architecture with its own domain,
-application, infrastructure, prompts, persistence, and UI modules. Domain models,
-repository and gateway protocols, services, prompts, database models, and stored
-records belong to exactly one area.
+The following constraints are mandatory:
 
-The shell may share generic configuration, logging, and low-level provider
-utilities. Shared code must not contain area-specific business rules or become an
-integration path between the areas. Each area owns its own LLM gateway contracts,
-even when adapters use the same low-level client utility.
+- Chat and Characters do not import each other or exchange runtime records.
+- Business rules, prompts, provider contracts, repositories, and persistence
+  models belong to exactly one area.
+- Shared code contains only generic configuration, logging, and low-level
+  technical utilities.
+- Services and UI code do not issue direct database queries.
+- Completed messages and provenance records are immutable.
+- Context includes only records eligible for the current area, owner, continuity,
+  branch, and time.
+- External calls do not hold database transactions open.
 
-Chat and Characters do not import each other's modules, read each other's
-tables, or exchange records at runtime. There is no implicit identity, persona,
-continuity, or memory relationship between them.
+Chat is not a character simulation system. It does not acquire Characters
+identities, personas, continuities, relationship state, or persona evolution.
+Characters does not reuse Chat conversations, summaries, or memories.
 
-## Persistence boundaries
-
-One PostgreSQL database initially hosts two independent named schemas:
-
-- `chat` contains only Chat records.
-- `characters` contains only Characters records.
-
-Each schema has independent SQLAlchemy metadata, declarative models, repository
-implementations, migration history, and Alembic version table. Cross-schema
-foreign keys, joins, and repository queries are prohibited. The schemas do not
-need to use compatible identifiers, structures, lifecycle rules, or migration
-schedules.
-
-The first split establishes clean schema baselines. Existing development data is
-disposable and is not transformed into the new schemas. Previously applied
-migration files remain unchanged as historical records, and developers recreate
-their local database when the new baselines are introduced.
-
-This boundary lets Characters move to another database or deployment without a
-data migration or compatibility layer for Chat.
-
-## Chat area
-
-Chat is a general-purpose assistant experience. It does not model identities,
-personas, relationships, or continuities from the Characters area.
-
-The Stage 3 Chat design supersedes the earlier prototype behavior. The prototype
-database schema is only a structural starting point: its old test data has been
-deleted, and the redesign has no legacy-row preservation or conversion
-requirement. Applied migrations remain historical records; new schema work uses
-new Chat migrations.
-
-### Conversations and providers
-
-- Conversations and messages persist and can be resumed independently.
-- A conversation records the provider, model, and generation configuration used
-  for its responses.
-- Provider selection supports local and cloud LLMs through a Chat-owned gateway
-  protocol.
-- Ollama remains the initial local adapter. ADR 021 selects OpenAI's Responses
-  API with curated GPT-5.6 Luna, Terra, and Sol choices plus a pinned GPT-4.1
-  non-reasoning baseline for the first opt-in, response-only cloud adapter.
-  Reasoning is disabled and title, summary, and memory utilities remain local
-  through Ollama. Cloud adapters do not change conversation or context services.
-- Streaming failures remain visible and recoverable without leaving an ambiguous
-  half-turn.
-
-Chat conversations are linear. A conversation has at most one pending or
-streaming generation attempt and cannot accept a new user message while its
-final user message lacks a completed assistant response. Only the latest failed
-or interrupted attempt for that unmatched tail is retryable; older terminal
-attempts remain history rather than alternate response branches.
-
-The unmatched tail may be edited while no attempt is open and then retried later.
-Each attempt stores the exact submitted user-content snapshot, so editing the
-visible tail does not rewrite earlier attempt history. A successful retry creates
-one assistant message, closes the turn, and restores the conversation to its
-normal ready state.
-
-### Context management and summaries
-
-Chat assembles context through separate eligibility, rolling-summary, and token-
-budgeting services. Eligible inputs are active Chat memory, the current
-conversation's active summary, complete turns not already covered by that
-summary, and the current user input. Incomplete attempts and partial output are
-never eligible.
-
-Each selected model provides a context-window limit, token counter, and default
-output reserve. Prompt capacity subtracts both fixed prompt overhead and the
-effective output reserve from the context window. Mandatory current input, the
-active summary, and the configured minimum recent turns must fit without
-arbitrary text truncation. Active memories and additional turns are admitted in
-deterministic priority order while capacity remains.
-
-When eligible context reaches its configured threshold, older complete turns
-are compressed into a rolling summary. Summaries are versioned: one version is
-active, replacements supersede it, and provenance identifies the predecessor
-and last covered assistant-message checkpoint. ADR 016's linear turn invariant
-makes that checkpoint authoritative; a conversation cannot complete an older
-turn after advancing to newer turns. A summary belongs only to its conversation,
-is deleted with that conversation, and never becomes memory merely because it
-was summarized. An oversized active summary may be recompacted for a smaller
-selected model without advancing its checkpoint.
-
-Summary failure preserves the last durable summary. Chat may omit optional
-inputs, but it fails before creating a generation attempt or calling a response
-provider when mandatory context cannot fit. ADR 017 defines eligibility and
-budgeting; ADR 018 defines summary ownership, lineage, and failure behavior.
-
-### Extracted memory
-
-Chat memory captures durable user information that may help across Chat
-conversations. It belongs to the Chat area rather than to one conversation or to
-a Characters identity. Each logical memory has a stable identity and subject and
-retains provenance-aware revisions.
-
-Persisted memory revisions are active, excluded, or superseded. Only a current
-active revision is context-eligible. Correction creates a user-authored revision
-and atomically supersedes the prior one; later extraction cannot overwrite that
-correction. Exclusion is reversible and cannot be undone by extraction. Hard
-deletion purges the complete logical memory and its provenance, so `deleted` is a
-terminal domain result rather than a retained tombstone.
-
-Extracted provenance identifies the source conversation, complete user/assistant
-turn, and completed generation attempt. Extraction runs only after the assistant
-message commits and makes at most three processing attempts. Success, including
-an empty result, or retry exhaustion creates a terminal attempt-level receipt so
-later callbacks do not repeat the work. Exhaustion is logged and never changes
-the completed response. The receipt stores no candidate content and no
-per-memory effect graph.
-
-The prior prototype key/value shape supplies no legacy records to the new model.
-If a source conversation is deleted, the Chat-wide memory remains but its
-provenance states that the source is no longer available; memory deletion is a
-separate user action. ADR 019 defines memory lifecycle and user control, while
-ADR 020 defines bounded completed-turn extraction and conflict handling.
-
-Chat memory never enters Characters context, and Characters memories or
-relationship state never enter Chat context.
-
-## Characters area
-
-Characters maintains authored user identities, LLM personas, and coherent
-versions of the relationship between them. It also provides an isolated place to
-experiment with persona and relationship evolution strategies. A strategy is
-versioned and evaluated inside Characters; a finalized strategy is delivered only
-as a Characters feature.
-
-### Core hierarchy
-
-The primary navigation and ownership hierarchy is:
+## System context
 
 ```text
-You / Identity
-└── Persona
-    ├── Ongoing continuity
-    ├── Storyline: Main
-    │   ├── First encounter
-    │   └── Dinner at the restaurant
-    └── Timeline
+User
+  |
+  v
+Streamlit shell
+  ├── Chat
+  │   ├── Chat application and domain
+  │   ├── Local or cloud response provider
+  │   └── PostgreSQL chat schema
+  └── Characters
+      ├── Characters application and domain
+      ├── Local or future approved response provider
+      └── PostgreSQL characters schema
 ```
 
-A **continuity** represents one coherent version of an identity/persona
-relationship. It owns the conversations, eligible memories, relationship state,
-and persona adaptation that occur within that version of the relationship.
+The user interacts through one Streamlit shell and explicitly selects Chat or
+Characters. The shell routes requests but owns no product behavior.
+
+PostgreSQL is the durable system of record. Ollama supplies local model access.
+Approved cloud providers may supply selected capabilities after explicit
+configuration. Provider clients, endpoints, authentication, and SDK-specific
+behavior remain outside the domain and application layers.
+
+The principal trust boundaries are:
+
+- The browser and Streamlit process.
+- The application and PostgreSQL.
+- The application and each configured model provider.
+- The permanent ownership boundary between Chat and Characters.
+
+## Architecture and dependency rules
+
+The repository is organized around two bounded areas:
+
+```text
+src/chat_buddy/
+├── chat/
+│   ├── domain/
+│   ├── application/
+│   ├── infrastructure/
+│   ├── prompts/
+│   └── ui/
+├── characters/
+│   ├── domain/
+│   ├── application/
+│   ├── infrastructure/
+│   ├── prompts/
+│   └── ui/
+├── shared/
+└── ui/streamlit_app.py
+```
+
+Within each area, dependencies point inward:
+
+```text
+UI ───────┐
+          v
+Infrastructure → Application → Domain
+          |
+          └── implements domain-owned repository and gateway contracts
+```
+
+The layers have the following responsibilities:
+
+- **Domain** owns immutable values, invariants, errors, and repository or gateway
+  protocols.
+- **Application** owns workflows, eligibility policy, context assembly, token
+  budgeting, and transaction-independent orchestration.
+- **Infrastructure** owns SQLAlchemy models and repositories, provider adapters,
+  configuration, and composition.
+- **Prompts** owns area-specific prompt templates and formatting.
+- **UI** renders application results and invokes application services.
+- **Composition root** selects an area and constructs only that area's runtime
+  dependencies.
+
+The shell may import both UI areas. No other Chat-to-Characters or
+Characters-to-Chat dependency is permitted. Cross-schema foreign keys, joins,
+queries, identifiers, and repository operations are prohibited.
+
+Characters strategy interfaces are application extension points. Implementations
+receive immutable Characters-owned inputs, produce structured proposals, and
+identify themselves with a stable name and version. A strategy cannot mutate
+repositories directly or introduce behavior into Chat.
+
+Characters must remain separable: its services, migrations, tests, provider
+composition, and UI behavior must operate without importing or initializing Chat.
+
+## Domain model and invariants
+
+### Chat
+
+A Chat conversation owns its messages, generation attempts, requested provider
+selection, and rolling-summary lineage. Chat memories are Chat-wide and may be
+eligible across conversations, but retain source provenance.
+
+Chat conversations are linear:
+
+- Messages form complete user/assistant turns.
+- At most one generation attempt is pending or streaming per conversation.
+- A new user message is rejected while the conversation has an unmatched user
+  tail.
+- Failed and interrupted output remains attempt evidence outside committed
+  history.
+- Retrying an incomplete turn reuses its user message and cannot create multiple
+  completed assistant responses.
+- Each completed response retains the effective provider, model, generation
+  configuration, and attempt provenance.
+
+A rolling summary belongs to one conversation. Revisions are immutable and record
+their predecessor and last covered assistant-message checkpoint. Exactly one
+revision is current. A summary is context compression, not extracted memory.
+
+A logical Chat memory has a stable identity, subject, revision lineage, lifecycle,
+and source provenance:
+
+- Only the current active revision is context-eligible.
+- Correction creates a user-authored revision and supersedes the prior revision.
+- Exclusion is reversible and cannot be undone by later extraction.
+- Hard deletion removes the complete memory lineage and provenance.
+- Deleting a source conversation does not implicitly delete reusable memory; its
+  provenance instead reports that the source is unavailable.
+
+### Characters
+
+The Characters ownership hierarchy is:
 
 ```text
 Identity
 └── Persona
     └── Continuity
-        ├── Mode: Ongoing | Storyline | Timeline
+        ├── Mode
         ├── Conversations, scenes, or days
+        ├── Selected conversation branches
+        ├── Continuity memories
         ├── Relationship state and events
-        ├── Memories
         └── Persona adaptation
 ```
 
-Information does not cross continuity boundaries unless a future Characters
-feature makes that transfer explicit to the user.
+An **identity** describes who the user is inside Characters. A default identity is
+shown as **You**. Authored identity details are editable until first continuity
+use. Starting that continuity permanently freezes the identity. Later semantic
+changes require a new or duplicated identity. A continuity cannot change identity.
 
-The Stage 4 setup UI selects Identity → Persona → Ongoing, with active and
-archived entries scoped to the selected pair. Inline editors support authored
-profile management and independent duplication. Starting Ongoing requires review
-and explicit confirmation; the reviewed request identifier, both profile revisions,
-and authored snapshots persist across reruns. A stale review must be renewed.
-Only confirmation starts and permanently freezes both profiles. Archive is an
-explicit action and never creates a replacement. Area switching retains each
-area's selection and initializes only the selected area's services.
+A **persona** has three conceptual layers:
 
-### Identity
+1. **Persona core** — authored long-term definition and traits.
+2. **Relationship adaptation** — continuity-specific knowledge, feelings, habits,
+   and behavior toward one identity.
+3. **Current state** — temporary scene, mood, and immediate context.
 
-An identity describes who the user is within a continuity. Characters has a
-default identity, shown as **You**, and may have additional identities.
+The persona core is editable until its first continuity use, then freezes globally
+and permanently. Later authored changes require a new or duplicated persona.
+Conversation-driven behavior never silently modifies the core.
 
-Initial identity attributes are:
+Starting a continuity:
 
-- Name.
-- Optional gender.
-- Age or birth date.
-- Optional pronouns or preferred form of address.
-- Local IANA timezone where time-based behavior is needed.
+- Permanently binds one identity, one persona, and one mode.
+- Verifies the reviewed revisions of both profiles.
+- Freezes newly used profiles in the same transaction that creates the continuity.
+- Creates an independent starting relationship without invented shared events.
+- Is idempotent for an identical confirmation and rejects conflicting reuse.
+- Does not transfer conversation, memory, relationship, or adaptation state from
+  another continuity.
 
-An identity may be created inline while starting a continuity. It remains
-editable until its first continuity begins, at which point it is frozen. To use
-different semantic identity details afterward, the user duplicates or creates
-another identity. Cosmetic changes may be distinguished from semantic changes in
-a later design.
-
-A continuity cannot switch identity after it begins.
-
-Stage 4 Slice 1 implements identity management through a Characters-owned service
-and repository; its UI arrives in Slice 8. Authored values and persisted snapshots
-are frozen Pydantic models. Editing replaces all authored fields, retains the UUID,
-and increments a revision. Both the service and the repository reject frozen or
-stale edits; the repository uses a conditional write so competing edits cannot
-silently overwrite each other. Slice 3 will lock and verify the selected identity
-and persona rows and revisions, then freeze both during continuity creation.
-
-Name is required. Gender, age/birth date, pronouns, preferred address, and timezone
-are optional; omitted demographics remain unknown. Text is trimmed and nonempty
-when supplied. Name and preferred address allow 128 characters; gender, pronouns, and
-timezone allow 64. Domain validation and variable-length database columns use the
-same limits. The internal default slot is constrained to `"you"`, so `default_key`
-retains its exact 3-character limit. Age is an integer from 0 through 130 and
-cannot accompany a birth date. Birth dates cannot exceed the current UTC date.
-Timezone must be an installed IANA identifier and is optional for Ongoing. This
-validation does not introduce Timeline time behavior.
-
-The default identity is created only on explicit Characters setup, initially named
-**You** with no demographic details. A database unique slot makes repeated and
-concurrent setup idempotent; editing its name retains its default designation.
-Duplicates copy only authored fields (with optional revisions), receive a new UUID,
-start at revision 1, and are editable and non-default. All authored fields freeze
-after first use, including display fields; there is no unfreeze operation. See
-[ADR 023](docs/decisions/023-characters-identity-management.md).
-
-
-### Persona
-
-The global persona definition contains authored, long-term traits. All authored
-fields, including the display name, are editable until the first continuity using
-that persona is successfully created with any identity. That transaction freezes
-the persona globally and permanently, alongside the selected identity. Selection,
-a draft start, or canceled confirmation does not freeze either profile. After first
-use, changing the core requires creating or duplicating a persona; archiving all
-of its continuities does not make it editable again.
-
-A persona core requires a display name (up to 128 characters) and an authored
-definition (up to 8192 characters). Optional authored traits use up to 4096
-characters. These fields are trimmed, and supplied content must be nonblank.
-Traits are free-form authored text, not inferred adaptation or current state.
-Lists are ordered by name, then UUID; names need not be unique.
-
-Persona authored values and snapshots remain frozen Pydantic models. An edit
-replaces the persisted authored fields, retains the UUID, and increments a positive
-revision using the caller's expected revision. The revision detects stale writes
-and stale start confirmations; a separate permanent freeze flag controls edit
-eligibility. Both service and repository reject frozen or stale edits. Continuity
-creation locks both profile rows in a consistent order, verifies both submitted
-revisions, and freezes both in the same transaction. Failed starts roll back all
-changes. This does not require retaining historical authored revisions.
-
-Duplication copies only authored core fields, optionally revised, into a new UUID
-at revision 1 with editable status and no continuity history, relationship
-adaptation, or current state.
-
-Persona behavior is divided into three layers:
-
-1. **Persona core:** stable authored definition shared wherever that persona is
-   selected inside Characters.
-2. **Relationship adaptation:** continuity-specific knowledge, habits, feelings,
-   and behavior toward the selected identity.
-3. **Current state:** temporary scene, mood, and immediate conversational context.
-
-Conversation-driven evolution never silently mutates the persona core or affects
-another identity or continuity.
+Archiving a continuity is explicit and makes it permanently read-only. It does not
+unfreeze profiles or create a replacement.
 
 ### Continuity modes
 
-Every continuity has exactly one mode.
+Every continuity has exactly one mode:
 
-#### Ongoing
+- **Ongoing** is one continuous conversation. At most one Ongoing continuity is
+  active for an identity/persona pair. It uses rolling summaries and does not
+  extract long-term memory.
+- **Storyline** is a named, chronologically ordered sequence of scenes. Scene order
+  freezes when interaction begins. A scene may use eligible memories from itself
+  and earlier scenes, never from later scenes.
+- **Timeline** is a sequence of local calendar-day conversations. It has at most
+  one conversation per represented date, creates no empty days, and keeps resolved
+  historical dates immutable.
 
-Ongoing is one continuous character conversation for an identity/persona pair.
-The name distinguishes this mode from the top-level Chat area.
+Timeline closure uses the continuity's IANA timezone. The current local day is
+writable; a past day is closed and read-only, including when closure is first
+detected after an offline period. Timezone changes affect future boundaries only.
 
-- There is at most one active Ongoing continuity for an identity/persona pair;
-  previous ones may be archived.
-- The selected conversation branch is the primary context.
-- No long-term memories are extracted.
-- Long conversations may use a rolling summary for context compression. This is
-  part of the Ongoing context, not extracted memory.
-- Relationship development is local to the continuity and does not carry into
-  another mode or continuity.
-- The persona begins with its core traits and the explicitly selected starting
-  relationship.
+### Branches and alternatives
 
-#### Storyline
+Characters messages are immutable nodes with parent-message relationships. A
+conversation records one selected leaf, and only its root-to-leaf path is eligible
+for context and downstream derivation.
 
-A Storyline is an ordered sequence of narrative scenes. An identity/persona pair
-may have multiple named Storylines.
-
-- A scene starts with an initial setup, which also supplies its default title.
-- Scene titles can be edited independently from their setup.
-- A scene's chronological position becomes immutable when interaction begins.
-- Memory is extracted from completed turns.
-- A scene can use active memories from itself and earlier scenes in the same
-  Storyline, but never memories from later scenes.
-- Later scenes receive eligible memories and relationship state, not necessarily
-  raw earlier transcripts.
-- Persona adaptation and relationship state evolve across the Storyline.
-- Branching an older scene when later scenes exist forks the Storyline so the
-  existing future remains intact.
-
-#### Timeline
-
-A Timeline models an ongoing relationship as calendar-day conversations.
-
-- There is at most one active Timeline for an identity/persona pair.
-- Each conversation has a visible, read-only local date.
-- There is at most one conversation per local date.
-- Days without interaction are absent; the application never fabricates empty
-  conversations.
-- The current local day is writable. Once its day boundary passes, it is closed
-  and read-only.
-- Current-day messages provide short-term context. Eligible memories and
-  relationship state from previous days provide long-term context.
-- The Timeline stores an IANA timezone. A timezone change affects future day
-  boundaries rather than rewriting existing local dates.
-- If the application is offline at midnight, it closes the previous day when it
-  next runs.
-- A closed day cannot be retried or edited inside the same Timeline. An alternate
-  past requires forking the Timeline into a new continuity.
-
-### Scene setup and response style
-
-Scene setup and response presentation are separate concepts.
-
-**Scene setup** describes the initial place, situation, time, and mood. It evolves
-naturally through conversation.
-
-**Response style** controls presentation, including whether the persona describes
-scenes, gestures, or emotions before or after dialogue. Planned controls include:
-
-- Description level: none, light, or immersive.
-- Response length: concise, balanced, or detailed.
-- Narrative placement: before, after, or both.
-- Dialogue formatting and tone.
-
-Style can change at a message boundary. The change affects subsequent persona
-responses but does not alter facts, memories, relationship state, or prior
-messages. The style used to generate a persona message is recorded with it.
-
-### Conversation branches and retries
-
-Messages are immutable and character conversations support alternate paths.
-
-- **Branch from here** creates a new path without deleting the existing future.
-- A conversation has a selected branch; only that path is included in model
-  context.
-- Retrying the last persona response creates an alternate response to the same
+- Branching preserves the existing future.
+- Retrying a completed persona response creates a sibling response to the same
   user message.
-- Retry allowance is limited and shown in the UI. The initial limit is three
-  retries per persona turn.
-- Only the selected response variant contributes to future memory or relationship
-  evolution.
-- Ongoing branches within its continuity.
-- The current/latest Storyline scene can branch in place; changing an older scene
-  with dependent scenes forks the Storyline.
-- The current Timeline day can branch; a closed day requires a Timeline fork.
+- A persona turn permits at most three retry alternatives in addition to its
+  initial response.
+- Selecting an alternative changes future context without deleting other paths.
+- Only selected messages can contribute to summaries, memory, relationship state,
+  or persona adaptation.
+- Ongoing branches in place.
+- Changing a Storyline scene with dependent later scenes forks the Storyline.
+- A closed Timeline day cannot retry or branch in place; an alternate past requires
+  a Timeline fork.
 
-### Memory
+Persona messages retain their effective response style, provider, model,
+generation metadata, and strategy version.
 
-Characters memories belong to a continuity and include provenance. A memory
-records its source, when its subject occurred, when it was learned, and whether
-it is active, superseded, excluded, or deleted.
+### Characters memory and relationship state
 
-A memory is eligible for model context only when:
+Characters memory belongs to one continuity and records its source, occurrence
+time, learned time, lifecycle, and branch provenance. A memory is eligible only
+when it:
 
-- It belongs to the current continuity.
-- It belongs to the selected branch or an applicable ancestor.
-- Its effective time is not later than the current scene or Timeline day.
-- It is active and not excluded.
+- Belongs to the current continuity.
+- Comes from the selected branch or an applicable ancestor.
+- Is not from the future relative to the current scene or Timeline day.
+- Is active and not excluded.
 
-Memory extraction occurs only after a complete turn and includes both the user
-message and the selected persona response.
+Extraction occurs only after a complete selected turn. Users can inspect, correct,
+exclude, reactivate, and permanently delete extracted interpretations.
 
-Users can inspect a memory and its source, correct it by superseding the extracted
-interpretation, exclude it from future prompts, and permanently delete it for
-privacy. Closed transcripts may remain historically immutable while their
-extracted interpretations remain correctable.
+Relationship state belongs to one identity, persona, and continuity. It separates:
 
-### Relationship model
+- Social status.
+- Romantic status.
+- Current interaction dynamic.
+- Qualitative supporting dimensions such as trust and affection.
+- Boundaries and provenance-backed milestones.
 
-Relationship state belongs to:
+Friendship and romance are independent tracks. Supporting dimensions do not imply
+a status or shared event. Established starting states are explicitly user-selected.
+Major romantic transitions require narrative evidence. Gradual changes use
+conservative thresholds and hysteresis.
 
-> identity + persona + continuity
+Strategies propose relationship or persona changes; they do not write state
+directly. The application validates proposals against relationship intent,
+boundaries, allowed transitions, evidence, and provenance before persistence.
 
-The relationship is multidimensional rather than a single score.
+## Behavioral design
 
-- **Social status:** stranger, acquaintance, casual friend, or close friend.
-- **Romantic status:** none, interest, dating, partner, engaged, or spouse.
-- **Current dynamic:** for example neutral, comfortable, awkward,
-  tense, or estranged.
-- **Supporting dimensions:** qualitative trust and affection.
-- **Milestones and boundaries:** explicit events with provenance.
+### Chat response generation
 
-Friendship and romance are related but independent tracks. Close friendship does
-not automatically become romantic, and a romantic partnership does not require a
-particular friendship label.
+1. The user submits or retries the sole unmatched user message.
+2. The application resolves the selected provider and immutable effective
+   generation configuration.
+3. Context eligibility and token budgeting complete before an attempt is reserved.
+4. The repository atomically records the user input when needed and a pending
+   generation attempt.
+5. The provider streams outside the transaction; partial output is saved only on
+   the attempt.
+6. Successful completion atomically appends one assistant message and completes
+   the attempt.
+7. Failure or interruption preserves recoverable attempt evidence without adding
+   partial output to conversation history.
 
-When creating a continuity, the user may choose platonic, open to romance,
-established relationship, or let it develop naturally. An established starting
-state is recorded as user-selected and does not invent background events.
+Title generation, summarization, and memory extraction are separate capabilities.
+A visible response can succeed even if later utility processing fails.
 
-#### Ongoing starting relationship
+### Chat context and memory
 
-Starting Ongoing freezes both reviewed profiles in the same transaction that
-creates its continuity, sole conversation, and independent starting snapshot.
-Identity rows are locked before persona rows; revision-checked edits serialize
-with these locks. Frozen profiles can be reused at their current revision.
-A confirmation UUID identifies the complete submitted request: an identical
-resubmission returns the original continuity even after archival; different
-submitted data using that UUID is rejected. Only one active Ongoing exists per
-identity/persona pair. Archive is permanent and read-only; a replacement requires
-a fresh confirmation. Lists group by identity and persona and retain archives.
+Chat context is assembled from active Chat memories, the active conversation
+summary, complete uncovered turns, and current input. Partial attempts are never
+eligible. Mandatory context must fit after reserving fixed prompt overhead and
+output capacity; otherwise generation fails before provider invocation.
 
-The initial vocabulary and compatibility rules are:
+Additional memories and turns are admitted in deterministic priority order. Older
+complete turns are compressed into versioned rolling summaries when required.
+Summary failure preserves the last durable revision and never silently omits
+required context.
 
-| Field | Values | Default / validation |
-|---|---|---|
-| Intent | platonic, open_to_romance, established_relationship, let_it_develop_naturally | Required |
-| Social | stranger, acquaintance, casual_friend, close_friend | stranger; established requires explicit selection |
-| Romantic | none, interest, dating, partner, engaged, spouse | none; platonic requires none; established requires dating, partner, engaged, or spouse |
-| Dynamic | neutral, comfortable, awkward, tense, estranged | neutral |
-| Trust | unknown, cautious, trusting | unknown |
-| Affection | neutral, warm, affectionate | neutral; affection alone implies no romance |
-| Boundaries | no_romance, no_flirting, no_physical_intimacy | Empty; unique selections; no_romance requires romantic none; no_flirting rejects romantic interest |
+Memory extraction begins only after a complete turn commits. It is bounded and
+idempotent per completed attempt. An empty extraction result and retry exhaustion
+are terminal outcomes so callbacks cannot repeat processing indefinitely.
 
-Social status represents familiarity; it has no separate dimension. Affection
-represents emotional warmth, while Dynamic describes the current interaction.
-Comfortable interaction can coexist with neutral affection.
+### Characters profile and continuity start
 
-Other combinations are valid: social and romantic tracks remain independent,
-and no supporting dimension implies a status or a shared event. Each field records
-whether it was explicitly user-selected or defaulted. Established statuses have
-user provenance. These snapshots contain no invented milestones and have no
-update API; evolution belongs to a later stage. Storyline and Timeline mode
-values are reserved, but start rejects them.
+The user selects or authors an identity and persona, chooses a mode and starting
+relationship, reviews the exact profile revisions and relationship values, and
+confirms the start. Drafting, selection, review, and cancellation do not freeze
+profiles. Confirmation performs profile verification, freezing, and continuity
+creation atomically.
 
-Trust, affection, and the current dynamic can evolve gradually.
-Status changes use conservative thresholds and hysteresis. Major romantic
-milestones require an explicit narrative event. Model-generated proposals are
-validated against relationship intent and domain transition rules before
-persistence, and every accepted change has inspectable provenance and can be
-corrected by the user.
+The starting relationship supports platonic, open-to-romance, established, and
+natural-development intent. Established relationships require explicit compatible
+social and romantic states. Boundaries cannot contradict the selected intent or
+status. Every starting field records whether it was user-selected or defaulted.
 
-### Characters provider capabilities
+### Characters response generation
 
-Characters owns separate streaming response, summary, model-resolution, and token
-counting contracts. A response provider need not support summaries. Immutable
-model descriptors declare operations, optional parameters, context windows, and
-default output limits. Resolution merges requested overrides with defaults and
-rejects unsupported settings before invocation. The effective snapshot contains
-no endpoint, authentication, client, or secret. Output capacity is always reserved
-and enforced through an explicit provider output limit.
+Characters generation uses the same durable separation between committed messages
+and incomplete attempt output. Every operation requires the complete identity,
+persona, continuity, and conversation scope. Writes serialize with continuity
+archival, so no message or response can commit after the continuity becomes
+read-only.
 
-Stage 4 uses Ollama with independently configured response and summary defaults.
-Composition reads Characters-only settings lazily; importing the factory or
-selecting Chat creates no Characters clients. Adapters receive assembled prompts,
-release streams on completion, failure, or cancellation, and expose safe Characters
-errors rather than raw provider payloads. Summary output is nonempty plain text;
-summary prompt policy belongs to the later summarization service.
-
-The initial local token estimator counts one token per UTF-8 byte plus eight tokens
-per message, role bytes, and eight fixed framing tokens. This conservative estimate
-is deterministic, not an exact model tokenizer or measured usage. A future adapter
-can supply its own counter through the same contract. Context budgeting remains
-an application responsibility separate from token counting.
-
-### Context composition
-
-Characters context is assembled in a stable order:
+Ongoing context is ordered as:
 
 ```text
 Persona core
 → Identity
-→ Relationship intent and state
+→ Starting relationship
+→ Effective response presentation
+→ Rolling summary
+→ Recent selected-path messages
+→ Current input
+```
+
+The general Characters context order, as later modes add state, is:
+
+```text
+Persona core
+→ Identity
+→ Relationship intent and current state
 → Eligible continuity memories
 → Scene setup and current state
 → Response style
-→ Conversation summary and recent selected-branch messages
+→ Conversation summary and recent selected-path messages
 ```
 
-Each mode provides its own context eligibility policy. Token budgeting and
-conversation summarization remain separate from decisions about which memory or
-relationship information is permitted.
+Each mode owns its eligibility policy. Eligibility, token budgeting, summary
+generation, and provider invocation remain separate responsibilities.
 
-## Evolution experiments
+Ongoing summary revisions are continuity- and conversation-scoped. They cover only
+complete selected turns and record their predecessor, checkpoint, effective
+summary generation, and creation time. Unmatched user messages and incomplete
+attempt output are excluded.
 
-Persona and relationship evolution strategies are Characters-owned application
-interfaces. Experimental implementations must:
+### Characters derivation and correction
 
-- Record a stable strategy name and version with generated proposals or derived
-  state.
-- Operate only on Characters-owned inputs and records.
-- Pass domain validation before changing durable state.
-- Remain replaceable without changing Chat or the shared shell.
+After a complete selected turn, eligible modes may extract memory and ask the
+configured versioned strategy for structured relationship or persona proposals.
+The application validates and persists accepted effects with source provenance.
 
-Experiments may be compared within Characters. Promotion makes a strategy an
-available or default Characters behavior; it never adds persona evolution to the
-Chat area.
+Changing the selected branch or correcting source interpretation rebuilds affected
+derived state from eligible evidence. Unselected alternatives cannot continue to
+influence context, memory, relationship projections, or persona adaptation.
 
-## UX principles
+Response style changes apply at a message boundary and affect only subsequent
+persona responses. They never rewrite prior messages, facts, memories, or
+relationship state.
 
-- Make the selected product area unmistakable.
-- In Chat, expose the active model and make summaries and extracted memory
-  inspectable.
-- In Characters, make the active identity, persona, continuity, and mode visible.
-- Support authored identity and persona edits before first continuity use; offer
-  duplication once frozen.
-- Explain what carries forward and that successful confirmation permanently freezes
-  both selected profiles before a Characters continuity begins.
-- Prefer archives and branches over destructive history changes.
-- Never leak records across areas, identities, or continuities.
-- Show the source of inferred memory and relationship information.
-- Preserve user control over stored personal information.
-- Keep model limitations and recoverable generation failures visible.
+## Data ownership and persistence
 
-## Characters extraction criteria
+One PostgreSQL database may host both areas, but they remain logically independent:
 
-Characters is ready to become a standalone application when:
+- The `chat` schema contains only Chat records.
+- The `characters` schema contains only Characters records.
 
-- Its code has no imports from Chat.
-- Its schema has no foreign keys, queries, identifiers, or migrations tied to
-  Chat.
-- Its application services can be composed without initializing Chat services.
-- Shared technical utilities can be copied or packaged without carrying Chat
-  business behavior.
-- Its tests and migration history can run independently.
+Each schema owns separate SQLAlchemy metadata, declarative models, repositories,
+migration history, and Alembic version table. The schemas do not require compatible
+identifiers, structures, lifecycle rules, or migration schedules.
 
-## Deferred decisions
+Repositories expose domain values rather than persistence models. Application
+services use repositories for all durable reads and writes. Transactions are short
+and enclose only state that must commit atomically.
 
-The following details will be refined when their implementation stage begins:
+Important transaction boundaries include:
 
-- Exact response-style controls and defaults.
-- Whether cosmetic fields on a frozen identity remain editable.
-- The complete vocabulary for current relationship dynamics.
-- Memory categories, confidence, and review workflow in each area.
-- Branch visualization and naming.
-- Archival and duplication UX for Characters continuities and personas.
+- Reserving an attempt with any newly committed user input.
+- Completing an attempt with its assistant or persona message.
+- Freezing identity and persona profiles with continuity creation.
+- Replacing a current summary revision.
+- Correcting, excluding, reactivating, or deleting memory.
+- Applying a validated relationship or persona proposal and its projection.
+- Selecting a Characters branch or continuity fork.
 
+Optimistic revision checks reject stale authored edits and reviewed starts.
+Database uniqueness and row locking enforce invariants that must survive concurrent
+processes, including active-continuity limits, open-attempt limits, summary
+replacement, archival races, and retry limits.
 
-#### Durable Ongoing turns
+Derived records retain enough provenance to explain and rebuild their state.
+Deletion respects ownership: deleting one area's record never queries or mutates
+the other area.
 
-Characters records committed messages in a deterministic sole path, separately
-from its generation ledger. A send commits the user input and pending attempt
-together. Exhausting a stream commits the persona message and completed attempt
-together. Failed or interrupted output remains attempt evidence and never enters
-history or provider context. Each conversation permits one open attempt and one
-unmatched user tail. Continuation retries that input; it cannot regenerate a
-completed response. All writes serialize with archival on the continuity row.
+## External interfaces and integrations
 
-The conversation saves requested provider/model defaults for future attempts;
-each attempt retains an immutable effective selection and submitted input.
-Closing a consumed stream interrupts it. Resume interrupts pending or streaming
-attempts with no persisted progress for five minutes. Progress refreshes that
-heartbeat. Reconciliation fences late output, so an expired provider stream
-cannot commit a response after continuation or archival. A quiet live provider
-may expire; its caller receives a conflict and can continue the saved input.
+### Model providers
 
-Prompt order is persona core, identity, relationship intent and starting state,
-fixed response presentation, then complete committed history and current input.
-No evolved current-state inputs exist yet. Token counting includes provider
-framing, a fixed additional 64-token overhead reserve, and the effective output
-reserve. Ongoing compresses older complete turns into its durable rolling summary and
-rejects capacity failures before reserving an attempt or invoking a response provider. Partial
-output, other continuities, extracted memory, and synthetic shared events never
-enter this prompt.
+Each area owns narrow contracts for the capabilities it uses, such as streaming
+responses, titles, summaries, memory extraction, model resolution, and token
+counting. A provider need not implement every capability.
 
-The Ongoing UI restores committed history, starting relationship, and saved
-response settings for its selected continuity. Supported generation overrides
-apply to the next attempt. Incomplete attempt output is shown separately, and
-continuation reuses its unmatched input. Sending is disabled for active attempts,
-unmatched turns, and archives; archived history remains readable. Refresh reloads
-progress and reconciles abandoned attempts. Provider and context failures expose
-recovery actions without offering completed-response retries or branch controls.
+Provider adapters:
 
-#### Ongoing context budgeting and summaries
+- Receive application-assembled prompts and immutable effective configuration.
+- Keep endpoints, credentials, clients, and secrets outside domain values.
+- Normalize SDK failures into area-owned errors.
+- Release streams on completion, failure, or cancellation.
+- Expose model capabilities, supported parameters, context limits, and output
+  limits before invocation.
 
-Ongoing reserves the fixed prompt overhead and response output limit before
-selecting conversation context. Its mandatory context is the four fixed system
-blocks, the active summary when present, the latest complete turn, and the current
-user message. Earlier uncovered complete turns are considered newest first and
-rendered chronologically as one contiguous suffix. When that full context does
-not fit, the omitted oldest prefix is incorporated into a new durable summary
-before response generation. Messages are never split or truncated.
+Ollama is the default local adapter. Chat may use explicitly enabled cloud adapters
+for visible responses while retaining local utility operations. A cloud adapter
+does not change Chat application or context services. Characters providers remain
+independently configured and cannot reuse Chat contracts.
 
-Summary revisions belong to one continuity and its sole conversation. Each
-revision records its predecessor, monotonically increasing revision number, last
-covered persona-message checkpoint, effective summary generation, and creation
-time. Atomic replacement leaves one active revision. A replacement prompt contains
-only the prior summary and newly covered complete turns. Unmatched user messages,
-failed or partial attempts, and already covered turns are excluded.
+### Streamlit shell
 
-Summary input uses its independently configured model budget and advances through
-the largest chronological prefix that fits. If mandatory response context, one
-new complete turn for summarization, or the generated summary cannot fit, response
-generation fails before provider invocation. Summary generation or persistence
-failure preserves the prior active revision and committed history; no uncovered
-turn is silently omitted. Ongoing does not extract or query long-term memory.
+The shell routes between product areas and preserves only presentation selection.
+It does not share domain state. Each area UI invokes application services, displays
+active ownership and provider scope, and never accesses provider SDKs or SQLAlchemy
+directly.
 
+### PostgreSQL
 
-#### Independent Ongoing operation
+PostgreSQL supplies transactional persistence and concurrency enforcement. Each
+area connects through its own session and repository composition and migrates only
+its own schema.
 
-Characters profile and conversation services compose without importing Chat.
-Setup and archived reading need only Characters persistence; response and summary
-calls use independently configured local Ollama capabilities. Its full migration
-history can be applied or reversed alongside a populated Chat schema without
-changing Chat objects, data, or migration head. Runtime repository queries and
-foreign keys stay within `characters`.
+## Cross-cutting concerns
 
-Stage 4 delivers one conversation path per Ongoing, durable summaries, explicit
-archival and replacement, and incomplete-turn recovery. It has no extracted
-memory, completed-response alternatives, branches, inferred evolution, or dated
-Timeline workflow. The versioned evolution seam remains a no-change strategy.
-See [README.md](README.md#characters-operation-and-acceptance) for settings,
-migration commands, local model setup, and acceptance checks.
+### Security and privacy
+
+- Provider credentials never enter prompts, domain snapshots, logs, or persisted
+  generation configuration.
+- Cloud use is explicit and communicates what eligible context leaves the local
+  environment.
+- Local correction or deletion cannot retract data already transmitted externally.
+- Ownership checks include every required identifier rather than trusting a single
+  record ID.
+- Memory and inferred relationship information remain inspectable and controllable
+  by the user.
+
+### Reliability and recovery
+
+- Provider calls occur outside database transactions.
+- Pending, streaming, completed, failed, and interrupted attempts are explicit.
+- Partial output never becomes committed history or derived evidence.
+- Idempotency keys and expected revisions make repeated submissions safe.
+- Timeouts or abandoned streams are reconciled before continuation.
+- Late provider output is fenced after interruption, archival, selection change,
+  or retry.
+- Failures preserve the last valid durable state and expose a recovery action.
+
+### Performance and capacity
+
+- Every model declares a context window and output reserve.
+- Context assembly accounts for provider framing and fixed prompt overhead.
+- Required inputs are never silently truncated.
+- Complete turns are selected deterministically and rendered chronologically.
+- Summarization compresses older context without duplicating covered turns.
+- Temporal and branch eligibility is decided before token budgeting.
+
+### User experience and observability
+
+- The active product area, provider/model, and relevant ownership scope are visible.
+- Characters shows the selected identity, persona, continuity, and mode.
+- Destructive actions require confirmation; archives and branches are preferred
+  when history should remain recoverable.
+- Incomplete output is visibly separate from committed history.
+- Retry limits, read-only state, provider limitations, and recovery options are
+  explicit.
+- Inferred memory and relationship state links back to its source provenance.
+- Generation, summarization, extraction, strategy, validation, and context failures
+  are logged without leaking credentials or raw provider secrets.
+
+## Related documents
+
+- [README.md](README.md) — stable product overview, setup, configuration, and basic
+  operation.
+- [PLAN.md](PLAN.md) — implementation sequence, delivery status, and future work.
+- [Decision records](docs/decisions/) — accepted behavioral decisions and their
+  rationale.
+- [AGENTS.md](AGENTS.md) — repository architecture, coding, testing, and
+  documentation conventions.
+- Stage plans under `work/` — implementation slices and verification for active
+  or completed delivery work.

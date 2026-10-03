@@ -1,98 +1,237 @@
 # Chat Buddy
 
-A conversational AI application for interacting with local LLMs through a persistent chat interface.
+Chat Buddy is a local-first conversational AI application with two independent
+experiences:
+
+- **Chat** for general-purpose conversations with durable context and
+  user-managed memory.
+- **Characters** for persistent persona-based conversations and relationship
+  continuity.
 
 ![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https://github.com/babaksoft/chat-buddy/raw/refs/heads/master/pyproject.toml)
-![Static Badge](https://img.shields.io/badge/category-GenAI-orange)
-![Static Badge](https://img.shields.io/badge/framework-LlamaIndex-orange)
-![GitHub License](https://img.shields.io/github/license/babaksoft/chat-buddy)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/babaksoft/chat-buddy/ci.yml)
+![GitHub License](https://img.shields.io/github/license/babaksoft/chat-buddy)
 
+## What you can do
 
-## Goals
+### Chat
 
-- Persistent conversations
-- Conversation resume support
-- Context window management
-- Local-first deployment
-- Observability and monitoring
+- Create, rename, resume, and delete persistent conversations.
+- Stream responses from models available through Ollama.
+- Optionally use OpenAI for visible responses.
+- Keep long conversations coherent with rolling summaries.
+- Reuse extracted memories across Chat conversations.
+- Inspect, correct, exclude, reactivate, or permanently delete memories.
+- Recover safely from interrupted generation attempts.
 
-## Technology Stack
+### Characters
 
-- Python 3.12
-- Streamlit
-- Ollama
-- PostgreSQL
-- SQLAlchemy
-- Alembic
-- LlamaIndex
-- Arize Phoenix
-- Prometheus
-- Grafana
+- Create identities and personas.
+- Start isolated Ongoing continuities with an explicit relationship setup.
+- Resume active or archived conversation history.
+- Stream persona responses through a Characters-owned Ollama configuration.
+- Compress long conversations with continuity-scoped rolling summaries.
+- Recover incomplete turns without committing partial output.
+- Duplicate frozen profiles when authored changes are needed.
 
-## Architecture
+## Product model and scope
+
+| Area | Purpose | Context and memory | Persistence |
+|---|---|---|---|
+| Chat | General conversations | Conversation summaries and user-controlled Chat-wide memory | PostgreSQL `chat` schema |
+| Characters | Persona-based continuities | Continuity-local transcript and rolling summary | PostgreSQL `characters` schema |
+
+Chat and Characters are independent product areas. They do not share
+conversations, memories, repositories, prompts, or database records. Streamlit
+provides only the common navigation shell.
+
+Characters currently supports Ongoing conversations. Each continuity belongs to
+one identity and persona, starts with an explicit relationship state, and remains
+isolated from other continuities. Characters does not currently extract long-term
+memory or evolve relationship and persona state from conversation content.
+
+## Local-first behavior and cloud usage
+
+PostgreSQL stores application data in the configured local database. Ollama
+provides the default generation path for both areas and also performs Chat title
+generation, rolling summarization, and memory extraction.
+
+OpenAI is an explicit, optional provider for visible Chat responses. When selected,
+the eligible current input, recent turns, conversation summary, and active Chat
+memories are sent to OpenAI. Persistence and Chat utility operations remain on the
+configured Ollama endpoint. Requests may be billable, provider retention policies
+may apply, and deleting local data cannot retract content already sent to an
+external provider.
+
+Chat and Characters use separate provider configuration. Data sent to an Ollama
+endpoint remains under the control of that endpoint and the selected model; verify
+their hosting behavior when local-only processing is required.
+
+## Architecture at a glance
 
 ```text
-UI (Streamlit)
-    ↓
-Application Services
-    ↓
-LLM Gateway + Repository
-    ↓          ↓
-Ollama + PostgreSQL
+                         Streamlit shell
+                         /              \
+                  Chat area          Characters area
+                 /         \          /           \
+        Application       Domain   Application    Domain
+            |                           |
+       Infrastructure              Infrastructure
+        /          \                /           \
+   LLM providers  chat schema   LLM providers  characters schema
 ```
 
-## Development Status
+Each area owns its domain models, application services, prompts, repositories,
+provider contracts, and persistence. Dependencies point inward. The shared package
+contains only generic configuration, logging, and low-level technical utilities.
+See [DESIGN.md](DESIGN.md) for the full product and architecture design.
 
-- [x] Logging
-- [x] Database Connectivity
-- [x] ORM Models
-- [x] Alembic Migrations
-- [x] Repository Layer
-- [x] Application Services
-- [x] Ollama Integration
-- [x] Streamlit Chat UI
-- [x] Context Management
-- [x] Memory Retrieval
-- [ ] Evaluation Framework
-- [ ] Monitoring Dashboard
+## Technology stack
 
-## Application Areas
+| Responsibility | Technology |
+|---|---|
+| Language and environment | Python 3.12, uv |
+| User interface | Streamlit |
+| Domain values and validation | Pydantic |
+| Persistence | PostgreSQL, SQLAlchemy |
+| Migrations | Alembic |
+| Local model access | Ollama |
+| Optional cloud responses | OpenAI |
+| Testing and quality | pytest, mypy, Ruff, Black, isort |
 
-Use the sidebar to switch between two areas:
+## Quick start
 
-- **Chat** opens by default and provides the existing conversation history,
-  streaming replies, renaming, and deletion. Switching areas preserves the selected
-  conversation for the current browser session.
-- **Characters** provides inline identity and persona management, reviewed Ongoing
-  starts, and active/archived navigation. Setup uses its independent PostgreSQL
-  schema. Ongoing supports streamed replies, durable resume, rolling summaries,
-  and incomplete-turn recovery; setup needs no running Ollama.
+### Prerequisites
 
-Start the application with the existing command:
+Install the following before starting:
+
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+- Docker with Compose
+- [Ollama](https://ollama.com/)
+- Git
+
+An OpenAI account and API key are optional.
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/babaksoft/chat-buddy.git
+cd chat-buddy
+uv sync --locked
+```
+
+### 2. Start PostgreSQL
+
+```bash
+docker-compose up -d
+```
+
+The Compose service creates the `chat_buddy` database expected by the checked-in
+configuration.
+
+### 3. Apply migrations
+
+```bash
+uv run alembic -c alembic-chat.ini upgrade head
+uv run alembic -c alembic-characters.ini upgrade head
+```
+
+The two commands maintain independent histories for the `chat` and `characters`
+schemas.
+
+### 4. Prepare Ollama
+
+Start Ollama and make the configured models available:
+
+```bash
+ollama serve
+```
+
+The checked-in Chat configuration uses `gpt-oss:20b-cloud` for responses and
+utility operations. Characters defaults to `mistral` for responses and summaries.
+Prepare those models according to their Ollama requirements, or change the
+configuration described below to models available on your endpoint.
+
+### 5. Start Chat Buddy
 
 ```bash
 uv run streamlit run src/chat_buddy/ui/streamlit_app.py
 ```
 
-The Characters page is also available at `/characters`.
+Open the URL printed by Streamlit, normally `http://localhost:8501`. Chat is the
+default page; use the sidebar to switch to Characters.
 
-## Ollama requirements
+### 6. Try the application
 
-Ollama is required even when OpenAI supplies the visible response. Chat uses the
-configured local utility model for conversation titles, rolling summaries, and
-completed-turn memory extraction. Before starting Chat, make sure Ollama is
-reachable at `OLLAMA_ENDPOINT_URL` and that both `CHAT_MODEL` and
-`UTILITY_MODEL` from
-`src/chat_buddy/chat/infrastructure/config/settings.py` are available. If the
-utility model is unavailable, visible cloud responses may still succeed, but
-title, summary, or memory processing can fail independently and will be retried
-only according to their documented application policy.
+#### Try Chat
 
-## Optional OpenAI responses
+1. Open **Chat**.
+2. Create a conversation.
+3. Select a provider and model.
+4. Send several messages.
+5. Open **Memory** to inspect or manage extracted memories.
 
-Chat remains Ollama-only by default. To opt into the response-only OpenAI
-provider, set both variables before starting Streamlit:
+#### Try Characters
+
+1. Open **Characters**.
+2. Create or select an identity.
+3. Create a persona.
+4. Review and confirm an Ongoing start.
+5. Send a message and resume the continuity from the sidebar.
+
+Confirming the first continuity permanently freezes the selected identity and
+persona. Duplicate a frozen profile to create an editable variant. Archived
+continuities remain readable but cannot accept new messages.
+
+## Configuration
+
+### Chat
+
+Chat settings currently live in
+`src/chat_buddy/chat/infrastructure/config/settings.py`.
+
+| Setting | Checked-in value | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+psycopg2://postgres:postgres@localhost:5432/chat_buddy` | Chat database connection |
+| `OLLAMA_ENDPOINT_URL` | `http://172.31.80.1:11434` | Ollama endpoint used by Chat |
+| `CHAT_MODEL` | `gpt-oss:20b-cloud` | Default visible-response model |
+| `UTILITY_MODEL` | `gpt-oss:20b-cloud` | Title, summary, and memory model |
+
+These values are source-configured rather than environment-backed. Adjust them for
+your local Ollama installation before launching the application. Keep the declared
+context and output limits compatible with the selected model.
+
+### Characters
+
+Characters reads its model settings when its services are composed:
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `CHARACTERS_OLLAMA_ENDPOINT_URL` | `http://localhost:11434` | Characters Ollama endpoint |
+| `CHARACTERS_RESPONSE_MODEL` | `mistral` | Persona response model |
+| `CHARACTERS_SUMMARY_MODEL` | `mistral` | Rolling-summary model |
+| `CHARACTERS_CONTEXT_TOKENS` | `8192` | Total configured context window |
+| `CHARACTERS_OUTPUT_TOKENS` | `1024` | Default output-token limit |
+
+For example:
+
+```bash
+export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
+export CHARACTERS_RESPONSE_MODEL=mistral
+export CHARACTERS_SUMMARY_MODEL=mistral
+export CHARACTERS_CONTEXT_TOKENS=8192
+export CHARACTERS_OUTPUT_TOKENS=1024
+```
+
+The Characters database URL is currently source-configured in
+`src/chat_buddy/characters/infrastructure/config/settings.py` and defaults to the
+same local PostgreSQL database as Chat.
+
+### Optional OpenAI responses
+
+OpenAI is disabled by default and applies only to visible Chat responses. Enable it
+with a Chat-specific API key:
 
 ```bash
 export CHAT_OPENAI_ENABLED=true
@@ -100,52 +239,28 @@ export CHAT_OPENAI_API_KEY="your-api-key"
 uv run streamlit run src/chat_buddy/ui/streamlit_app.py
 ```
 
-OpenAI is omitted when it is disabled or its Chat-specific key is blank; Chat
-does not read `OPENAI_API_KEY`. The curated OpenAI models are used only for
-visible Chat responses. Titles, rolling summaries, and memory extraction remain
-on Ollama. Requests are billable and send the assembled current input, recent
-turns, conversation summary, and eligible Chat-wide memories to OpenAI with
-response storage disabled. Provider abuse-monitoring retention may still apply.
-Local deletion cannot retract data already transmitted to the provider.
+Chat deliberately does not read `OPENAI_API_KEY`. Ollama must still be reachable
+for titles, summaries, and memory extraction. Review the usage notice in the UI
+before selecting an OpenAI model.
 
-## Chat memory controls and data flow
+## Database management
 
-Memory extraction runs only after a complete user/assistant turn. Active Chat
-memories are reusable across Chat conversations, while rolling summaries and
-ordinary messages remain scoped to their source conversation. Neither form of
-Chat context is shared with Characters.
-
-Open **🧠 Memory** from the Chat sidebar to inspect stored content and its source
-provenance. You can correct an active memory, exclude it from future prompts,
-reactivate an excluded memory, or permanently delete the complete memory lineage
-and provenance. Deleting a source conversation leaves reusable Chat memory in
-place but marks its source unavailable; delete the memory separately when it
-must also be purged.
-
-With Ollama selected, assembled prompt data and responses remain on the
-configured Ollama endpoint. With OpenAI selected, the eligible current input,
-recent turns, active conversation summary, and admitted active memories are sent
-to OpenAI for the visible response. Persistence, title generation, rolling
-summarization, and memory extraction remain local. Review the OpenAI usage notice
-before enabling it, because local correction or deletion cannot retract content
-already sent to a cloud provider.
-
-The optional live smoke test is networked and billable. It is skipped unless
-`CHAT_OPENAI_SMOKE_TEST=true` and `CHAT_OPENAI_API_KEY` is non-blank:
+Always use the migration configuration owned by the area being changed:
 
 ```bash
-CHAT_OPENAI_SMOKE_TEST=true uv run pytest -v -m openai_smoke
+uv run alembic -c alembic-chat.ini current
+uv run alembic -c alembic-characters.ini current
 ```
 
-## Database setup
+Chat migrations update `chat.alembic_version`; Characters migrations update
+`characters.alembic_version`. There is intentionally no root `alembic.ini`. The
+root `alembic/versions/` history is abandoned and retained only as a reference; do
+not run or extend it.
 
-Chat persistence has an independent migration history in the PostgreSQL
-`chat` schema, and Characters has its own independent migration history in the
-`characters` schema. Stage 1 did not migrate data from the legacy public-schema
-tables, and Stage 3 does not convert the provisional key/value memory shape.
-Existing pre-split development databases must therefore be recreated before
-applying the area baselines. The reset below deletes all data in the local
-Compose database volume:
+### Reset a disposable local database
+
+> **Warning:** This permanently deletes the local Compose database volume and all
+> application data stored in it.
 
 ```bash
 docker-compose down --volumes
@@ -154,266 +269,44 @@ uv run alembic -c alembic-chat.ini upgrade head
 uv run alembic -c alembic-characters.ini upgrade head
 ```
 
-Run future revisions, upgrades, downgrades, and history inspection with the
-owning area's configuration: `alembic-chat.ini` for Chat and
-`alembic-characters.ini` for Characters. Chat migrations update
-`chat.alembic_version`; Characters migrations update
-`characters.alembic_version`. There is intentionally no default `alembic.ini`,
-so bare Alembic commands fail instead of targeting the wrong migration history.
-The unchanged files in `alembic/versions/` are retained only as a legacy
-reference.
+## Development
 
-## Running tests
+Run the complete local quality suite:
 
 ```bash
 scripts/check.sh
 ```
 
+This checks formatting, import ordering, linting, type safety, and the automated
+test suite. Ordinary tests use fake or mocked providers and do not require live
+model calls.
 
-### Characters identity backend
-
-Apply the new Characters revision to an existing Stage 1–3 database with
-`uv run alembic -c alembic-characters.ini upgrade head`. It creates
-`characters.identities` and leaves Chat and legacy tables unchanged. No database
-reset is needed for this slice. No new runtime settings or Ollama setup is needed.
-The Characters page now offers profile setup and confirmed Ongoing starts.
-
-Compose `IdentityService` from
-`chat_buddy.characters.application` with
-`DbIdentityRepository` from
-`chat_buddy.characters.infrastructure.db.repositories` and
-`CharactersSessionLocal` from the Characters database package. The service exposes
-`create`, `list`, `inspect`, `edit`, `duplicate`, and `ensure_default` operations.
-Supply `IdentityDetails` values for authored fields and the last observed revision
-for edits. Default setup is explicit and idempotent; merely importing the service
-or using Chat does not create **You**. Frozen records can be duplicated but cannot
-be edited. Starting a continuity now permanently freezes both reviewed profiles.
-
-### Characters profile and Ongoing setup
-
-Open **Characters** to initialize the default **You** identity. Select an identity
-and persona in the sidebar, create or edit authored profiles inline, and use
-**Review start** followed by **Confirm start** to create Ongoing. Confirmation
-permanently freezes both profiles; use **Duplicate identity** or **Duplicate
-persona** for later authored changes. Review and cancellation leave profiles
-editable. Changed profile revisions require a new review.
-
-Each Ongoing starts with a fresh relationship and an isolated conversation and
-rolling summary, without extracted memory or inherited shared events. Established
-relationships require explicit social and romantic statuses. Active and archived
-continuities appear under the selected identity/persona pair. Select one to resume
-its saved transcript, settings, and starting relationship; **Archive Ongoing** makes it read-only without creating a
-replacement. Confirm a fresh start explicitly after archival.
-
-This UI uses the existing Characters migrations and database configuration; it
-adds no migration or runtime setting and needs no running provider for setup.
-Only the Characters route constructs its profile services. Chat selection and
-Characters selection survive switching areas independently.
-
-### Characters persona backend
-
-Apply revision `5cb588ac2285` with
-`uv run alembic -c alembic-characters.ini upgrade head`. It adds only
-`characters.personas` after the identity revision; no reset, new settings, or
-provider setup is needed. The Characters UI supports inline persona management.
-
-Compose `PersonaService` from
-`chat_buddy.characters.application` with `DbPersonaRepository`
-from `chat_buddy.characters.infrastructure.db.repositories`
-and the Characters session factory. It exposes `create`, `list`, `inspect`,
-`edit`, and `duplicate`. Supply a `PersonaCore` with a required `name` and
-`definition`, plus optional free-form `traits`. Limits are 128, 8192, and 4096
-characters respectively; supplied fields are trimmed and must be nonblank.
-Edits replace the entire core at the expected revision. Duplicates may supply a
-revised core and always start editable at revision 1 under a new UUID. Both
-service and repository reject frozen or stale edits. Starting a continuity
-permanently freezes the persona globally, including its display name; there is no
-unfreeze operation.
-
-### Characters Ongoing lifecycle backend
-
-Apply revision `83a2c09d7f41` with
-`uv run alembic -c alembic-characters.ini upgrade head`. It adds Characters-only
-continuities, sole conversations, and starting relationship snapshots, including
-the active Ongoing uniqueness constraint. No reset or new configuration is needed;
-Chat and legacy migration histories are unchanged.
-
-Compose `ContinuityService` from
-`chat_buddy.characters.application` with
-`DbContinuityRepository` from
-`chat_buddy.characters.infrastructure.db.repositories`
-and the Characters session factory. `start` accepts a frozen `StartContinuity`
-value containing a confirmation UUID, both profile identifiers and reviewed
-revisions, and a `RelationshipSelection`. It transactionally freezes both profiles
-and creates all continuity records. Repeated identical confirmations return the
-original continuity; changed confirmations need a new UUID. Stale reviewed
-profiles require renewed review. Only Ongoing can be created.
-
-`resume` and `archive` require identity, persona, and continuity identifiers.
-`list_grouped` returns identity/persona groups including archived history.
-Archiving is permanent and read-only, keeps both profiles frozen, and releases the
-pair's active slot. A replacement needs explicit confirmation and an independent
-starting relationship. The vocabulary and compatibility table are in
-[DESIGN.md](DESIGN.md#ongoing-starting-relationship). Ongoing adds no inferred evolution or extracted memory.
-
-Portable Characters tests run without PostgreSQL or providers:
+Some PostgreSQL concurrency cases and provider smoke tests are explicitly enabled:
 
 ```bash
-uv run pytest tests/characters tests/integration/characters -m 'not characters_postgres'
-```
-
-PostgreSQL acceptance uses an explicit test URL. Its database name must end in
-`_test`; the role must be able to create databases. Each test creates a unique
-scratch database, then drops it. To run the database validation locally:
-
-```bash
-docker run --detach --rm --name chat-buddy-characters-test \
-  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=characters_test \
-  -p 127.0.0.1:55432:5432 postgres:17
-# Wait until PostgreSQL is ready, then run all checks with database cases enabled.
-CHARACTERS_TEST_DATABASE_URL=postgresql+psycopg2://postgres:test@127.0.0.1:55432/characters_test \
+CHARACTERS_TEST_DATABASE_URL=postgresql+psycopg2://postgres:test@localhost:55432/characters_test \
   scripts/check.sh
-docker stop chat-buddy-characters-test
-```
 
-Without this setting, PostgreSQL cases are skipped by ordinary tests. A slice's
-local database validation must run them explicitly before marking it verified.
-They exercise concurrent default setup, competing identity/persona edits, first-use
-races, shared-persona starts, confirmation collisions, active-only uniqueness,
-fresh upgrades, baseline and prior-head downgrade/re-upgrade, metadata parity, and
-preservation of a populated Chat schema including its migration version. Offline
-migration checks run in the ordinary suite.
-
-### Characters provider backend
-
-Slice 4 adds Characters-owned streaming response and summary capabilities without
-schema changes. No running Ollama service is needed for ordinary tests.
-
-Call `create_model_registry()` from
-`chat_buddy.characters.infrastructure.llm` only when composing
-Characters services. `resolve_default("response")` and `resolve_default("summary")`
-return independent effective selections. `resolve` also accepts an explicit
-configured provider/model pair and generation overrides. Select the matching
-`response_gateway`, `summary_gateway`, and `token_counter` using the effective
-model's provider key. Response adapters yield text through `stream`; callers must
-close the iterator when abandoning output. Summary adapters accept an assembled
-prompt and return nonempty plain text.
-
-Environment settings are read when the factory is called:
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `CHARACTERS_OLLAMA_ENDPOINT_URL` | `http://localhost:11434` | Local Ollama endpoint |
-| `CHARACTERS_RESPONSE_MODEL` | `mistral` | Default persona response model |
-| `CHARACTERS_SUMMARY_MODEL` | `mistral` | Default summary model |
-| `CHARACTERS_CONTEXT_TOKENS` | `8192` | Configured total model context window |
-| `CHARACTERS_OUTPUT_TOKENS` | `1024` | Default enforced output token limit |
-
-Pull both selected models with `ollama pull <model>` before local invocation.
-Set context limits to values supported by the selected models. The local counter
-uses a conservative UTF-8 byte estimate with framing overhead, not exact usage.
-These settings and clients are independent of Chat configuration.
-
-### Characters durable Ongoing backend
-
-Slice 5 adds migration `f71d92ab0c55`: conversation generation defaults,
-append-only messages, and a separate generation ledger. Apply it with
-`uv run alembic -c alembic-characters.ini upgrade head`; Chat migrations and
-configuration are independent. Existing continuities remain usable. No additional
-provider settings are required. The Ongoing UI uses this backend.
-
-Compose the backend lazily with `create_conversation_service()` from
-`chat_buddy.characters.infrastructure`. Every operation
-requires a `ConversationScope` containing identity, persona, continuity, and
-conversation identifiers. `send(scope, SubmittedInput(content=...))` commits the
-input and returns a pending attempt. Exhaust `stream(scope, attempt.id)` to commit
-the persona response; use `contextlib.closing` when consumption may stop early.
-`history` returns saved messages and attempts separately. `configure` validates
-and saves a `ConversationSettings` selection for the next attempt without changing
-past effective settings.
-
-`resume` reloads history and interrupts attempts whose progress heartbeat is at
-least five minutes old. Closing a consumed stream interrupts it immediately.
-`continue_incomplete_turn` reserves a fresh attempt for the existing unmatched
-user input, preserving previous failures and partial output. Another send must
-wait for that input to complete. Archived history remains readable and cannot
-accept generation writes. Completion checks archival again after the provider
-returns.
-
-The prompt includes required persona, identity, starting relationship, fixed
-presentation, and scoped summary plus uncovered committed turns. Partial output stays outside it. Token
-accounting reserves output capacity and 64 additional overhead tokens; overflow
-raises `ContextCapacityError` before saving an attempt or calling a provider.
-Rolling summaries compress older complete turns within the configured budget. Ongoing performs no memory extraction or
-relationship/persona evolution.
-
-### Characters Ongoing conversation UI
-
-Select an Ongoing entry under Identity → Persona to restore its starting
-relationship, saved response model, and committed transcript. The response model
-and supported generation settings can be saved for the next attempt; earlier
-attempts retain their effective settings. Replies stream into the conversation.
-Failed or interrupted output appears separately from completed history. Use
-**Continue incomplete turn** to answer the existing user message without submitting
-it again. Refresh active attempts to reload progress; abandoned attempts become
-recoverable after five minutes without progress. Archived conversations remain
-readable and disable sending. Context or summary failures show actions for model
-capacity, output limits, and summary provider availability. This UI needs no new
-configuration or migrations beyond the existing Characters backend setup.
-
-### Characters operation and acceptance
-
-Characters database configuration lives in
-`src/chat_buddy/characters/infrastructure/config/settings.py` independently of
-Chat. Both defaults point to the same local PostgreSQL database, with separate
-schemas and migration heads. For a current database, apply both histories without
-resetting data:
-
-```bash
-uv sync --locked
-uv run alembic -c alembic-chat.ini upgrade head
-uv run alembic -c alembic-characters.ini upgrade head
-```
-
-For local Ongoing responses and rolling summaries, start Ollama and pull both
-selected models (pull once when they are the same):
-
-```bash
-ollama serve
-# In another terminal:
-ollama pull mistral
-export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
-export CHARACTERS_RESPONSE_MODEL=mistral
-export CHARACTERS_SUMMARY_MODEL=mistral
-export CHARACTERS_CONTEXT_TOKENS=8192
-export CHARACTERS_OUTPUT_TOKENS=1024
-uv run streamlit run src/chat_buddy/ui/streamlit_app.py
-```
-
-Choose context and output limits supported by the local models. Select Characters,
-author or edit profiles before use, review and confirm the starting relationship,
-then send a message. Resume by selecting the saved Ongoing. Long conversations use
-only their durable rolling summary and recent turns. After a failed reply, use
-**Continue incomplete turn**; partial output is never committed history. Archiving
-keeps history readable and profiles permanently frozen. A replacement starts with
-fresh relationship state and no inherited conversation or summary. Completed
-response alternatives, branches, Storylines, Timeline, memory, and inferred
-relationship/persona evolution belong to later stages.
-
-The automated milestone covers this sequence with real repositories and
-deterministic providers. The architecture suite runs Characters tests and
-production composition in a separate process that rejects every Chat import.
-PostgreSQL acceptance additionally reverses/reapplies the complete migration chain,
-fences runtime repository table references to `characters`, and compares populated
-Chat objects, rows, and migration head before and after.
-
-The optional live streaming smoke test uses isolated SQLite persistence, the
-configured Characters Ollama response model, and no development database. Run it
-only when the local service and model are available:
-
-```bash
+CHAT_OPENAI_SMOKE_TEST=true uv run pytest -v -m openai_smoke
 CHARACTERS_OLLAMA_SMOKE_TEST=true uv run pytest -v -m characters_ollama_smoke
 ```
 
-Ordinary tests skip this live call. The smoke test streams a response through
-production composition, commits it, and resumes it through a fresh service.
+Use a disposable PostgreSQL test database whose name ends in `_test`. OpenAI smoke
+tests are networked and billable; Ollama smoke tests require the configured local
+service and model.
+
+## Project documentation
+
+- [README.md](README.md) — stable product overview, setup, configuration, and basic
+  operation.
+- [DESIGN.md](DESIGN.md) — product model, architecture, invariants, and intended
+  behavior.
+- [PLAN.md](PLAN.md) — implementation sequence, delivery status, and future work.
+- [Decision records](docs/decisions/) — concise accepted decisions and their
+  rationale.
+- [AGENTS.md](AGENTS.md) — repository conventions for coding and documentation
+  work.
+
+## License
+
+Chat Buddy is available under the [MIT License](LICENSE).
