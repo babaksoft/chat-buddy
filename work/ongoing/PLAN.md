@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 ## Scope and starting point
 
@@ -19,7 +19,7 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slices 1–4 are
+This document records implementation scope and verification. Slices 1–7 are
 implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
 ADRs remain authoritative.
 
@@ -430,7 +430,7 @@ own durable summary, with deterministic failure behavior and no extracted memory
 
 ### Slice 7 — Versioned evolution strategy interface
 
-Status: Proposed
+Status: Complete
 
 Define a Characters-owned application strategy interface with a stable name and
 version, immutable scoped inputs, and structured proposal outputs. Inputs carry

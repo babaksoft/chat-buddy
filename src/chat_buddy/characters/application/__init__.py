@@ -10,6 +10,10 @@ from chat_buddy.characters.application.continuity_service import (
 from chat_buddy.characters.application.conversation_service import (
     ConversationService,
 )
+from chat_buddy.characters.application.evolution import (
+    EvolutionEvaluator,
+    NoChangeEvolutionStrategy,
+)
 from chat_buddy.characters.application.identity_service import (
     IdentityService,
 )
@@ -23,7 +27,8 @@ from chat_buddy.characters.application.rolling_summary_service import (
 __all__ = [
     "ContinuityService",
     "ConversationService",
-    "IdentityService",
+    "EvolutionEvaluator",
+    "NoChangeEvolutionStrategy",
     "OngoingContextBudgeter",
     "OngoingContextEligibility",
     "PersonaService",
