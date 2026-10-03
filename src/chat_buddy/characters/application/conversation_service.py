@@ -24,6 +24,7 @@ from chat_buddy.characters.domain import (
     GenerationAttempt,
     IdentityRepository,
     IncompleteTurnError,
+    ModelDescriptor,
     ModelRegistry,
     PersonaRepository,
     PromptMessage,
@@ -69,6 +70,31 @@ class ConversationService:
         self._eligibility = OngoingContextEligibility()
         self._budgeter = OngoingContextBudgeter()
         self._summaries = RollingSummaryService(summaries, models)
+
+    def response_models(self) -> tuple[ModelDescriptor, ...]:
+        """List configured models supporting persona responses.
+
+        Returns:
+            Selectable response model descriptors.
+        """
+
+        return tuple(
+            model
+            for model in self._models.list_models()
+            if "response" in model.capabilities
+        )
+
+    def default_settings(self) -> ConversationSettings:
+        """Resolve the configured response default for a new conversation.
+
+        Returns:
+            Requested default selection.
+        """
+
+        generation = self._models.resolve_default("response")
+        return ConversationSettings(
+            provider=generation.model.provider, model=generation.model.model
+        )
 
     def history(self, scope: ConversationScope) -> ConversationHistory:
         """Inspect committed history and incomplete output separately.

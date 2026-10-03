@@ -110,10 +110,13 @@ def services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
         return row
 
     continuities.start.side_effect = start
-    with patch.object(
-        page,
-        "create_profile_services",
-        return_value=(identities, personas, continuities),
+    with (
+        patch.object(
+            page,
+            "create_profile_services",
+            return_value=(identities, personas, continuities),
+        ),
+        patch.object(page, "render_ongoing"),
     ):
         yield identities, personas, continuities
 

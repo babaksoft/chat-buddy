@@ -616,6 +616,14 @@ attempt or invoking a provider; Slice 6 supplies summary compression. Partial
 output, other continuities, extracted memory, and synthetic shared events never
 enter this prompt.
 
+The Ongoing UI restores committed history, starting relationship, and saved
+response settings for its selected continuity. Supported generation overrides
+apply to the next attempt. Incomplete attempt output is shown separately, and
+continuation reuses its unmatched input. Sending is disabled for active attempts,
+unmatched turns, and archives; archived history remains readable. Refresh reloads
+progress and reconciles abandoned attempts. Provider and context failures expose
+recovery actions without offering completed-response retries or branch controls.
+
 #### Ongoing context budgeting and summaries
 
 Ongoing reserves the fixed prompt overhead and response output limit before

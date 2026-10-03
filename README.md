@@ -346,3 +346,17 @@ accounting reserves output capacity and 64 additional overhead tokens; overflow
 raises `ContextCapacityError` before saving an attempt or calling a provider.
 Rolling summaries arrive in Slice 6. Ongoing performs no memory extraction or
 relationship/persona evolution.
+
+### Characters Ongoing conversation UI
+
+Select an Ongoing entry under Identity → Persona to restore its starting
+relationship, saved response model, and committed transcript. The response model
+and supported generation settings can be saved for the next attempt; earlier
+attempts retain their effective settings. Replies stream into the conversation.
+Failed or interrupted output appears separately from completed history. Use
+**Continue incomplete turn** to answer the existing user message without submitting
+it again. Refresh active attempts to reload progress; abandoned attempts become
+recoverable after five minutes without progress. Archived conversations remain
+readable and disable sending. Context or summary failures show actions for model
+capacity, output limits, and summary provider availability. This UI needs no new
+configuration or migrations beyond the existing Characters backend setup.

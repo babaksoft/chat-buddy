@@ -19,7 +19,7 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slices 1–8 are
+This document records implementation scope and verification. Slices 1–9 are
 implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
 ADRs remain authoritative.
 
@@ -499,7 +499,7 @@ Ongoing, and navigate its history without UI database/provider access.
 
 ### Slice 9 — Ongoing conversation and recovery UI
 
-Status: Proposed
+Status: Complete
 
 Render saved history and streaming persona replies for the selected continuity.
 Restore its configured model selection, relationship starting state, and history

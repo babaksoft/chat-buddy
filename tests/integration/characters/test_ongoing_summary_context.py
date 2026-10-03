@@ -133,6 +133,23 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
     list(restarted.stream(scope, fifth.id))
     assert restarted.history(scope).messages[-1].content == "Hello there"
 
+    previous = restarted.history(scope)
+    responses.chunks, responses.fail = ("Partial",), True
+    failed = restarted.send(scope, SubmittedInput(content="Sixth"))
+    with pytest.raises(ProviderInvocationError):
+        list(restarted.stream(scope, failed.id))
+    responses.chunks, responses.fail = ("Recovered",), False
+    recovered = _service(factory, responses, summaries)
+    restored = recovered.resume(scope)
+    assert restored.settings == previous.settings
+    assert restored.attempts[-1].incomplete_output == "Partial"
+    assert restored.messages[:-1] == previous.messages
+    continued = recovered.continue_incomplete_turn(scope)
+    assert continued.user_message_id == failed.user_message_id
+    assert list(recovered.stream(scope, continued.id)) == ["Recovered"]
+    assert recovered.history(scope).messages[-1].content == "Recovered"
+    assert all(message.content != "Partial" for message in responses.captured[-1])
+
 
 def test_required_summary_failure_preserves_history_and_active_revision(
     characters_session_factory: sessionmaker[Session],

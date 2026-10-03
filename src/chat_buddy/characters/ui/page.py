@@ -30,6 +30,7 @@ from chat_buddy.characters.domain import (
     Trust,
 )
 from chat_buddy.characters.infrastructure import create_profile_services
+from chat_buddy.characters.ui.ongoing import render_ongoing
 
 
 def render() -> None:
@@ -114,6 +115,7 @@ def _render_profiles(
     elif st.button("Archive Ongoing", key="characters_archive"):
         continuities.archive(identity.id, persona.id, continuity.id)
         st.rerun()
+    render_ongoing(continuity)
 
 
 def _select_owner(kind: str, labels: dict[UUID, str]) -> UUID | None:

@@ -789,3 +789,112 @@ def test_memory_deletion_requires_confirmation(
     else:
         memories.delete_memory.assert_not_called()
         assert app.button(key=f"chat_memory_delete_{memory.id}")
+
+
+def test_ongoing_transcript_survives_area_switch_without_leaking(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Restore scoped Characters history while rendering only the selected area.
+
+    Args:
+        services:
+            Chat service factory double.
+        character_services:
+            Independent Characters application doubles.
+    """
+
+    from chat_buddy.characters.application import ConversationService as OngoingService
+    from chat_buddy.characters.domain import (
+        Continuity,
+        ContinuityGroup,
+        ConversationHistory,
+        ConversationScope,
+        ConversationSettings,
+        Message,
+    )
+    from chat_buddy.characters.ui import ongoing
+    from tests.characters_support import FakeResponse, registry
+
+    identity = character_services[0].list.return_value[0]
+    persona = character_services[1].list.return_value[0]
+    row = Continuity.model_validate(
+        {
+            "id": uuid4(),
+            "identity_id": identity.id,
+            "persona_id": persona.id,
+            "conversation_id": uuid4(),
+            "mode": "ongoing",
+            "lifecycle": "archived",
+            "relationship": {
+                "intent": "platonic",
+                "social": "stranger",
+                "romantic": "none",
+                "dynamic": "neutral",
+                "trust": "unknown",
+                "affection": "neutral",
+                "boundaries": (),
+                "origins": {
+                    name: "default"
+                    for name in (
+                        "social",
+                        "romantic",
+                        "dynamic",
+                        "trust",
+                        "affection",
+                        "boundaries",
+                    )
+                },
+            },
+        }
+    )
+    scope = ConversationScope(
+        identity_id=identity.id,
+        persona_id=persona.id,
+        continuity_id=row.id,
+        conversation_id=row.conversation_id,
+    )
+    character_services[2].list_grouped.return_value = (
+        ContinuityGroup(
+            identity_id=identity.id, persona_id=persona.id, continuities=(row,)
+        ),
+    )
+    character_services[2].resume.return_value = row
+    conversation = Mock(spec=OngoingService)
+    conversation.response_models.return_value = registry(FakeResponse()).list_models()
+    conversation.resume.return_value = ConversationHistory(
+        scope=scope,
+        settings=ConversationSettings(provider="fake", model="first"),
+        messages=(
+            Message(
+                id=uuid4(),
+                scope=scope,
+                sequence=1,
+                role="persona",
+                content="Characters saved response",
+                created_at=datetime.now(UTC),
+            ),
+        ),
+        attempts=(),
+    )
+    with patch.object(
+        ongoing, "create_conversation_service", return_value=conversation
+    ) as factory:
+        app = AppTest.from_function(_render_app)
+        app.session_state["characters_continuity_id"] = row.id
+        _switch_area(app, "characters")
+        assert not app.exception
+        assert any(m.value == "Characters saved response" for m in app.markdown)
+        services.assert_not_called()
+        count = factory.call_count
+        _switch_area(app, "")
+        assert not app.exception
+        assert not any(m.value == "Characters saved response" for m in app.markdown)
+        assert not any(t.value == "Social: stranger" for t in app.text)
+        assert factory.call_count == count
+        services.reset_mock()
+        _switch_area(app, "characters")
+        assert not app.exception
+        assert any(m.value == "Characters saved response" for m in app.markdown)
+        assert app.chat_input[0].disabled
+        services.assert_not_called()
+        conversation.resume.assert_called_with(scope)
