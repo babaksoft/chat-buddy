@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from chat_buddy.chat.domain.memory import (
+from chat_buddy.chat.domain import (
     ExtractionReceiptRecord,
     MemoryCandidate,
     MemoryExtractionOutcome,

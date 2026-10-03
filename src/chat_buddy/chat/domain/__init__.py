@@ -65,7 +65,7 @@ from chat_buddy.chat.domain.summary import (
     SummaryProvenance,
     SummaryRecord,
 )
-from chat_buddy.chat.domain.tokenizer import TokenCounter, TokenUsage
+from chat_buddy.chat.domain.tokenizer import TextEncoder, TokenCounter, TokenUsage
 
 __all__ = [
     "ChatMemoryRepository",
@@ -113,6 +113,7 @@ __all__ = [
     "SummaryProvenance",
     "SummaryRecord",
     "SummaryRepository",
+    "TextEncoder",
     "TitleGenerator",
     "TokenCounter",
     "TokenUsage",

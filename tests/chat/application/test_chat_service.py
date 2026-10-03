@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.chat.application.schemas import ChatRequest, GenerationSelection
+from chat_buddy.chat.application import ChatRequest, GenerationSelection
 from chat_buddy.chat.application.service import ChatService
 from chat_buddy.chat.domain import (
     ChatMessage,

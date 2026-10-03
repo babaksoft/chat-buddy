@@ -13,7 +13,7 @@ from sqlalchemy import ForeignKeyConstraint, Index, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.chat.domain import SummaryLifecycle
-from chat_buddy.chat.infrastructure.db.base import CHAT_SCHEMA, ChatBase
+from chat_buddy.chat.infrastructure.db import CHAT_SCHEMA, ChatBase
 
 if TYPE_CHECKING:
     from chat_buddy.chat.infrastructure.db.models.message import Message

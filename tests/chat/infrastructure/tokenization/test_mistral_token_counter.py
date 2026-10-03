@@ -1,6 +1,6 @@
 import pytest
 
-from chat_buddy.chat.domain.chat import (
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
 )

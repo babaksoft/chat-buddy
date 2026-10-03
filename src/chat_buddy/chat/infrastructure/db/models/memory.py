@@ -18,7 +18,7 @@ from chat_buddy.chat.domain import (
     MemoryLifecycle,
     MemoryOriginKind,
 )
-from chat_buddy.chat.infrastructure.db.base import CHAT_SCHEMA, ChatBase
+from chat_buddy.chat.infrastructure.db import CHAT_SCHEMA, ChatBase
 
 if TYPE_CHECKING:
     from chat_buddy.chat.infrastructure.db.models.generation_attempt import (

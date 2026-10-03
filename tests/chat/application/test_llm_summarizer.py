@@ -2,14 +2,12 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import uuid4
 
-from chat_buddy.chat.application.llm_summarizer import (
-    LLMSummarizer,
-)
-from chat_buddy.chat.domain.chat import (
+from chat_buddy.chat.application import LLMSummarizer
+from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,
+    CompletedTurn,
 )
-from chat_buddy.chat.domain.context import CompletedTurn
 
 
 def test_generate_summary_includes_prior_summary_and_exact_completed_turns() -> None:

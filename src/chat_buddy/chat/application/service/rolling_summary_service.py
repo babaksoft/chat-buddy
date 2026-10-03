@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from math import floor
 from uuid import UUID, uuid4
 
-from chat_buddy.chat.application.config import RollingSummaryConfig
+from chat_buddy.chat.application import RollingSummaryConfig
 from chat_buddy.chat.domain import (
     ChatMessage,
     ChatRole,

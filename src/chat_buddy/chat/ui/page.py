@@ -5,7 +5,7 @@ from uuid import UUID
 
 import streamlit as st
 
-from chat_buddy.chat.application.schemas import ChatRequest
+from chat_buddy.chat.application import ChatRequest
 from chat_buddy.chat.application.service import (
     ChatService,
     ConversationService,

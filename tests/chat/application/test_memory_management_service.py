@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.chat.application.schemas import MemoryManagementOutcome
+from chat_buddy.chat.application import MemoryManagementOutcome
 from chat_buddy.chat.application.service import MemoryManagementService
 from chat_buddy.chat.domain import (
     ChatRole,

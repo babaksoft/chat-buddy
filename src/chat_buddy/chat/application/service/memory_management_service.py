@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from chat_buddy.chat.application.schemas import (
+from chat_buddy.chat.application import (
     ManagedMemory,
     MemoryManagementOutcome,
     MemoryManagementResult,

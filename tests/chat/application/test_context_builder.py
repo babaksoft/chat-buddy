@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.chat.application.config import ContextBudgetConfig
-from chat_buddy.chat.application.context_builder import (
+from chat_buddy.chat.application import (
     ContextAssemblyService,
+    ContextBudgetConfig,
     DefaultContextBudgeter,
     DefaultContextEligibility,
 )

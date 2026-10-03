@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from chat_buddy.chat.application.schemas import (
+from chat_buddy.chat.application import (
     ChatRequest,
     ChatResponse,
     GenerationSelection,

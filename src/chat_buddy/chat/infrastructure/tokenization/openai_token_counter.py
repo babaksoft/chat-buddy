@@ -1,28 +1,8 @@
 """Offline token estimation for OpenAI Responses requests."""
 
-from collections.abc import Sequence
-from typing import Protocol
-
 import tiktoken
 
-from chat_buddy.chat.domain import ChatMessage
-
-
-class TextEncoder(Protocol):
-    """Encode text into provider tokenizer identifiers."""
-
-    def encode(self, text: str) -> Sequence[int]:
-        """Encode text.
-
-        Args:
-            text:
-                Text to encode.
-
-        Returns:
-            Token identifiers for the text.
-        """
-
-        ...
+from chat_buddy.chat.domain import ChatMessage, TextEncoder
 
 
 class OpenAITokenCounter:

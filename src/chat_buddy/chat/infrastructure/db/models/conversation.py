@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import JSON, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from chat_buddy.chat.infrastructure.db.base import ChatBase
+from chat_buddy.chat.infrastructure.db import ChatBase
 
 if TYPE_CHECKING:
     from chat_buddy.chat.infrastructure.db.models.generation_attempt import (

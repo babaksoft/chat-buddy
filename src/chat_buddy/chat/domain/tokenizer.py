@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -12,6 +13,23 @@ class TokenUsage:
 
     prompt_tokens: int
     completion_tokens: int
+
+
+class TextEncoder(Protocol):
+    """Encode text into provider tokenizer identifiers."""
+
+    def encode(self, text: str) -> Sequence[int]:
+        """Encode text.
+
+        Args:
+            text:
+                Text to encode.
+
+        Returns:
+            Token identifiers for the text.
+        """
+
+        ...
 
 
 class TokenCounter(Protocol):
