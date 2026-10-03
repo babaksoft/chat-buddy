@@ -8,6 +8,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
+from chat_buddy.characters.domain import Identity, IdentityDetails, Persona, PersonaCore
+from chat_buddy.characters.ui import page as characters_page
 from chat_buddy.chat.application.schemas import (
     ChatRequest,
     GenerationSelection,
@@ -95,6 +97,30 @@ def services(conversation_id: UUID) -> Generator[Mock, None, None]:
 
 
 @pytest.fixture
+def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
+    """Provide independent Characters services for shell routing tests.
+
+    Yields:
+        Profile and continuity application doubles.
+    """
+
+    identities, personas, continuities = Mock(), Mock(), Mock()
+    identities.list.return_value = [
+        Identity(id=uuid4(), details=IdentityDetails(name="You"))
+    ]
+    personas.list.return_value = [
+        Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
+    ]
+    continuities.list_grouped.return_value = ()
+    with patch.object(
+        characters_page,
+        "create_profile_services",
+        return_value=(identities, personas, continuities),
+    ):
+        yield identities, personas, continuities
+
+
+@pytest.fixture
 def app(services: Mock) -> AppTest:
     return AppTest.from_function(_render_app, default_timeout=10).run()
 
@@ -126,7 +152,70 @@ def test_selecting_chat_does_not_construct_characters_clients(services: Mock) ->
     client.assert_not_called()
 
 
-def test_characters_opens_without_services(services: Mock) -> None:
+def test_selecting_chat_does_not_construct_characters_profile_services(
+    services: Mock,
+) -> None:
+    """Keep profile initialization confined to the selected Characters route.
+
+    Args:
+        services:
+            Chat service factory double.
+    """
+
+    with patch.object(
+        characters_page,
+        "create_profile_services",
+        side_effect=AssertionError("Chat initialized Characters"),
+    ) as factory:
+        app = AppTest.from_function(_render_app).run()
+    assert not app.exception
+    factory.assert_not_called()
+    services.assert_called_once()
+
+
+def test_characters_selection_and_review_survive_area_switch(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Restore Characters owners and pending review without invoking Chat on its route.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    first = character_services[1].list.return_value[0]
+    second = first.model_copy(
+        update={
+            "id": uuid4(),
+            "core": PersonaCore(name="Other", definition="Other guide"),
+        }
+    )
+    character_services[1].list.return_value.append(second)
+    app = AppTest.from_function(_render_app)
+    _switch_area(app, "characters")
+    app.selectbox(key="characters_persona_widget").set_value(second.id).run()
+    app.button(key="characters_review_start").click().run()
+    request = app.session_state["characters_review"][0]
+    services.assert_not_called()
+    _switch_area(app, "")
+    assert not app.exception
+    calls = character_services[0].ensure_default.call_count
+    app.run()
+    assert character_services[0].ensure_default.call_count == calls
+    services.reset_mock()
+    _switch_area(app, "characters")
+    assert not app.exception
+    assert app.session_state["characters_persona_id"] == second.id
+    assert app.session_state["characters_review"][0] == request
+    assert "Persona: Other" in app.caption[0].value
+    services.assert_not_called()
+
+
+def test_characters_opens_without_chat_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
     services.side_effect = AssertionError("Characters must not initialize services")
     app = AppTest.from_function(_render_app, default_timeout=10)
 
@@ -134,15 +223,18 @@ def test_characters_opens_without_services(services: Mock) -> None:
 
     assert not app.exception
     assert app.title[0].value == "👥 Characters"
-    assert "Character setup and conversations are coming next." in app.markdown[0].value
+    assert "Identity: You" in app.caption[0].value
     assert not app.chat_input
-    assert not app.sidebar.header
-    assert not app.button
+    assert app.sidebar.header[0].value == "Identity → Persona → Ongoing"
+    character_services[0].ensure_default.assert_called_once()
     services.assert_not_called()
 
 
 def test_selected_conversation_survives_area_switch(
-    app: AppTest, services: Mock, conversation_id: UUID
+    app: AppTest,
+    services: Mock,
+    conversation_id: UUID,
+    character_services: tuple[Mock, Mock, Mock],
 ) -> None:
     app.button(key=f"chat_select_{conversation_id}").click().run()
     assert not app.exception

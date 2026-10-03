@@ -52,6 +52,8 @@ def characters_session_factory() -> Generator[sessionmaker[Session], None, None]
         A session factory with isolated Characters tables.
     """
 
+    from sqlalchemy.pool import StaticPool
+
     from chat_buddy.characters.infrastructure.db import models  # noqa: F401
     from chat_buddy.characters.infrastructure.db import (
         CHARACTERS_SCHEMA,
@@ -60,6 +62,8 @@ def characters_session_factory() -> Generator[sessionmaker[Session], None, None]
 
     engine = create_engine(
         "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
         execution_options={"schema_translate_map": {CHARACTERS_SCHEMA: None}},
     )
     CharactersBase.metadata.create_all(engine)

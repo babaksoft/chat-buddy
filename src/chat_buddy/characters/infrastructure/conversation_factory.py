@@ -3,19 +3,7 @@
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import ConversationService
-from chat_buddy.characters.infrastructure.db import (
-    CharactersSessionLocal,
-)
-from chat_buddy.characters.infrastructure.db.repositories import (
-    DbContinuityRepository,
-    DbConversationRepository,
-    DbIdentityRepository,
-    DbPersonaRepository,
-    DbSummaryRepository,
-)
-from chat_buddy.characters.infrastructure.llm import (
-    create_model_registry,
-)
+from chat_buddy.characters.infrastructure.llm import create_model_registry
 
 
 def create_conversation_service(
@@ -30,6 +18,15 @@ def create_conversation_service(
     Returns:
         Ready Ongoing application service without initializing Chat.
     """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityRepository,
+        DbConversationRepository,
+        DbIdentityRepository,
+        DbPersonaRepository,
+        DbSummaryRepository,
+    )
 
     if session_factory is None:
         session_factory = CharactersSessionLocal

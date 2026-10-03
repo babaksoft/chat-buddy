@@ -1,15 +1,21 @@
 """Domain models and contracts."""
 
 from chat_buddy.characters.domain.continuity import (
+    Affection,
+    Boundary,
     Continuity,
     ContinuityGroup,
     ContinuityLifecycle,
     ContinuityMode,
+    Dynamic,
     RelationshipIntent,
     RelationshipSelection,
+    RomanticStatus,
+    SocialStatus,
     StartContinuity,
     StartingOrigins,
     StartingRelationship,
+    Trust,
 )
 from chat_buddy.characters.domain.conversation import (
     AttemptStatus,
@@ -76,9 +82,11 @@ from chat_buddy.characters.domain.summary import (
 
 __all__ = [
     "ActiveContinuityError",
+    "Affection",
     "ArchivedContinuityError",
     "AttemptConflictError",
     "AttemptStatus",
+    "Boundary",
     "CompletedTurn",
     "ConfirmationConflictError",
     "ContextCapacityError",
@@ -94,6 +102,7 @@ __all__ = [
     "ConversationRepository",
     "ConversationScope",
     "ConversationSettings",
+    "Dynamic",
     "EffectiveGeneration",
     "EligibleContext",
     "FrozenIdentityError",
@@ -119,6 +128,8 @@ __all__ = [
     "RelationshipIntent",
     "RelationshipSelection",
     "ResponseGateway",
+    "RomanticStatus",
+    "SocialStatus",
     "StaleIdentityError",
     "StalePersonaError",
     "StartContinuity",
@@ -130,6 +141,7 @@ __all__ = [
     "SummaryRepository",
     "SummaryRevision",
     "TokenCounter",
+    "Trust",
     "UnsupportedContinuityModeError",
     "UnsupportedGenerationError",
 ]

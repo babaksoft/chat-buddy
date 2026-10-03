@@ -64,10 +64,9 @@ Use the sidebar to switch between two areas:
 - **Chat** opens by default and provides the existing conversation history,
   streaming replies, renaming, and deletion. Switching areas preserves the selected
   conversation for the current browser session.
-- **Characters** retains a landing page while identity management is available
-  through its backend service. Persona cores can also be managed through backend
-  services; character chat is not implemented yet. The landing page does not
-  connect to PostgreSQL or Ollama.
+- **Characters** provides inline identity and persona management, reviewed Ongoing
+  starts, and active/archived navigation. Setup uses its independent PostgreSQL
+  schema and needs no running Ollama. Conversation UI arrives in Slice 9.
 
 Start the application with the existing command:
 
@@ -75,7 +74,7 @@ Start the application with the existing command:
 uv run streamlit run src/chat_buddy/ui/streamlit_app.py
 ```
 
-The Characters landing page is also available at `/characters`.
+The Characters page is also available at `/characters`.
 
 ## Ollama requirements
 
@@ -176,7 +175,7 @@ Apply the new Characters revision to an existing Stage 1–3 database with
 `uv run alembic -c alembic-characters.ini upgrade head`. It creates
 `characters.identities` and leaves Chat and legacy tables unchanged. No database
 reset is needed for this slice. No new runtime settings or Ollama setup is needed.
-The Characters UI remains a landing page until the later UI slice.
+The Characters page now offers profile setup and confirmed Ongoing starts.
 
 Compose `IdentityService` from
 `chat_buddy.characters.application` with
@@ -189,12 +188,33 @@ for edits. Default setup is explicit and idempotent; merely importing the servic
 or using Chat does not create **You**. Frozen records can be duplicated but cannot
 be edited. Starting a continuity now permanently freezes both reviewed profiles.
 
+### Characters profile and Ongoing setup
+
+Open **Characters** to initialize the default **You** identity. Select an identity
+and persona in the sidebar, create or edit authored profiles inline, and use
+**Review start** followed by **Confirm start** to create Ongoing. Confirmation
+permanently freezes both profiles; use **Duplicate identity** or **Duplicate
+persona** for later authored changes. Review and cancellation leave profiles
+editable. Changed profile revisions require a new review.
+
+Each Ongoing starts with a fresh relationship and an isolated conversation and
+rolling summary, without extracted memory or inherited shared events. Established
+relationships require explicit social and romantic statuses. Active and archived
+continuities appear under the selected identity/persona pair. Select one to resume
+its lifecycle view; **Archive Ongoing** makes it read-only without creating a
+replacement. Conversation rendering and sending arrive in Slice 9.
+
+This UI uses the existing Characters migrations and database configuration; it
+adds no migration or runtime setting and needs no running provider for setup.
+Only the Characters route constructs its profile services. Chat selection and
+Characters selection survive switching areas independently.
+
 ### Characters persona backend
 
 Apply revision `5cb588ac2285` with
 `uv run alembic -c alembic-characters.ini upgrade head`. It adds only
 `characters.personas` after the identity revision; no reset, new settings, or
-provider setup is needed. The UI remains the landing page.
+provider setup is needed. The Characters UI supports inline persona management.
 
 Compose `PersonaService` from
 `chat_buddy.characters.application` with `DbPersonaRepository`
@@ -215,7 +235,7 @@ Apply revision `83a2c09d7f41` with
 `uv run alembic -c alembic-characters.ini upgrade head`. It adds Characters-only
 continuities, sole conversations, and starting relationship snapshots, including
 the active Ongoing uniqueness constraint. No reset or new configuration is needed;
-Chat and legacy migration histories are unchanged. The UI remains a landing page.
+Chat and legacy migration histories are unchanged.
 
 Compose `ContinuityService` from
 `chat_buddy.characters.application` with
@@ -267,8 +287,7 @@ migration checks run in the ordinary suite.
 ### Characters provider backend
 
 Slice 4 adds Characters-owned streaming response and summary capabilities without
-schema changes. No running Ollama service is needed for ordinary tests. The UI
-continues to use its landing page until the later UI slices.
+schema changes. No running Ollama service is needed for ordinary tests.
 
 Call `create_model_registry()` from
 `chat_buddy.characters.infrastructure.llm` only when composing
@@ -301,8 +320,7 @@ Slice 5 adds migration `f71d92ab0c55`: conversation generation defaults,
 append-only messages, and a separate generation ledger. Apply it with
 `uv run alembic -c alembic-characters.ini upgrade head`; Chat migrations and
 configuration are independent. Existing continuities remain usable. No additional
-provider settings are required, and the UI remains the landing page until the UI
-slices.
+provider settings are required. Conversation UI arrives in Slice 9.
 
 Compose the backend lazily with `create_conversation_service()` from
 `chat_buddy.characters.infrastructure`. Every operation

@@ -216,6 +216,15 @@ Identity
 Information does not cross continuity boundaries unless a future Characters
 feature makes that transfer explicit to the user.
 
+The Stage 4 setup UI selects Identity → Persona → Ongoing, with active and
+archived entries scoped to the selected pair. Inline editors support authored
+profile management and independent duplication. Starting Ongoing requires review
+and explicit confirmation; the reviewed request identifier, both profile revisions,
+and authored snapshots persist across reruns. A stale review must be renewed.
+Only confirmation starts and permanently freezes both profiles. Archive is an
+explicit action and never creates a replacement. Area switching retains each
+area's selection and initializes only the selected area's services.
+
 ### Identity
 
 An identity describes who the user is within a continuity. Characters has a

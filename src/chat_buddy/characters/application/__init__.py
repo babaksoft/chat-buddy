@@ -28,6 +28,7 @@ __all__ = [
     "ContinuityService",
     "ConversationService",
     "EvolutionEvaluator",
+    "IdentityService",
     "NoChangeEvolutionStrategy",
     "OngoingContextBudgeter",
     "OngoingContextEligibility",

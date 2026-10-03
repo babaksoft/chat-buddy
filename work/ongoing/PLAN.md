@@ -19,7 +19,7 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slices 1–7 are
+This document records implementation scope and verification. Slices 1–8 are
 implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
 ADRs remain authoritative.
 
@@ -461,7 +461,7 @@ without adding Stage 7 evolution behavior to Stage 4.
 
 ### Slice 8 — Confirmed start flow and grouped navigation
 
-Status: Proposed
+Status: Complete
 
 Replace the landing page with Characters-owned UI and lazy infrastructure
 composition. Show Identity → Persona → Ongoing groups, active and archived

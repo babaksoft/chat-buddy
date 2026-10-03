@@ -5,7 +5,7 @@ from chat_buddy.characters.domain.evolution import (
     EvolutionInputs,
     EvolutionProposal,
     EvolutionStrategy,
-    EvolutionStrategyId
+    EvolutionStrategyId,
 )
 
 
