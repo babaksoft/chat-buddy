@@ -1,6 +1,6 @@
 # Stage 4 Execution Plan — Characters foundations and Ongoing mode
 
-Status: In progress
+Status: Complete
 
 Last updated: 2026-10-03
 
@@ -19,9 +19,8 @@ had no profile, continuity, conversation, message, gateway, or summary implement
 and the existing area-isolation checks. Existing Chat implementations are useful
 behavioral references, but are not dependencies of Characters.
 
-This document records implementation scope and verification. Slices 1–9 are
-implemented; Stage 4 remains in progress and has not met milestone acceptance. The master plan and accepted
-ADRs remain authoritative.
+This document records implementation scope and verification. Slices 1–10 and
+Stage 4 are complete. The master plan and accepted ADRs remain authoritative.
 
 ## ADR constraints
 
@@ -528,7 +527,7 @@ resume and visible incomplete-turn recovery.
 
 ### Slice 10 — Stage 4 acceptance and independent-operation proof
 
-Status: Proposed
+Status: Complete
 
 Add one milestone integration scenario covering profile setup, authored edits to
 both profiles before use, confirmation, first-use freezing of both, streamed turns,

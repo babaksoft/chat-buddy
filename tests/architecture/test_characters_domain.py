@@ -61,8 +61,19 @@ class RejectChat(importlib.abc.MetaPathFinder):
         if fullname == "chat_buddy.chat" or fullname.startswith("chat_buddy.chat."):
             raise AssertionError("Characters initialized Chat: " + fullname)
 sys.meta_path.insert(0, RejectChat())
+from chat_buddy.characters.infrastructure import (
+    create_conversation_service,
+    create_profile_services,
+)
+from chat_buddy.characters.infrastructure.db import CharactersBase
+create_profile_services()
+create_conversation_service()
+for table in CharactersBase.metadata.tables.values():
+    assert table.schema == "characters"
+    assert all(key.column.table.schema == "characters" for key in table.foreign_keys)
+assert not any(name == "chat_buddy.chat" or name.startswith("chat_buddy.chat.") for name in sys.modules)
 import pytest
-sys.exit(pytest.main(["tests/characters", "tests/integration/characters", "-m", "not characters_postgres", "-q"]))
+sys.exit(pytest.main(["tests/characters", "tests/integration/characters", "-m", "not characters_postgres and not characters_ollama_smoke", "-q"]))
 '''
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -70,5 +81,6 @@ sys.exit(pytest.main(["tests/characters", "tests/integration/characters", "-m", 
         capture_output=True,
         text=True,
         check=False,
+        timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr

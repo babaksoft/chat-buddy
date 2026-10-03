@@ -122,3 +122,28 @@ def test_only_area_specific_alembic_targets_are_active() -> None:
         "8c080da941a4_create_conversations_and_messages_tables.py",
         "b9fc65d514ec_add_system_role.py",
     }
+
+
+def test_shared_package_contains_no_business_contracts_or_prompts() -> None:
+    """Keep shared utilities free of area business layers and contracts."""
+
+    shared = PACKAGE_ROOT / "shared"
+    forbidden_layers = {"domain", "application", "prompts", "repositories", "db"}
+    assert not any(path.name in forbidden_layers for path in shared.rglob("*"))
+    forbidden_dependencies = ("pydantic", "sqlalchemy", "streamlit")
+    for path in shared.rglob("*.py"):
+        assert not any(
+            module.startswith(forbidden_dependencies) for module in _imports(path)
+        ), path
+        tree = ast.parse(path.read_text())
+        assert not any(
+            isinstance(node, ast.ClassDef)
+            and any(
+                isinstance(base, ast.Name)
+                and base.id == "Protocol"
+                or isinstance(base, ast.Attribute)
+                and base.attr == "Protocol"
+                for base in node.bases
+            )
+            for node in ast.walk(tree)
+        ), path

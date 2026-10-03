@@ -135,6 +135,8 @@ stored memory, and both a local and a cloud adapter pass the same contract tests
 
 ## Stage 4 — Build Characters foundations and Ongoing mode
 
+**Status: Complete.**
+
 - Add immutable Characters domain models and enums for Identity, Persona,
   Continuity, Ongoing mode, lifecycle state, and relationship starting state.
 - Add Characters-owned repository and LLM gateway protocols and infrastructure

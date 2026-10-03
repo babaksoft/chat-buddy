@@ -611,8 +611,8 @@ Prompt order is persona core, identity, relationship intent and starting state,
 fixed response presentation, then complete committed history and current input.
 No evolved current-state inputs exist yet. Token counting includes provider
 framing, a fixed additional 64-token overhead reserve, and the effective output
-reserve. Slice 5 includes all history and rejects overflow before reserving an
-attempt or invoking a provider; Slice 6 supplies summary compression. Partial
+reserve. Ongoing compresses older complete turns into its durable rolling summary and
+rejects capacity failures before reserving an attempt or invoking a response provider. Partial
 output, other continuities, extracted memory, and synthetic shared events never
 enter this prompt.
 
@@ -647,3 +647,20 @@ new complete turn for summarization, or the generated summary cannot fit, respon
 generation fails before provider invocation. Summary generation or persistence
 failure preserves the prior active revision and committed history; no uncovered
 turn is silently omitted. Ongoing does not extract or query long-term memory.
+
+
+#### Independent Ongoing operation
+
+Characters profile and conversation services compose without importing Chat.
+Setup and archived reading need only Characters persistence; response and summary
+calls use independently configured local Ollama capabilities. Its full migration
+history can be applied or reversed alongside a populated Chat schema without
+changing Chat objects, data, or migration head. Runtime repository queries and
+foreign keys stay within `characters`.
+
+Stage 4 delivers one conversation path per Ongoing, durable summaries, explicit
+archival and replacement, and incomplete-turn recovery. It has no extracted
+memory, completed-response alternatives, branches, inferred evolution, or dated
+Timeline workflow. The versioned evolution seam remains a no-change strategy.
+See [README.md](README.md#characters-operation-and-acceptance) for settings,
+migration commands, local model setup, and acceptance checks.

@@ -66,7 +66,8 @@ Use the sidebar to switch between two areas:
   conversation for the current browser session.
 - **Characters** provides inline identity and persona management, reviewed Ongoing
   starts, and active/archived navigation. Setup uses its independent PostgreSQL
-  schema and needs no running Ollama. Conversation UI arrives in Slice 9.
+  schema. Ongoing supports streamed replies, durable resume, rolling summaries,
+  and incomplete-turn recovery; setup needs no running Ollama.
 
 Start the application with the existing command:
 
@@ -139,7 +140,7 @@ CHAT_OPENAI_SMOKE_TEST=true uv run pytest -v -m openai_smoke
 ## Database setup
 
 Chat persistence has an independent migration history in the PostgreSQL
-`chat` schema, and Characters has its own identity migration history in the
+`chat` schema, and Characters has its own independent migration history in the
 `characters` schema. Stage 1 did not migrate data from the legacy public-schema
 tables, and Stage 3 does not convert the provisional key/value memory shape.
 Existing pre-split development databases must therefore be recreated before
@@ -201,8 +202,8 @@ Each Ongoing starts with a fresh relationship and an isolated conversation and
 rolling summary, without extracted memory or inherited shared events. Established
 relationships require explicit social and romantic statuses. Active and archived
 continuities appear under the selected identity/persona pair. Select one to resume
-its lifecycle view; **Archive Ongoing** makes it read-only without creating a
-replacement. Conversation rendering and sending arrive in Slice 9.
+its saved transcript, settings, and starting relationship; **Archive Ongoing** makes it read-only without creating a
+replacement. Confirm a fresh start explicitly after archival.
 
 This UI uses the existing Characters migrations and database configuration; it
 adds no migration or runtime setting and needs no running provider for setup.
@@ -253,8 +254,7 @@ profiles require renewed review. Only Ongoing can be created.
 Archiving is permanent and read-only, keeps both profiles frozen, and releases the
 pair's active slot. A replacement needs explicit confirmation and an independent
 starting relationship. The vocabulary and compatibility table are in
-[DESIGN.md](DESIGN.md#ongoing-starting-relationship). No inferred evolution,
-messages, providers, or extracted memory are introduced by this slice.
+[DESIGN.md](DESIGN.md#ongoing-starting-relationship). Ongoing adds no inferred evolution or extracted memory.
 
 Portable Characters tests run without PostgreSQL or providers:
 
@@ -320,7 +320,7 @@ Slice 5 adds migration `f71d92ab0c55`: conversation generation defaults,
 append-only messages, and a separate generation ledger. Apply it with
 `uv run alembic -c alembic-characters.ini upgrade head`; Chat migrations and
 configuration are independent. Existing continuities remain usable. No additional
-provider settings are required. Conversation UI arrives in Slice 9.
+provider settings are required. The Ongoing UI uses this backend.
 
 Compose the backend lazily with `create_conversation_service()` from
 `chat_buddy.characters.infrastructure`. Every operation
@@ -341,10 +341,10 @@ accept generation writes. Completion checks archival again after the provider
 returns.
 
 The prompt includes required persona, identity, starting relationship, fixed
-presentation, and all committed history. Partial output stays outside it. Token
+presentation, and scoped summary plus uncovered committed turns. Partial output stays outside it. Token
 accounting reserves output capacity and 64 additional overhead tokens; overflow
 raises `ContextCapacityError` before saving an attempt or calling a provider.
-Rolling summaries arrive in Slice 6. Ongoing performs no memory extraction or
+Rolling summaries compress older complete turns within the configured budget. Ongoing performs no memory extraction or
 relationship/persona evolution.
 
 ### Characters Ongoing conversation UI
@@ -360,3 +360,60 @@ recoverable after five minutes without progress. Archived conversations remain
 readable and disable sending. Context or summary failures show actions for model
 capacity, output limits, and summary provider availability. This UI needs no new
 configuration or migrations beyond the existing Characters backend setup.
+
+### Characters operation and acceptance
+
+Characters database configuration lives in
+`src/chat_buddy/characters/infrastructure/config/settings.py` independently of
+Chat. Both defaults point to the same local PostgreSQL database, with separate
+schemas and migration heads. For a current database, apply both histories without
+resetting data:
+
+```bash
+uv sync --locked
+uv run alembic -c alembic-chat.ini upgrade head
+uv run alembic -c alembic-characters.ini upgrade head
+```
+
+For local Ongoing responses and rolling summaries, start Ollama and pull both
+selected models (pull once when they are the same):
+
+```bash
+ollama serve
+# In another terminal:
+ollama pull mistral
+export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
+export CHARACTERS_RESPONSE_MODEL=mistral
+export CHARACTERS_SUMMARY_MODEL=mistral
+export CHARACTERS_CONTEXT_TOKENS=8192
+export CHARACTERS_OUTPUT_TOKENS=1024
+uv run streamlit run src/chat_buddy/ui/streamlit_app.py
+```
+
+Choose context and output limits supported by the local models. Select Characters,
+author or edit profiles before use, review and confirm the starting relationship,
+then send a message. Resume by selecting the saved Ongoing. Long conversations use
+only their durable rolling summary and recent turns. After a failed reply, use
+**Continue incomplete turn**; partial output is never committed history. Archiving
+keeps history readable and profiles permanently frozen. A replacement starts with
+fresh relationship state and no inherited conversation or summary. Completed
+response alternatives, branches, Storylines, Timeline, memory, and inferred
+relationship/persona evolution belong to later stages.
+
+The automated milestone covers this sequence with real repositories and
+deterministic providers. The architecture suite runs Characters tests and
+production composition in a separate process that rejects every Chat import.
+PostgreSQL acceptance additionally reverses/reapplies the complete migration chain,
+fences runtime repository table references to `characters`, and compares populated
+Chat objects, rows, and migration head before and after.
+
+The optional live streaming smoke test uses isolated SQLite persistence, the
+configured Characters Ollama response model, and no development database. Run it
+only when the local service and model are available:
+
+```bash
+CHARACTERS_OLLAMA_SMOKE_TEST=true uv run pytest -v -m characters_ollama_smoke
+```
+
+Ordinary tests skip this live call. The smoke test streams a response through
+production composition, commits it, and resumes it through a fresh service.

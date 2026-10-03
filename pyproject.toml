@@ -75,6 +75,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "characters_postgres: explicit disposable PostgreSQL migration and concurrency validation",
+    "characters_ollama_smoke: explicitly enabled local Characters Ollama streaming test",
     "openai_smoke: explicitly enabled networked and billable OpenAI smoke test",
 ]
 
