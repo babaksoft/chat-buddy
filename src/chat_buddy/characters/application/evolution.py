@@ -1,6 +1,6 @@
 """Replaceable, non-persistent evolution strategy providers."""
 
-from chat_buddy.characters.domain.evolution import (
+from chat_buddy.characters.domain import (
     EvolutionEvidenceReference,
     EvolutionInputs,
     EvolutionProposal,

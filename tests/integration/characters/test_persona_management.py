@@ -6,15 +6,15 @@ import pytest
 from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application.persona_service import PersonaService
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.application import PersonaService
+from chat_buddy.characters.domain import (
     FrozenPersonaError,
+    PersonaCore,
     PersonaNotFoundError,
     StalePersonaError,
 )
-from chat_buddy.characters.domain.persona import PersonaCore
 from chat_buddy.characters.infrastructure.db.models import PersonaModel
-from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
 )
 

@@ -2,9 +2,13 @@
 
 from uuid import UUID
 
-from chat_buddy.characters.domain.errors import FrozenPersonaError, StalePersonaError
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
-from chat_buddy.characters.domain.repositories import PersonaRepository
+from chat_buddy.characters.domain import (
+    FrozenPersonaError,
+    Persona,
+    PersonaCore,
+    PersonaRepository,
+    StalePersonaError,
+)
 
 
 class PersonaService:

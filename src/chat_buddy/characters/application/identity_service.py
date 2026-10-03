@@ -2,9 +2,13 @@
 
 from uuid import UUID
 
-from chat_buddy.characters.domain.errors import FrozenIdentityError, StaleIdentityError
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
-from chat_buddy.characters.domain.repositories import IdentityRepository
+from chat_buddy.characters.domain import (
+    FrozenIdentityError,
+    Identity,
+    IdentityDetails,
+    IdentityRepository,
+    StaleIdentityError,
+)
 
 
 class IdentityService:

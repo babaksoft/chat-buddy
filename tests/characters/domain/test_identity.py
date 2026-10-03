@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
+from chat_buddy.characters.domain import Identity, IdentityDetails
 
 
 @pytest.mark.parametrize(

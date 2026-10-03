@@ -6,12 +6,13 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.domain import (
     FrozenIdentityError,
+    Identity,
+    IdentityDetails,
     IdentityNotFoundError,
     StaleIdentityError,
 )
-from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.infrastructure.db.models import IdentityModel
 
 

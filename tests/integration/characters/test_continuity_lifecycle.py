@@ -8,40 +8,34 @@ from sqlalchemy import event, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application.continuity_service import ContinuityService
-from chat_buddy.characters.domain.continuity import (
-    ContinuityLifecycle,
-    ContinuityMode,
-    RelationshipIntent,
-    RelationshipSelection,
-    StartContinuity,
-)
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.application import ContinuityService
+from chat_buddy.characters.domain import (
     ActiveContinuityError,
     ConfirmationConflictError,
+    ContinuityLifecycle,
+    ContinuityMode,
     ContinuityNotFoundError,
     FrozenIdentityError,
     FrozenPersonaError,
+    IdentityDetails,
     IdentityNotFoundError,
+    PersonaCore,
     PersonaNotFoundError,
+    RelationshipIntent,
+    RelationshipSelection,
     StaleIdentityError,
     StalePersonaError,
+    StartContinuity,
     UnsupportedContinuityModeError,
 )
-from chat_buddy.characters.domain.identity import IdentityDetails
-from chat_buddy.characters.domain.persona import PersonaCore
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityModel,
     ConversationModel,
     StartingRelationshipModel,
 )
-from chat_buddy.characters.infrastructure.db.repositories.continuity_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
-)
-from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
     DbIdentityRepository,
-)
-from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
     DbPersonaRepository,
 )
 

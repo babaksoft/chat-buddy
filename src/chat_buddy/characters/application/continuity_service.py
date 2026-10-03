@@ -3,19 +3,17 @@
 from itertools import groupby
 from uuid import UUID
 
-from chat_buddy.characters.domain.continuity import (
+from chat_buddy.characters.domain import (
+    ActiveContinuityError,
     Continuity,
     ContinuityGroup,
     ContinuityMode,
+    ContinuityRepository,
     StartContinuity,
     StartingOrigins,
     StartingRelationship,
-)
-from chat_buddy.characters.domain.errors import (
-    ActiveContinuityError,
     UnsupportedContinuityModeError,
 )
-from chat_buddy.characters.domain.repositories import ContinuityRepository
 
 
 class ContinuityService:

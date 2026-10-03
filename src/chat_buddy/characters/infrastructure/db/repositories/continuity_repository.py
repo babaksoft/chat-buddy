@@ -6,21 +6,19 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.domain.continuity import (
+from chat_buddy.characters.domain import (
+    ActiveContinuityError,
+    ConfirmationConflictError,
     Continuity,
     ContinuityLifecycle,
     ContinuityMode,
-    StartContinuity,
-    StartingRelationship,
-)
-from chat_buddy.characters.domain.errors import (
-    ActiveContinuityError,
-    ConfirmationConflictError,
     ContinuityNotFoundError,
     IdentityNotFoundError,
     PersonaNotFoundError,
     StaleIdentityError,
     StalePersonaError,
+    StartContinuity,
+    StartingRelationship,
     UnsupportedContinuityModeError,
 )
 from chat_buddy.characters.infrastructure.db.models import (

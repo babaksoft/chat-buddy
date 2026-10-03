@@ -7,15 +7,15 @@ import pytest
 from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application.identity_service import IdentityService
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.application import IdentityService
+from chat_buddy.characters.domain import (
     FrozenIdentityError,
+    IdentityDetails,
     IdentityNotFoundError,
     StaleIdentityError,
 )
-from chat_buddy.characters.domain.identity import IdentityDetails
 from chat_buddy.characters.infrastructure.db.models import IdentityModel
-from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
 )
 

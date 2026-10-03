@@ -12,11 +12,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm import sessionmaker
 
-from chat_buddy.characters.application.persona_service import PersonaService
-from chat_buddy.characters.domain.errors import StalePersonaError
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.application import PersonaService
+from chat_buddy.characters.domain import Persona, PersonaCore, StalePersonaError
 from chat_buddy.characters.infrastructure.db.models import PersonaModel
-from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
+from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
 )
 

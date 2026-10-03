@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from chat_buddy.characters.domain.continuity import (
+from chat_buddy.characters.domain import (
     ContinuityMode,
     RelationshipIntent,
     RelationshipSelection,

@@ -14,22 +14,20 @@ from chat_buddy.characters.domain import (
     CompletedTurn,
     ContinuityMode,
     ConversationScope,
-    Identity,
-    IdentityDetails,
-    Message,
-    Persona,
-    PersonaCore,
-    RelationshipIntent,
-    StartingOrigins,
-    StartingRelationship,
-)
-from chat_buddy.characters.domain.evolution import (
     EvolutionEvidenceReference,
     EvolutionInputs,
     EvolutionProposal,
     EvolutionStrategyId,
+    Identity,
+    IdentityDetails,
+    Message,
+    Persona,
     PersonaAdaptationProposal,
+    PersonaCore,
     RelationshipChangeProposal,
+    RelationshipIntent,
+    StartingOrigins,
+    StartingRelationship,
 )
 
 

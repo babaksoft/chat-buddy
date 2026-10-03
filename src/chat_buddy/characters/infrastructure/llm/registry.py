@@ -4,17 +4,15 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from chat_buddy.characters.domain.errors import (
-    ModelResolutionError,
-    UnsupportedGenerationError,
-)
-from chat_buddy.characters.domain.llm import (
+from chat_buddy.characters.domain import (
     EffectiveGeneration,
     GenerationConfiguration,
     ModelDescriptor,
+    ModelResolutionError,
     ResponseGateway,
     SummaryGateway,
     TokenCounter,
+    UnsupportedGenerationError,
 )
 
 

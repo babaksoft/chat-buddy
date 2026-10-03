@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Boolean, CheckConstraint, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from chat_buddy.characters.infrastructure.db.base import CharactersBase
+from chat_buddy.characters.infrastructure.db import CharactersBase
 
 
 class PersonaModel(CharactersBase):

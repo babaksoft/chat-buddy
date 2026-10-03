@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.domain import Persona, PersonaCore
 
 
 @pytest.mark.parametrize(

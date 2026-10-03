@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import (
     EvolutionEvaluator,
 )
-from chat_buddy.characters.domain import CompletedTurn, SubmittedInput
-from chat_buddy.characters.domain.evolution import (
+from chat_buddy.characters.domain import (
+    CompletedTurn,
     EvolutionEvidenceReference,
     EvolutionInputs,
     EvolutionProposal,
     EvolutionStrategyId,
     RelationshipChangeProposal,
+    SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,

@@ -5,12 +5,13 @@ from typing import Any
 
 from ollama import Client
 
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.domain import (
+    EffectiveGeneration,
     InvalidProviderResponseError,
+    PromptMessage,
     ProviderInvocationError,
     UnsupportedGenerationError,
 )
-from chat_buddy.characters.domain.llm import EffectiveGeneration, PromptMessage
 
 
 class OllamaGateway:

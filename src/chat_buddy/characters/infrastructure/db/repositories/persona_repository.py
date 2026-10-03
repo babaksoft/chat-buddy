@@ -5,12 +5,13 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.domain.errors import (
+from chat_buddy.characters.domain import (
     FrozenPersonaError,
+    Persona,
+    PersonaCore,
     PersonaNotFoundError,
     StalePersonaError,
 )
-from chat_buddy.characters.domain.persona import Persona, PersonaCore
 from chat_buddy.characters.infrastructure.db.models import PersonaModel
 
 
