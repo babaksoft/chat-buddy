@@ -283,9 +283,9 @@ def test_call_failures_and_malformed_stream_are_normalized() -> None:
         "ollama", "summary", "summary", GenerationConfiguration()
     )
     client.chat.side_effect = ConnectionError("private endpoint")
-    with pytest.raises(ProviderInvocationError, match="response generation failed"):
+    with pytest.raises(ProviderInvocationError, match="Response generation failed"):
         list(gateway.stream(PROMPT, response))
-    with pytest.raises(ProviderInvocationError, match="summary generation failed"):
+    with pytest.raises(ProviderInvocationError, match="Summary generation failed"):
         gateway.summarize(PROMPT, summary)
     client.chat.side_effect = None
     client.chat.return_value = iter([{}])

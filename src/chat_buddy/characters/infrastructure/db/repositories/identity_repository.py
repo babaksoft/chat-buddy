@@ -20,11 +20,11 @@ class DbIdentityRepository:
     """Persist identity values in repository-owned transactions."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
-        """Bind an area-owned session factory.
+        """Initialize the identity repository.
 
         Args:
             session_factory:
-                Factory for isolated repository transactions.
+                Factory used for creating database sessions.
         """
 
         self._session_factory = session_factory

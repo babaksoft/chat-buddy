@@ -15,7 +15,7 @@ class PersonaService:
     """Manage editable personas and independent duplicates."""
 
     def __init__(self, repository: PersonaRepository) -> None:
-        """Bind the Characters persistence contract.
+        """Initialize the persona service.
 
         Args:
             repository:

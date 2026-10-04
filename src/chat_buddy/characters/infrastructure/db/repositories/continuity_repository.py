@@ -31,14 +31,14 @@ from chat_buddy.characters.infrastructure.db.models import (
 
 
 class DbContinuityRepository:
-    """Own transactions spanning Characters profiles and continuity records."""
+    """Own transactions spanning profiles and continuity records."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
-        """Bind isolated Characters transactions.
+        """Initialize the continuity repository.
 
         Args:
             session_factory:
-                Characters-owned database session factory.
+                Factory used for creating database sessions.
         """
 
         self._session_factory = session_factory
@@ -163,7 +163,7 @@ class DbContinuityRepository:
             raise
 
     def find_confirmation(self, request: StartContinuity) -> Continuity | None:
-        """Resolve a persisted confirmation without requiring a profile revision.
+        """Resolve a persisted confirmation.
 
         Args:
             request:
@@ -231,7 +231,7 @@ class DbContinuityRepository:
             return self._snapshot(session, row)
 
     def list(self) -> list[Continuity]:
-        """Read deterministic identity/persona groups including archives.
+        """Read deterministically ordered continuities, including archives.
 
         Returns:
             Snapshots ordered by identity, persona, and continuity UUID.
@@ -250,7 +250,7 @@ class DbContinuityRepository:
     def archive(
         self, identity_id: UUID, persona_id: UUID, continuity_id: UUID
     ) -> Continuity:
-        """Serialize archival on the continuity row used by future message writes.
+        """Serialize archival on the continuity row.
 
         Args:
             identity_id:
@@ -261,7 +261,7 @@ class DbContinuityRepository:
                 Continuity identifier.
 
         Returns:
-            Archived snapshot, including repeated archive requests.
+            Archived snapshot.
 
         Raises:
             ContinuityNotFoundError:
@@ -284,7 +284,7 @@ class DbContinuityRepository:
         continuity_id: UUID,
         lock: bool = False,
     ) -> ContinuityModel:
-        """Select a continuity without leaking another pair's records.
+        """Select a continuity from ownership data.
 
         Args:
             session:
@@ -320,7 +320,7 @@ class DbContinuityRepository:
     def _confirmation(
         session: Session, request: StartContinuity
     ) -> ContinuityModel | None:
-        """Resolve persisted confirmation equality before any revision checks.
+        """Resolve persisted confirmation equality.
 
         Args:
             session:
@@ -358,7 +358,7 @@ class DbContinuityRepository:
                 Pair being started.
 
         Returns:
-            Conflicting active row, if any.
+            Existing active row, if any.
         """
 
         return session.scalar(

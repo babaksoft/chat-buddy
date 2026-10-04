@@ -380,7 +380,7 @@ class ConversationRepository(Protocol):
         attempt_id: UUID,
         status: Literal["failed", "interrupted"],
     ) -> None:
-        """Terminate an open attempt without modifying committed history.
+        """Terminate an open attempt.
 
         Args:
             scope:
@@ -412,7 +412,7 @@ class ConversationRepository(Protocol):
 
 
 class SummaryRepository(Protocol):
-    """Persist immutable rolling-summary revisions under explicit ownership."""
+    """Persist immutable rolling-summary revisions."""
 
     def get_active(self, scope: ConversationScope) -> SummaryRevision | None:
         """Load the active revision for an owned conversation.
@@ -433,7 +433,7 @@ class SummaryRepository(Protocol):
         expected_revision: int | None,
         expected_checkpoint_id: UUID | None,
     ) -> SummaryRevision:
-        """Atomically replace the active revision under a lineage guard.
+        """Atomically replace the active revision.
 
         Args:
             replacement:

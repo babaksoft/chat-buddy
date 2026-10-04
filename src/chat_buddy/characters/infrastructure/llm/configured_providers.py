@@ -22,10 +22,10 @@ def create_model_registry() -> ConfiguredModelRegistry:
             If configured token limits or model names are invalid.
     """
 
-    response_model = os.environ.get("CHARACTERS_RESPONSE_MODEL", "mistral")
-    summary_model = os.environ.get("CHARACTERS_SUMMARY_MODEL", "mistral")
-    context = int(os.environ.get("CHARACTERS_CONTEXT_TOKENS", "8192"))
-    output = int(os.environ.get("CHARACTERS_OUTPUT_TOKENS", "1024"))
+    response_model = os.environ.get("CHARACTERS_RESPONSE_MODEL", "gpt-oss:20b-cloud")
+    summary_model = os.environ.get("CHARACTERS_SUMMARY_MODEL", "gpt-oss:20b-cloud")
+    context = int(os.environ.get("CHARACTERS_CONTEXT_TOKENS", "32768"))
+    output = int(os.environ.get("CHARACTERS_OUTPUT_TOKENS", "4096"))
     models = tuple(
         ModelDescriptor(
             provider="ollama",

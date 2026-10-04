@@ -15,7 +15,7 @@ class IdentityService:
     """Manage editable identities and independent duplicates."""
 
     def __init__(self, repository: IdentityRepository) -> None:
-        """Bind the Characters persistence contract.
+        """Initialize the identity service.
 
         Args:
             repository:
@@ -25,7 +25,7 @@ class IdentityService:
         self._repository = repository
 
     def create(self, details: IdentityDetails) -> Identity:
-        """Create an editable identity without inferred attributes.
+        """Create an editable identity.
 
         Args:
             details:
@@ -38,7 +38,7 @@ class IdentityService:
         return self._repository.create(details)
 
     def ensure_default(self) -> Identity:
-        """Set up You on explicit Characters demand, safely on repeated calls.
+        """Idempotently setup the one and only You identity.
 
         Returns:
             The sole default identity.

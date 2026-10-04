@@ -1,4 +1,4 @@
-"""Ollama implementation of the Characters response and summary contracts."""
+"""Ollama implementation of the response and summary contracts."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -66,9 +66,7 @@ class OllamaGateway:
         except InvalidProviderResponseError:
             raise
         except Exception:  # noqa: BLE001
-            raise ProviderInvocationError(
-                "Characters local response generation failed."
-            ) from None
+            raise ProviderInvocationError("Response generation failed.") from None
         finally:
             if stream is not None:
                 close = getattr(stream, "close", None)
@@ -77,7 +75,7 @@ class OllamaGateway:
                         close()
                     except Exception:  # noqa: BLE001
                         raise ProviderInvocationError(
-                            "Characters local stream closure failed."
+                            "Local stream closure failed."
                         ) from None
 
     def summarize(
@@ -113,16 +111,12 @@ class OllamaGateway:
             )
             content = self._content(response).strip()
             if not content:
-                raise InvalidProviderResponseError(
-                    "Characters summary output was empty."
-                )
+                raise InvalidProviderResponseError("Summary output was empty.")
             return content
         except InvalidProviderResponseError:
             raise
         except Exception:  # noqa: BLE001
-            raise ProviderInvocationError(
-                "Characters local summary generation failed."
-            ) from None
+            raise ProviderInvocationError("Summary generation failed.") from None
 
     def _validate(self, generation: EffectiveGeneration, capability: str) -> None:
         """Reject selections intended for another adapter or operation.
@@ -139,9 +133,7 @@ class OllamaGateway:
         """
 
         if generation.model.provider != "ollama" or generation.capability != capability:
-            raise UnsupportedGenerationError(
-                "Incompatible Characters Ollama selection."
-            )
+            raise UnsupportedGenerationError("Incompatible Ollama model selection.")
 
     def _options(self, generation: EffectiveGeneration) -> dict[str, Any]:
         """Translate all effective settings, including context and output limits.
@@ -178,10 +170,8 @@ class OllamaGateway:
             content = response["message"]["content"]
         except (KeyError, TypeError, AttributeError):
             raise InvalidProviderResponseError(
-                "Characters provider returned malformed text."
+                "Provider returned malformed text."
             ) from None
         if not isinstance(content, str):
-            raise InvalidProviderResponseError(
-                "Characters provider returned malformed text."
-            )
+            raise InvalidProviderResponseError("Provider returned malformed text.")
         return content

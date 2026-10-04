@@ -35,7 +35,7 @@ class ConfiguredModelRegistry:
             responses:
                 Response providers keyed by provider identifier.
             summaries:
-                Summary providers keyed independently.
+                Summary providers keyed by provider identifier.
             counters:
                 Token estimators keyed by provider identifier.
             defaults:
@@ -148,7 +148,7 @@ class ConfiguredModelRegistry:
         """
 
         if capability not in self._defaults:
-            raise ModelResolutionError("No default Characters model configured.")
+            raise ModelResolutionError("No default model configured.")
         provider, model = self._defaults[capability]
         return self.resolve(
             provider, model, capability, requested or GenerationConfiguration()

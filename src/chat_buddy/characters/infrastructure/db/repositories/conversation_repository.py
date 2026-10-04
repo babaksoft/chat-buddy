@@ -34,11 +34,11 @@ class DbConversationRepository:
     """Persist sole-path turns under the same row lock used by archive."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
-        """Bind independent short transactions.
+        """Initialize the conversation repository.
 
         Args:
             session_factory:
-                Characters-owned sessions.
+                Factory used for creating database sessions.
         """
 
         self._factory = session_factory
@@ -102,6 +102,7 @@ class DbConversationRepository:
 
         if generation.capability != "response":
             raise ValueError("A response generation is required")
+
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
             if (
@@ -430,8 +431,8 @@ class DbConversationRepository:
                 if row.generation_settings
                 else None
             ),
-            messages=tuple(cls._message(scope, m) for m in messages),
-            attempts=tuple(cls._attempt(scope, a) for a in attempts),
+            messages=tuple(cls._message(scope, message) for message in messages),
+            attempts=tuple(cls._attempt(scope, attempt) for attempt in attempts),
         )
 
     @staticmethod
@@ -488,7 +489,7 @@ class DbConversationRepository:
 
 
 def _utc(value: datetime) -> datetime:
-    """Normalize aware PostgreSQL and naive SQLite timestamps without shifting time.
+    """Normalize aware PostgreSQL and naive SQLite timestamps.
 
     Args:
         value:

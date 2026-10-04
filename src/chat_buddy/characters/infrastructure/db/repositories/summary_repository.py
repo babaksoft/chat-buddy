@@ -56,6 +56,7 @@ class DbSummaryRepository:
                     SummaryRevisionModel.is_active.is_(True),
                 )
             )
+
             return self._summary(scope, row) if row is not None else None
 
     def replace(
@@ -84,6 +85,7 @@ class DbSummaryRepository:
 
         if not replacement.is_active:
             raise SummaryConflictError("A replacement must become active.")
+
         scope = replacement.scope
         try:
             with self._factory() as session, session.begin():
@@ -97,9 +99,11 @@ class DbSummaryRepository:
                     )
                     .with_for_update()
                 )
+
                 self._validate_lineage(
                     active, replacement, expected_revision, expected_checkpoint_id
                 )
+
                 checkpoint = session.scalar(
                     select(MessageModel).where(
                         MessageModel.id == replacement.checkpoint_message_id,
@@ -113,6 +117,7 @@ class DbSummaryRepository:
                     raise SummaryConflictError(
                         "Summary checkpoint is not an owned turn."
                     )
+
                 if active is not None:
                     active.is_active = False
                 row = SummaryRevisionModel(
@@ -130,6 +135,7 @@ class DbSummaryRepository:
                 )
                 session.add(row)
                 session.flush()
+
                 return self._summary(scope, row)
         except IntegrityError:
             raise SummaryConflictError(
@@ -151,7 +157,7 @@ class DbSummaryRepository:
             scope:
                 Complete required ownership.
             lock:
-                Whether to serialize with other continuity writers.
+                Whether to lock the underlying continuity.
             writable:
                 Whether archived continuity must be rejected.
 
@@ -178,6 +184,7 @@ class DbSummaryRepository:
                 ConversationModel.persona_id == scope.persona_id,
             )
         )
+
         if continuity is None or conversation_id is None:
             raise ConversationNotFoundError("Summary ownership does not match.")
         if writable and continuity.lifecycle != "active":
@@ -216,6 +223,7 @@ class DbSummaryRepository:
             ):
                 raise SummaryConflictError("Expected summary lineage is stale.")
             return
+
         if (
             active.revision != expected_revision
             or active.checkpoint_message_id != expected_checkpoint_id
@@ -246,6 +254,7 @@ class DbSummaryRepository:
             created_at = created_at.replace(tzinfo=UTC)
         else:
             created_at = created_at.astimezone(UTC)
+
         return SummaryRevision(
             id=row.id,
             scope=scope,

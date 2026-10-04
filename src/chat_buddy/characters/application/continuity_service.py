@@ -1,4 +1,4 @@
-"""Characters continuity lifecycle and starting-state application rules."""
+"""Continuity lifecycle and starting-state application rules."""
 
 from itertools import groupby
 from uuid import UUID
@@ -20,7 +20,7 @@ class ContinuityService:
     """Start, resume, group, and archive isolated Ongoing continuities."""
 
     def __init__(self, repository: ContinuityRepository) -> None:
-        """Bind Characters-owned persistence.
+        """Initialize the continuity service.
 
         Args:
             repository:
@@ -54,9 +54,11 @@ class ContinuityService:
 
         if request.mode != ContinuityMode.ONGOING:
             raise UnsupportedContinuityModeError("Only Ongoing is available")
+
         confirmed = self._repository.find_confirmation(request)
         if confirmed is not None:
             return confirmed
+
         if (
             self._repository.find_active(request.identity_id, request.persona_id)
             is not None
@@ -69,6 +71,7 @@ class ContinuityService:
             raise ActiveContinuityError(
                 "Archive the active Ongoing before starting a replacement"
             )
+
         selection = request.relationship
         defaults: dict[str, object] = {
             "social": "stranger",

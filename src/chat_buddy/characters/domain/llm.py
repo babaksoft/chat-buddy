@@ -107,6 +107,7 @@ class ModelDescriptor(BaseModel):
             - self.parameters
         ):
             raise ValueError("Model defaults contain unsupported parameters.")
+
         return self
 
 
@@ -156,6 +157,7 @@ class EffectiveGeneration(BaseModel):
             - self.model.parameters
         ):
             raise ValueError("Unsupported generation parameters.")
+
         return self
 
 
@@ -288,7 +290,7 @@ class ModelRegistry(Protocol):
         ...
 
     def summary_gateway(self, provider: str) -> SummaryGateway:
-        """Select a summary adapter independently of responses.
+        """Select a summary adapter.
 
         Args:
             provider:

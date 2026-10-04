@@ -209,8 +209,8 @@ Characters reads its model settings when its services are composed:
 | Environment variable | Default | Purpose |
 |---|---|---|
 | `CHARACTERS_OLLAMA_ENDPOINT_URL` | `http://localhost:11434` | Characters Ollama endpoint |
-| `CHARACTERS_RESPONSE_MODEL` | `mistral` | Persona response model |
-| `CHARACTERS_SUMMARY_MODEL` | `mistral` | Rolling-summary model |
+| `CHARACTERS_RESPONSE_MODEL` | `gpt-oss:20b-cloud` | Persona response model |
+| `CHARACTERS_SUMMARY_MODEL` | `gpt-oss:20b-cloud` | Rolling-summary model |
 | `CHARACTERS_CONTEXT_TOKENS` | `8192` | Total configured context window |
 | `CHARACTERS_OUTPUT_TOKENS` | `1024` | Default output-token limit |
 
@@ -218,8 +218,8 @@ For example:
 
 ```bash
 export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
-export CHARACTERS_RESPONSE_MODEL=mistral
-export CHARACTERS_SUMMARY_MODEL=mistral
+export CHARACTERS_RESPONSE_MODEL=gpt-oss:20b-cloud
+export CHARACTERS_SUMMARY_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_CONTEXT_TOKENS=8192
 export CHARACTERS_OUTPUT_TOKENS=1024
 ```

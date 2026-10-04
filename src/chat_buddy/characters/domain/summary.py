@@ -44,6 +44,7 @@ class CompletedTurn(BaseModel):
             or self.persona.sequence != self.user.sequence + 1
         ):
             raise ValueError("Messages do not form one complete owned turn.")
+
         return self
 
 
@@ -104,6 +105,7 @@ class SummaryRevision(BaseModel):
             raise ValueError("Summary checkpoints must be persona messages.")
         if (self.revision == 1) != (self.predecessor_id is None):
             raise ValueError("Summary predecessor must match its revision.")
+
         return self
 
 
@@ -139,7 +141,7 @@ class ContextSelection(BaseModel):
         omitted_turns:
             Chronological uncovered prefix requiring compression.
         tokens:
-            Count before the fixed overhead reserve.
+            Estimated prompt tokens.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

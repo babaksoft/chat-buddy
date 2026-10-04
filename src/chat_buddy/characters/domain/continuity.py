@@ -23,7 +23,7 @@ class ContinuityLifecycle(StrEnum):
 
 
 class RelationshipIntent(StrEnum):
-    """User-authored relationship direction without inferred history."""
+    """User-authored relationship direction."""
 
     PLATONIC = "platonic"
     OPEN_TO_ROMANCE = "open_to_romance"
