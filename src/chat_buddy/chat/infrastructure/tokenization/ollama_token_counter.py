@@ -1,4 +1,4 @@
-"""Ollama prompt accounting implementations."""
+"""Offline token estimation for curated Ollama models."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Protocol, cast
 
 from transformers import AutoTokenizer
 
-from chat_buddy.characters.domain import PromptMessage
+from chat_buddy.chat.domain import ChatMessage
 
 
 class _OllamaTextEncoder(Protocol):
@@ -45,12 +45,12 @@ class OllamaTokenCounter:
 
         self._encoder = encoder
 
-    def count(self, messages: tuple[PromptMessage, ...]) -> int:
+    def count_tokens(self, messages: list[ChatMessage]) -> int:
         """Count encoded role and content tokens plus conservative framing.
 
         Args:
             messages:
-                Complete ordered provider input.
+                Provider-neutral messages in request order.
 
         Returns:
             Zero for no messages, otherwise the framed token estimate.
@@ -62,7 +62,7 @@ class OllamaTokenCounter:
         encoder = self._get_encoder()
         return 8 + sum(
             8
-            + len(encoder.encode(message.role, add_special_tokens=False))
+            + len(encoder.encode(message.role.value, add_special_tokens=False))
             + len(encoder.encode(message.content, add_special_tokens=False))
             for message in messages
         )
@@ -83,27 +83,3 @@ class OllamaTokenCounter:
                 ),
             )
         return self._encoder
-
-
-class Utf8TokenCounter:
-    """Estimate one token per UTF-8 byte plus fixed message framing.
-
-    This intentionally overestimates typical local text tokenization. It is a
-    budgeting estimate, not measured provider usage or an exact tokenizer.
-    """
-
-    def count(self, messages: tuple[PromptMessage, ...]) -> int:
-        """Count text bytes and reserve eight tokens per message plus eight.
-
-        Args:
-            messages:
-                Complete ordered prompt messages.
-
-        Returns:
-            Deterministic conservative estimate including message framing.
-        """
-
-        return 8 + sum(
-            8 + len(message.content.encode("utf-8")) + len(message.role)
-            for message in messages
-        )

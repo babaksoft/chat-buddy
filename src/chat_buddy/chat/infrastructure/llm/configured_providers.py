@@ -25,11 +25,18 @@ from chat_buddy.chat.infrastructure.llm.provider_registry import (
     StaticResponseGatewayResolver,
 )
 from chat_buddy.chat.infrastructure.tokenization import (
-    MistralTokenCounter,
+    OllamaTokenCounter,
     OpenAITokenCounter,
 )
 
 logger = logging.getLogger(__name__)
+
+_OLLAMA_MODEL_SPECS = (
+    ("gpt-oss:20b-cloud", "GPT-OSS 20B (Cloud)", 131_072, 4_096),
+    ("gpt-oss:120b-cloud", "GPT-OSS 120B (Cloud)", 131_072, 4_096),
+    ("gemma4:31b-cloud", "Gemma 4 31B (Cloud)", 262_144, 4_096),
+    ("nemotron-3-super:cloud", "Nemotron 3 Super (Cloud)", 262_144, 4_096),
+)
 
 _OPENAI_MODEL_SPECS = (
     ("gpt-5.6-terra", "GPT-5.6 Terra", 1_050_000, 922_000, 128_000, 8_192),
@@ -66,25 +73,34 @@ def build_provider_runtime() -> ProviderRuntime:
 
     provider_id = ProviderId(settings.OLLAMA_PROVIDER_ID)
     gateway = OllamaGateway()
+    token_counter = OllamaTokenCounter()
     providers = [
         ProviderDescriptor(
             id=provider_id,
             display_name=settings.OLLAMA_PROVIDER_NAME,
+            usage_notice=(
+                "Ollama cloud models send eligible Chat context to Ollama-hosted "
+                "inference; account quotas, pricing, and retention policies may "
+                "apply."
+            ),
         )
     ]
     models = [
         ModelDescriptor(
             provider_id=provider_id,
             id=ModelId(model_name),
-            display_name=model_name,
-            context_window_tokens=settings.MODEL_CONTEXT_WINDOW,
+            display_name=display_name,
+            context_window_tokens=context_window,
             supports_streaming=True,
             supported_generation_parameters=frozenset(GenerationParameter),
             default_generation_configuration=GenerationConfiguration(),
-            token_counter=MistralTokenCounter(),
-            default_output_token_reserve=(settings.MODEL_DEFAULT_OUTPUT_TOKEN_RESERVE),
+            token_counter=token_counter,
+            default_output_token_reserve=output_reserve,
+            application_prompt_limit=settings.OLLAMA_APPLICATION_PROMPT_LIMIT,
         )
-        for model_name in settings.CHAT_MODELS
+        for model_name, display_name, context_window, output_reserve in (
+            _OLLAMA_MODEL_SPECS
+        )
     ]
     gateways: dict[ProviderId, ResponseGenerator] = {provider_id: gateway}
 

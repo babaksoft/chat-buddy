@@ -20,6 +20,7 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure.llm import (
     ConfiguredModelRegistry,
     OllamaGateway,
+    OllamaTokenCounter,
     Utf8TokenCounter,
     create_model_registry,
 )
@@ -305,6 +306,40 @@ def test_token_estimate_accounts_for_utf8_and_message_framing() -> None:
     assert counter.count((message, message)) == 8 + 2 * (counter.count((message,)) - 8)
 
 
+class CharacterEncoder:
+    """Encode each character as one deterministic test token."""
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> tuple[int, ...]:
+        """Return one token identifier per character.
+
+        Args:
+            text:
+                Text to encode.
+            add_special_tokens:
+                Whether boundary tokens were requested.
+
+        Returns:
+            Deterministic character positions.
+
+        Raises:
+            AssertionError:
+                If production code requests tokenizer-specific special tokens.
+        """
+
+        assert not add_special_tokens
+        return tuple(range(len(text)))
+
+
+def test_ollama_token_estimate_uses_public_tokenizer_framing() -> None:
+    """Count roles and content without tokenizer-specific special tokens."""
+
+    counter = OllamaTokenCounter(CharacterEncoder())
+    message = PromptMessage(role="user", content="سلام")
+
+    assert counter.count(()) == 0
+    assert counter.count((message,)) == 8 + 8 + 4 + 4
+
+
 def test_composition_reads_characters_settings_lazily(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -328,6 +363,7 @@ def test_composition_reads_characters_settings_lazily(
         ]
         assert registry.resolve_default("response").model.model == "response-local"
         assert registry.resolve_default("summary").model.model == "summary-local"
+        assert isinstance(registry.token_counter("ollama"), OllamaTokenCounter)
         client.assert_called_once_with(host="http://characters:11434")
         client.return_value.chat.assert_not_called()
 

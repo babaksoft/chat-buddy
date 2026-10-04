@@ -42,6 +42,7 @@ dependencies = [
     "SQLAlchemy",
     "streamlit",
     "tiktoken>=0.14.0",
+    "transformers>=5.16.1",
 ]
 
 [project.urls]

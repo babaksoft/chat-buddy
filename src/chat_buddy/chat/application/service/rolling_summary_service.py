@@ -92,9 +92,8 @@ class RollingSummaryService:
         self._validate_coverage(inputs.conversation_id, active, turns)
 
         prompt_capacity = (
-            model.context_window_tokens
+            model.prompt_token_capacity(model.output_token_reserve(configuration))
             - self._config.prompt_overhead_tokens
-            - model.output_token_reserve(configuration)
         )
         if prompt_capacity <= 0:
             raise ValueError("Summary policy requires a positive prompt capacity.")

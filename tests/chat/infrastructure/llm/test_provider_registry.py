@@ -24,6 +24,7 @@ from chat_buddy.chat.infrastructure.llm import (
     StaticResponseGatewayResolver,
     build_provider_runtime,
 )
+from chat_buddy.chat.infrastructure.tokenization import OllamaTokenCounter
 
 
 class FakeResponseGenerator:
@@ -239,12 +240,38 @@ def test_configured_runtime_registers_enabled_ollama_models(
     runtime = build_provider_runtime()
     provider_id = ProviderId(settings.OLLAMA_PROVIDER_ID)
 
-    assert runtime.registry.list_providers() == (
-        ProviderDescriptor(provider_id, settings.OLLAMA_PROVIDER_NAME),
+    providers = runtime.registry.list_providers()
+    assert len(providers) == 1
+    assert providers[0].id == provider_id
+    assert providers[0].display_name == settings.OLLAMA_PROVIDER_NAME
+    assert providers[0].usage_notice is not None
+    assert "Ollama-hosted" in providers[0].usage_notice
+    models = runtime.registry.list_models()
+    assert tuple(model.id.value for model in models) == (
+        "gpt-oss:20b-cloud",
+        "gpt-oss:120b-cloud",
+        "gemma4:31b-cloud",
+        "nemotron-3-super:cloud",
     )
-    assert tuple(model.id.value for model in runtime.registry.list_models()) == (
-        settings.CHAT_MODELS
+    assert tuple(model.display_name for model in models) == (
+        "GPT-OSS 20B (Cloud)",
+        "GPT-OSS 120B (Cloud)",
+        "Gemma 4 31B (Cloud)",
+        "Nemotron 3 Super (Cloud)",
     )
+    assert tuple(model.context_window_tokens for model in models) == (
+        131_072,
+        131_072,
+        262_144,
+        262_144,
+    )
+    assert all(
+        model.application_prompt_limit == settings.OLLAMA_APPLICATION_PROMPT_LIMIT
+        for model in models
+    )
+    assert all(model.default_output_token_reserve == 4_096 for model in models)
+    assert all(isinstance(model.token_counter, OllamaTokenCounter) for model in models)
+    assert all(model.token_counter is models[0].token_counter for model in models)
     assert runtime.registry.get_default_model().id == ModelId(settings.CHAT_MODEL)
     assert runtime.response_gateway_resolver.resolve(provider_id) is (
         runtime.title_generator
@@ -335,8 +362,8 @@ def test_enabled_openai_without_chat_key_is_omitted_and_warned_safely(
 
     runtime = build_provider_runtime()
 
-    assert runtime.registry.list_providers() == (
-        ProviderDescriptor(ProviderId("ollama"), "Ollama"),
+    assert tuple(str(item.id) for item in runtime.registry.list_providers()) == (
+        "ollama",
     )
     assert "missing or blank" in caplog.text
     client_type.assert_called_once_with(host=settings.OLLAMA_ENDPOINT_URL)

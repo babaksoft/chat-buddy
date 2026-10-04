@@ -5,7 +5,7 @@ import os
 from chat_buddy.characters.domain import ModelDescriptor
 from chat_buddy.characters.infrastructure.llm.ollama_gateway import OllamaGateway
 from chat_buddy.characters.infrastructure.llm.registry import ConfiguredModelRegistry
-from chat_buddy.characters.infrastructure.llm.token_counter import Utf8TokenCounter
+from chat_buddy.characters.infrastructure.llm.token_counter import OllamaTokenCounter
 
 
 def create_model_registry() -> ConfiguredModelRegistry:
@@ -44,7 +44,7 @@ def create_model_registry() -> ConfiguredModelRegistry:
         models=models,
         responses={"ollama": gateway},
         summaries={"ollama": gateway},
-        counters={"ollama": Utf8TokenCounter()},
+        counters={"ollama": OllamaTokenCounter()},
         defaults={
             "response": ("ollama", response_model),
             "summary": ("ollama", summary_model),
