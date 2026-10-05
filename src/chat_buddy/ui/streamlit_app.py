@@ -6,7 +6,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from chat_buddy.characters.ui import render as render_characters
-from chat_buddy.characters.ui import render_identities
+from chat_buddy.characters.ui import render_identities, render_personas
 from chat_buddy.chat.ui import render as render_chat
 from chat_buddy.shared.config.logging import configure_logging
 
@@ -36,6 +36,12 @@ def main() -> None:
                 title="Identities",
                 icon="🪪",
                 url_path="identities",
+            ),
+            st.Page(
+                render_personas,
+                title="Personas",
+                icon="🎭",
+                url_path="personas",
             ),
         ],
         position="sidebar",

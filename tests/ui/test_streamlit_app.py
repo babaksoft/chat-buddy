@@ -12,6 +12,7 @@ from streamlit.util import calc_hash
 from chat_buddy.characters.domain import Identity, IdentityDetails, Persona, PersonaCore
 from chat_buddy.characters.ui import identities_page as characters_identities_page
 from chat_buddy.characters.ui import page as characters_page
+from chat_buddy.characters.ui import personas_page as characters_personas_page
 from chat_buddy.chat.application import (
     ChatRequest,
     GenerationSelection,
@@ -128,6 +129,11 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             characters_identities_page,
             "create_identity_service",
             return_value=identities,
+        ),
+        patch.object(
+            characters_personas_page,
+            "create_persona_service",
+            return_value=personas,
         ),
     ):
         yield identities, personas, continuities
@@ -297,6 +303,30 @@ def test_identities_opens_without_chat_or_unrelated_characters_services(
     character_services[0].ensure_default.assert_called_once_with()
     character_services[0].list.assert_called_once_with()
     character_services[1].list.assert_not_called()
+    character_services[2].list_grouped.assert_not_called()
+    services.assert_not_called()
+
+
+def test_personas_opens_without_chat_or_unrelated_characters_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to persona management with only its owning service.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "personas")
+
+    assert not app.exception
+    assert app.title[0].value == "🎭 Personas"
+    character_services[1].list.assert_called_once_with()
+    character_services[0].ensure_default.assert_not_called()
+    character_services[0].list.assert_not_called()
     character_services[2].list_grouped.assert_not_called()
     services.assert_not_called()
 

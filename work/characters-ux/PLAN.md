@@ -44,6 +44,8 @@ coverage and the relevant quality checks pass.
 
 ## Slice 2 — Dedicated Personas page
 
+**Status: Complete.**
+
 - Add a separately routed Personas master-detail page.
 - List persona names, concise definition excerpts, and edit state.
 - Show only one creation or editing form at a time.
