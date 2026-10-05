@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from chat_buddy.characters.ui import render as render_characters
 from chat_buddy.characters.ui import (
     render_identities,
+    render_new_ongoing,
     render_ongoing_page,
     render_personas,
 )
@@ -34,6 +35,12 @@ def main() -> None:
                 title="Ongoing",
                 icon="💞",
                 url_path="ongoing",
+            ),
+            st.Page(
+                render_new_ongoing,
+                title="New Ongoing",
+                icon="✨",
+                url_path="new-ongoing",
             ),
             st.Page(
                 render_characters,

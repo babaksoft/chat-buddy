@@ -74,6 +74,8 @@ clear valid or disabled new-Ongoing action.
 
 ## Slice 4 — Dedicated New Ongoing workflow
 
+**Status: Complete.**
+
 - Move start definition and review to one dedicated page with explicit
   **Define Ongoing** and **Preview Ongoing** states.
 - Preserve a draft across ordinary reruns and discard its review if either profile

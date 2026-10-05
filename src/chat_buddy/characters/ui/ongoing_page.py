@@ -17,6 +17,7 @@ from chat_buddy.characters.domain import (
     Persona,
 )
 from chat_buddy.characters.infrastructure import create_ongoing_services
+from chat_buddy.characters.ui.new_ongoing_page import render_new_ongoing
 from chat_buddy.characters.ui.ongoing import render_ongoing
 
 _SCOPE_KEY = "characters_continuity_scope"
@@ -196,7 +197,7 @@ def _store_scope(identity_id: UUID, persona_id: UUID, continuity_id: UUID) -> No
 
 
 def _prepare_start(identity_id: UUID, persona_id: UUID) -> None:
-    """Retain a valid pair for the existing start workflow.
+    """Retain a valid pair and open the dedicated start workflow.
 
     Args:
         identity_id:
@@ -207,10 +208,22 @@ def _prepare_start(identity_id: UUID, persona_id: UUID) -> None:
 
     st.session_state["characters_identity_id"] = identity_id
     st.session_state["characters_persona_id"] = persona_id
-    st.session_state["characters_start_requested"] = True
-    st.session_state.pop("characters_identity_widget", None)
-    st.session_state.pop("characters_persona_widget", None)
-    st.success("Pair selected. Open Characters to define the new Ongoing.")
+    st.session_state.pop("characters_new_ongoing_identity", None)
+    st.session_state.pop("characters_new_ongoing_persona", None)
+    _navigate_to_new_ongoing()
+
+
+def _navigate_to_new_ongoing() -> None:
+    """Navigate to the dedicated Ongoing definition page."""
+
+    st.switch_page(
+        st.Page(
+            render_new_ongoing,
+            title="New Ongoing",
+            icon="✨",
+            url_path="new-ongoing",
+        )
+    )
 
 
 def _show_fields(fields: dict[str, object]) -> None:

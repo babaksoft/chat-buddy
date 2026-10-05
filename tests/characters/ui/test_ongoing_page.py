@@ -100,8 +100,10 @@ def ongoing_services() -> (
             return_value=(identity_service, persona_service, continuity_service),
         ),
         patch.object(ongoing_page, "render_ongoing") as conversation,
+        patch.object(ongoing_page, "_navigate_to_new_ongoing") as navigate,
     ):
         continuity_service.conversation = conversation
+        continuity_service.navigate = navigate
         yield identity_service, persona_service, continuity_service, rows
 
 
@@ -244,8 +246,7 @@ def test_each_pair_has_available_or_reasoned_disabled_start(
     available_button.click().run()
     assert app.session_state["characters_identity_id"] == available[0]
     assert app.session_state["characters_persona_id"] == available[1]
-    assert app.session_state["characters_start_requested"]
-    assert app.success[0].value.startswith("Pair selected")
+    continuities.navigate.assert_called_once_with()
 
 
 @pytest.mark.parametrize(

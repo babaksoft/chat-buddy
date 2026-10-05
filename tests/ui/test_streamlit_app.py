@@ -17,6 +17,7 @@ from chat_buddy.characters.domain import (
     StartAvailability,
 )
 from chat_buddy.characters.ui import identities_page as characters_identities_page
+from chat_buddy.characters.ui import new_ongoing_page as characters_new_ongoing_page
 from chat_buddy.characters.ui import ongoing_page as characters_ongoing_page
 from chat_buddy.characters.ui import page as characters_page
 from chat_buddy.characters.ui import personas_page as characters_personas_page
@@ -142,6 +143,11 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             characters_personas_page,
             "create_persona_service",
             return_value=personas,
+        ),
+        patch.object(
+            characters_new_ongoing_page,
+            "create_ongoing_services",
+            return_value=(identities, personas, continuities),
         ),
         patch.object(
             characters_ongoing_page,
@@ -366,6 +372,32 @@ def test_ongoing_opens_without_chat_services(
     character_services[0].list.assert_called_once_with()
     character_services[1].list.assert_called_once_with()
     character_services[2].list_grouped.assert_called_once_with()
+    services.assert_not_called()
+
+
+def test_new_ongoing_opens_without_chat_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to definition with only Characters services.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "new-ongoing")
+
+    assert not app.exception
+    assert app.title[0].value == "✨ New Ongoing"
+    assert app.subheader[0].value == "Define Ongoing"
+    character_services[0].ensure_default.assert_called_once_with()
+    character_services[2].start_availability.assert_called_once_with(
+        character_services[0].list.return_value[0].id,
+        character_services[1].list.return_value[0].id,
+    )
     services.assert_not_called()
 
 
