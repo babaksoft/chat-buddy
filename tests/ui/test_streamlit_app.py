@@ -10,16 +10,23 @@ from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
 from chat_buddy.characters.domain import (
+    Continuity,
+    ContinuityGroup,
+    ContinuityLifecycle,
+    ContinuityMode,
     Identity,
     IdentityDetails,
     Persona,
     PersonaCore,
+    RelationshipIntent,
     StartAvailability,
+    StartContinuity,
+    StartingOrigins,
+    StartingRelationship,
 )
 from chat_buddy.characters.ui import identities_page as characters_identities_page
 from chat_buddy.characters.ui import new_ongoing_page as characters_new_ongoing_page
 from chat_buddy.characters.ui import ongoing_page as characters_ongoing_page
-from chat_buddy.characters.ui import page as characters_page
 from chat_buddy.characters.ui import personas_page as characters_personas_page
 from chat_buddy.chat.application import (
     ChatRequest,
@@ -120,20 +127,63 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
     """
 
     identities, personas, continuities = Mock(), Mock(), Mock()
-    identities.list.return_value = [
-        Identity(id=uuid4(), details=IdentityDetails(name="You"))
-    ]
-    personas.list.return_value = [
-        Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
-    ]
+    identity = Identity(id=uuid4(), details=IdentityDetails(name="You"))
+    persona = Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
+    identities.ensure_default.return_value = identity
+    identities.list.return_value = [identity]
+    personas.list.return_value = [persona]
     continuities.list_grouped.return_value = ()
     continuities.start_availability.return_value = StartAvailability(can_start=True)
+
+    def start(request: StartContinuity) -> Continuity:
+        """Return a continuity and expose it through focused navigation.
+
+        Args:
+            request:
+                Confirmed start request.
+
+        Returns:
+            Newly selected active continuity.
+        """
+
+        continuity = Continuity(
+            id=uuid4(),
+            identity_id=request.identity_id,
+            persona_id=request.persona_id,
+            mode=ContinuityMode.ONGOING,
+            lifecycle=ContinuityLifecycle.ACTIVE,
+            conversation_id=uuid4(),
+            relationship=StartingRelationship(
+                intent=request.relationship.intent,
+                social=request.relationship.social or "stranger",
+                romantic=request.relationship.romantic or "none",
+                dynamic=request.relationship.dynamic or "neutral",
+                trust=request.relationship.trust or "unknown",
+                affection=request.relationship.affection or "neutral",
+                boundaries=request.relationship.boundaries or (),
+                origins=StartingOrigins(
+                    social="default",
+                    romantic="default",
+                    dynamic="default",
+                    trust="default",
+                    affection="default",
+                    boundaries="default",
+                ),
+            ),
+        )
+        continuities.list_grouped.return_value = (
+            ContinuityGroup(
+                identity_id=continuity.identity_id,
+                persona_id=continuity.persona_id,
+                continuities=(continuity,),
+            ),
+        )
+        continuities.resume.return_value = continuity
+        continuities.created = continuity
+        return continuity
+
+    continuities.start.side_effect = start
     with (
-        patch.object(
-            characters_page,
-            "create_profile_services",
-            return_value=(identities, personas, continuities),
-        ),
         patch.object(
             characters_identities_page,
             "create_identity_service",
@@ -149,6 +199,7 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             "create_ongoing_services",
             return_value=(identities, personas, continuities),
         ),
+        patch.object(characters_new_ongoing_page, "_navigate_to_ongoing"),
         patch.object(
             characters_ongoing_page,
             "create_ongoing_services",
@@ -227,7 +278,7 @@ def test_selecting_chat_does_not_construct_characters_clients(services: Mock) ->
 def test_selecting_chat_does_not_construct_characters_profile_services(
     services: Mock,
 ) -> None:
-    """Keep profile initialization confined to the selected Characters route.
+    """Keep Characters initialization confined to focused Characters routes.
 
     Args:
         services:
@@ -235,8 +286,8 @@ def test_selecting_chat_does_not_construct_characters_profile_services(
     """
 
     with patch.object(
-        characters_page,
-        "create_profile_services",
+        characters_ongoing_page,
+        "create_ongoing_services",
         side_effect=AssertionError("Chat initialized Characters"),
     ) as factory:
         app = AppTest.from_function(_render_app).run()
@@ -245,10 +296,10 @@ def test_selecting_chat_does_not_construct_characters_profile_services(
     services.assert_called_once()
 
 
-def test_characters_selection_and_review_survive_area_switch(
+def test_new_ongoing_preview_survives_chat_area_switch(
     services: Mock, character_services: tuple[Mock, Mock, Mock]
 ) -> None:
-    """Restore Characters owners and pending review without invoking Chat on its route.
+    """Restore a pending focused preview after visiting Chat.
 
     Args:
         services:
@@ -257,19 +308,13 @@ def test_characters_selection_and_review_survive_area_switch(
             Characters application doubles.
     """
 
-    first = character_services[1].list.return_value[0]
-    second = first.model_copy(
-        update={
-            "id": uuid4(),
-            "core": PersonaCore(name="Other", definition="Other guide"),
-        }
-    )
-    character_services[1].list.return_value.append(second)
     app = AppTest.from_function(_render_app)
-    _switch_area(app, "characters")
-    app.selectbox(key="characters_persona_widget").set_value(second.id).run()
-    app.button(key="characters_review_start").click().run()
-    request = app.session_state["characters_review"][0]
+    _switch_area(app, "new-ongoing")
+    app.selectbox(key="characters_new_ongoing_intent").set_value(
+        RelationshipIntent.OPEN_TO_ROMANCE
+    )
+    app.button(key="characters_new_ongoing_preview").click().run()
+    request = app.session_state["characters_new_ongoing_review"][0]
     services.assert_not_called()
     _switch_area(app, "")
     assert not app.exception
@@ -277,29 +322,50 @@ def test_characters_selection_and_review_survive_area_switch(
     app.run()
     assert character_services[0].ensure_default.call_count == calls
     services.reset_mock()
-    _switch_area(app, "characters")
+    _switch_area(app, "new-ongoing")
     assert not app.exception
-    assert app.session_state["characters_persona_id"] == second.id
-    assert app.session_state["characters_review"][0] == request
-    assert "Persona: Other" in app.caption[0].value
+    assert app.session_state["characters_new_ongoing_review"][0] == request
+    assert app.subheader[0].value == "Preview Ongoing"
     services.assert_not_called()
 
 
-def test_characters_opens_without_chat_services(
+def test_confirmation_cannot_replay_and_scope_survives_page_and_area_switches(
     services: Mock, character_services: tuple[Mock, Mock, Mock]
 ) -> None:
-    services.side_effect = AssertionError("Characters must not initialize services")
-    app = AppTest.from_function(_render_app, default_timeout=10)
+    """Retain the confirmed scope without replaying its start action.
 
-    _switch_area(app, "characters")
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
 
-    assert not app.exception
-    assert app.title[0].value == "👥 Characters"
-    assert "Identity: You" in app.caption[0].value
-    assert not app.chat_input
-    assert app.sidebar.header[0].value == "Start profiles"
-    character_services[0].ensure_default.assert_called_once()
-    services.assert_not_called()
+    continuities = character_services[2]
+    with patch.object(characters_ongoing_page, "render_ongoing") as conversation:
+        app = AppTest.from_function(_render_app, default_timeout=10)
+        _switch_area(app, "new-ongoing")
+        app.button(key="characters_new_ongoing_preview").click().run()
+        request = app.session_state["characters_new_ongoing_review"][0]
+        app.button(key="characters_new_ongoing_confirm").click().run()
+        assert not app.exception
+        continuities.start.assert_called_once_with(request)
+        created = continuities.created
+        scope = (created.identity_id, created.persona_id, created.id)
+        assert app.session_state["characters_continuity_scope"] == scope
+
+        _switch_area(app, "")
+        assert not app.exception
+        _switch_area(app, "ongoing")
+        assert not app.exception
+        assert app.session_state["characters_continuity_scope"] == scope
+        continuities.resume.assert_called_with(*scope)
+        conversation.assert_called_with(created)
+
+        _switch_area(app, "new-ongoing")
+        app.run()
+        continuities.start.assert_called_once_with(request)
+        services.assert_called_once_with()
 
 
 def test_identities_opens_without_chat_or_unrelated_characters_services(
@@ -415,10 +481,9 @@ def test_selected_conversation_survives_area_switch(
     ]
     services.reset_mock()
 
-    _switch_area(app, "characters")
+    _switch_area(app, "ongoing")
 
     assert not app.exception
-    assert not app.sidebar.button
     assert not app.chat_message
     assert app.session_state["chat_conversation_id"] == conversation_id
     services.assert_not_called()

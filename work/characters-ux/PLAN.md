@@ -1,6 +1,6 @@
 # Characters UX Hardening Plan
 
-Status: In progress
+Status: Complete
 
 Last updated: 2026-10-05
 
@@ -92,6 +92,8 @@ duplicate submission, and concurrent active-pair behavior are covered through th
 UI and real Characters services.
 
 ## Slice 5 — Integration cleanup and documentation
+
+**Status: Complete.**
 
 - Remove the legacy inline profile and start controls after replacement pages are
   covered.

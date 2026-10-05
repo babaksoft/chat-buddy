@@ -30,9 +30,11 @@ experiences:
   page.
 - Edit identities until first use, then duplicate a frozen identity with revised
   details when changes are needed.
-- Create and manage personas.
-- Start isolated Ongoing continuities with an explicit relationship setup.
-- Resume active or archived conversation history.
+- Create, inspect, edit, and duplicate personas on a dedicated page.
+- Define and preview an explicit relationship before confirming a new isolated
+  Ongoing continuity.
+- Navigate every active or archived continuity by its identity and persona, and
+  resume its conversation history.
 - Stream persona responses through a Characters-owned Ollama configuration.
 - Compress long conversations with continuity-scoped rolling summaries.
 - Recover incomplete turns without committing partial output.
@@ -152,8 +154,8 @@ Start Ollama and make the configured models available:
 ollama serve
 ```
 
-The checked-in Chat configuration uses `gpt-oss:20b-cloud` for responses and
-utility operations. Characters defaults to `mistral` for responses and summaries.
+The checked-in Chat configuration and the Characters defaults use
+`gpt-oss:20b-cloud` for responses and utility operations.
 Prepare those models according to their Ollama requirements, or change the
 configuration described below to models available on your endpoint.
 
@@ -164,7 +166,7 @@ uv run streamlit run src/chat_buddy/ui/streamlit_app.py
 ```
 
 Open the URL printed by Streamlit, normally `http://localhost:8501`. Chat is the
-default page; use the sidebar to switch to Characters.
+default page; use the sidebar to open the focused Characters pages.
 
 ### 6. Try the application
 
@@ -179,10 +181,12 @@ default page; use the sidebar to switch to Characters.
 #### Try Characters
 
 1. Open **Identities** to create, inspect, or edit who you are in Characters.
-2. Open **Characters** and select an identity.
-3. Create a persona.
-4. Review and confirm an Ongoing start.
-5. Send a message and resume the continuity from the sidebar.
+2. Open **Personas** to create, inspect, or edit who you want to talk with.
+3. Open **New Ongoing**, select an identity and persona, and define the starting
+   relationship.
+4. Preview and confirm the Ongoing start.
+5. Send a message, then use **Ongoing** to navigate active or archived histories
+   under their identity and persona.
 
 Confirming the first continuity permanently freezes the selected identity and
 persona. Duplicate a frozen profile to create an editable variant. Archived
