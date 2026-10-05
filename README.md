@@ -186,6 +186,11 @@ continuities remain readable but cannot accept new messages.
 
 ## Configuration
 
+When Streamlit starts, Chat Buddy loads optional settings from `.env` in the
+repository root. Copy `.env.example` to `.env` and add local values there when you
+do not want to export them in every terminal. The file is ignored by Git, and
+variables already set in the launching shell take precedence.
+
 ### Chat
 
 Chat settings currently live in

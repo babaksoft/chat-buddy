@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
@@ -40,12 +41,16 @@ from chat_buddy.chat.domain import (
     ProviderId,
 )
 from chat_buddy.chat.ui import page as chat_page
+from chat_buddy.ui import streamlit_app
 
 
 def _render_app() -> None:
-    from chat_buddy.ui.streamlit_app import main
+    from unittest.mock import patch
 
-    main()
+    from chat_buddy.ui import streamlit_app
+
+    with patch.object(streamlit_app, "_load_environment"):
+        streamlit_app.main()
 
 
 def _switch_area(app: AppTest, url_path: str) -> AppTest:
@@ -123,6 +128,40 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
 @pytest.fixture
 def app(services: Mock) -> AppTest:
     return AppTest.from_function(_render_app, default_timeout=10).run()
+
+
+def test_environment_loader_reads_repo_root_dotenv() -> None:
+    """Load only the repository-root dotenv file with shell precedence."""
+
+    repository_root = Path(streamlit_app.__file__).resolve().parents[3]
+    with patch.object(streamlit_app, "load_dotenv") as loader:
+        streamlit_app._load_environment()
+
+    loader.assert_called_once_with(dotenv_path=repository_root / ".env")
+
+
+def test_shell_loads_environment_before_rendering() -> None:
+    """Load local settings before configuring or routing the shared shell."""
+
+    events: list[str] = []
+    page = Mock()
+    with (
+        patch.object(
+            streamlit_app,
+            "_load_environment",
+            side_effect=lambda: events.append("environment"),
+        ),
+        patch.object(
+            streamlit_app.st,
+            "set_page_config",
+            side_effect=lambda **kwargs: events.append("page"),
+        ),
+        patch.object(streamlit_app.st, "navigation", return_value=page),
+    ):
+        streamlit_app.main()
+
+    assert events == ["environment", "page"]
+    page.run.assert_called_once_with()
 
 
 def test_chat_is_default_area(app: AppTest, services: Mock) -> None:

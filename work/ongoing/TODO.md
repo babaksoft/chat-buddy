@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next product stage: Stage 4 — Build Characters foundations and Ongoing mode.
+Next product stage: Stage 5 — Characters retry and branching.
 
 Deferred engineering:
 
