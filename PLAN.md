@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-09-22
+Last updated: 2026-10-05
 
 ## How to use this plan
 
@@ -158,6 +158,15 @@ stored memory, and both a local and a cloud adapter pass the same contract tests
 **Complete when:** an identity and persona can start and resume an isolated
 Ongoing continuity, lifecycle invariants hold transactionally, and no Chat record
 or service participates in the workflow.
+
+## Characters UX hardening
+
+**Status: In progress.**
+
+Before Stage 5, replace the combined Characters prototype screen with focused
+identity, persona, continuity-navigation, start-review, and Ongoing chat pages.
+Deliver this work through the small slices in the
+[Characters UX hardening plan](work/characters-ux/PLAN.md).
 
 ## Stage 5 — Add Characters retry and branching
 

@@ -26,7 +26,11 @@ experiences:
 
 ### Characters
 
-- Create identities and personas.
+- Create identities and manage their complete authored details on a dedicated
+  page.
+- Edit identities until first use, then duplicate a frozen identity with revised
+  details when changes are needed.
+- Create and manage personas.
 - Start isolated Ongoing continuities with an explicit relationship setup.
 - Resume active or archived conversation history.
 - Stream persona responses through a Characters-owned Ollama configuration.
@@ -174,8 +178,8 @@ default page; use the sidebar to switch to Characters.
 
 #### Try Characters
 
-1. Open **Characters**.
-2. Create or select an identity.
+1. Open **Identities** to create, inspect, or edit who you are in Characters.
+2. Open **Characters** and select an identity.
 3. Create a persona.
 4. Review and confirm an Ongoing start.
 5. Send a message and resume the continuity from the sidebar.

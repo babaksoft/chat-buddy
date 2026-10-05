@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
 from chat_buddy.characters.domain import Identity, IdentityDetails, Persona, PersonaCore
+from chat_buddy.characters.ui import identities_page as characters_identities_page
 from chat_buddy.characters.ui import page as characters_page
 from chat_buddy.chat.application import (
     ChatRequest,
@@ -117,10 +118,17 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
         Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
     ]
     continuities.list_grouped.return_value = ()
-    with patch.object(
-        characters_page,
-        "create_profile_services",
-        return_value=(identities, personas, continuities),
+    with (
+        patch.object(
+            characters_page,
+            "create_profile_services",
+            return_value=(identities, personas, continuities),
+        ),
+        patch.object(
+            characters_identities_page,
+            "create_identity_service",
+            return_value=identities,
+        ),
     ):
         yield identities, personas, continuities
 
@@ -266,6 +274,30 @@ def test_characters_opens_without_chat_services(
     assert not app.chat_input
     assert app.sidebar.header[0].value == "Identity → Persona → Ongoing"
     character_services[0].ensure_default.assert_called_once()
+    services.assert_not_called()
+
+
+def test_identities_opens_without_chat_or_unrelated_characters_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to identity management with only its owning service.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "identities")
+
+    assert not app.exception
+    assert app.title[0].value == "🪪 Identities"
+    character_services[0].ensure_default.assert_called_once_with()
+    character_services[0].list.assert_called_once_with()
+    character_services[1].list.assert_not_called()
+    character_services[2].list_grouped.assert_not_called()
     services.assert_not_called()
 
 

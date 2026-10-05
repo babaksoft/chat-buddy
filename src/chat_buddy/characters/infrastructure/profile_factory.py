@@ -7,6 +7,21 @@ from chat_buddy.characters.application import (
 )
 
 
+def create_identity_service() -> IdentityService:
+    """Build identity management without composing unrelated Characters services.
+
+    Returns:
+        Lazily configured identity application operations.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbIdentityRepository,
+    )
+
+    return IdentityService(DbIdentityRepository(CharactersSessionLocal))
+
+
 def create_profile_services() -> (
     tuple[IdentityService, PersonaService, ContinuityService]
 ):
@@ -19,12 +34,11 @@ def create_profile_services() -> (
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
         DbContinuityRepository,
-        DbIdentityRepository,
         DbPersonaRepository,
     )
 
     return (
-        IdentityService(DbIdentityRepository(CharactersSessionLocal)),
+        create_identity_service(),
         PersonaService(DbPersonaRepository(CharactersSessionLocal)),
         ContinuityService(DbContinuityRepository(CharactersSessionLocal)),
     )
