@@ -9,6 +9,7 @@ from chat_buddy.characters.domain import (
     ContinuityGroup,
     ContinuityMode,
     ContinuityRepository,
+    StartAvailability,
     StartContinuity,
     StartingOrigins,
     StartingRelationship,
@@ -130,6 +131,30 @@ class ContinuityService:
                 key=lambda row: (row.identity_id, row.persona_id),
             )
         )
+
+    def start_availability(
+        self, identity_id: UUID, persona_id: UUID
+    ) -> StartAvailability:
+        """Describe whether a pair can start another Ongoing.
+
+        Args:
+            identity_id:
+                Selected identity owner.
+            persona_id:
+                Selected persona owner.
+
+        Returns:
+            Availability and a concise blocking reason when unavailable.
+        """
+
+        active = self._repository.find_active(identity_id, persona_id)
+        if active is not None:
+            return StartAvailability(
+                can_start=False,
+                reason="Archive the active Ongoing before starting another.",
+            )
+
+        return StartAvailability(can_start=True)
 
     def archive(
         self, identity_id: UUID, persona_id: UUID, continuity_id: UUID

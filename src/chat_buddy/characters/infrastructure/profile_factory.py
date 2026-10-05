@@ -56,3 +56,15 @@ def create_profile_services() -> (
         create_persona_service(),
         ContinuityService(DbContinuityRepository(CharactersSessionLocal)),
     )
+
+
+def create_ongoing_services() -> (
+    tuple[IdentityService, PersonaService, ContinuityService]
+):
+    """Build the profile and lifecycle services used by Ongoing navigation.
+
+    Returns:
+        Identity, persona, and continuity application operations.
+    """
+
+    return create_profile_services()

@@ -9,8 +9,15 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
-from chat_buddy.characters.domain import Identity, IdentityDetails, Persona, PersonaCore
+from chat_buddy.characters.domain import (
+    Identity,
+    IdentityDetails,
+    Persona,
+    PersonaCore,
+    StartAvailability,
+)
 from chat_buddy.characters.ui import identities_page as characters_identities_page
+from chat_buddy.characters.ui import ongoing_page as characters_ongoing_page
 from chat_buddy.characters.ui import page as characters_page
 from chat_buddy.characters.ui import personas_page as characters_personas_page
 from chat_buddy.chat.application import (
@@ -119,6 +126,7 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
         Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
     ]
     continuities.list_grouped.return_value = ()
+    continuities.start_availability.return_value = StartAvailability(can_start=True)
     with (
         patch.object(
             characters_page,
@@ -134,6 +142,11 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             characters_personas_page,
             "create_persona_service",
             return_value=personas,
+        ),
+        patch.object(
+            characters_ongoing_page,
+            "create_ongoing_services",
+            return_value=(identities, personas, continuities),
         ),
     ):
         yield identities, personas, continuities
@@ -278,7 +291,7 @@ def test_characters_opens_without_chat_services(
     assert app.title[0].value == "👥 Characters"
     assert "Identity: You" in app.caption[0].value
     assert not app.chat_input
-    assert app.sidebar.header[0].value == "Identity → Persona → Ongoing"
+    assert app.sidebar.header[0].value == "Start profiles"
     character_services[0].ensure_default.assert_called_once()
     services.assert_not_called()
 
@@ -328,6 +341,31 @@ def test_personas_opens_without_chat_or_unrelated_characters_services(
     character_services[0].ensure_default.assert_not_called()
     character_services[0].list.assert_not_called()
     character_services[2].list_grouped.assert_not_called()
+    services.assert_not_called()
+
+
+def test_ongoing_opens_without_chat_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to scoped Ongoing navigation without constructing Chat.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "ongoing")
+
+    assert not app.exception
+    assert app.title[0].value == "💞 Ongoing"
+    assert app.sidebar.header[0].value == "Identity → Persona → Ongoing"
+    character_services[0].ensure_default.assert_called_once_with()
+    character_services[0].list.assert_called_once_with()
+    character_services[1].list.assert_called_once_with()
+    character_services[2].list_grouped.assert_called_once_with()
     services.assert_not_called()
 
 
@@ -981,8 +1019,13 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
         ongoing, "create_conversation_service", return_value=conversation
     ) as factory:
         app = AppTest.from_function(_render_app)
+        app.session_state["characters_continuity_scope"] = (
+            row.identity_id,
+            row.persona_id,
+            row.id,
+        )
         app.session_state["characters_continuity_id"] = row.id
-        _switch_area(app, "characters")
+        _switch_area(app, "ongoing")
         assert not app.exception
         assert any(m.value == "Characters saved response" for m in app.markdown)
         services.assert_not_called()
@@ -993,7 +1036,7 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
         assert not any(t.value == "Social: stranger" for t in app.text)
         assert factory.call_count == count
         services.reset_mock()
-        _switch_area(app, "characters")
+        _switch_area(app, "ongoing")
         assert not app.exception
         assert any(m.value == "Characters saved response" for m in app.markdown)
         assert app.chat_input[0].disabled

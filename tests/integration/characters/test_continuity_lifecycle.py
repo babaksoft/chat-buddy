@@ -53,7 +53,13 @@ def test_start_archive_and_fresh_replacement_preserve_history(
     factory = characters_session_factory
     request = _request(factory)
     service = ContinuityService(DbContinuityRepository(factory))
+    assert service.start_availability(request.identity_id, request.persona_id).can_start
     first = service.start(request)
+    availability = service.start_availability(request.identity_id, request.persona_id)
+    assert not availability.can_start
+    assert availability.reason == (
+        "Archive the active Ongoing before starting another."
+    )
     assert first.lifecycle == ContinuityLifecycle.ACTIVE
     assert first.relationship.social == "stranger"
     assert first.relationship.romantic == "none"
@@ -77,6 +83,7 @@ def test_start_archive_and_fresh_replacement_preserve_history(
     with pytest.raises(ConfirmationConflictError):
         service.start(request.model_copy(update={"identity_revision": 2}))
     archived = service.archive(first.identity_id, first.persona_id, first.id)
+    assert service.start_availability(request.identity_id, request.persona_id).can_start
     assert archived.lifecycle == ContinuityLifecycle.ARCHIVED
     assert service.archive(first.identity_id, first.persona_id, first.id) == archived
     assert service.start(request) == archived

@@ -259,3 +259,22 @@ class ContinuityGroup(BaseModel):
     continuities: tuple[Continuity, ...] = Field(
         description="Ordered lifecycle snapshots."
     )
+
+
+class StartAvailability(BaseModel):
+    """Whether an identity/persona pair may start a new Ongoing.
+
+    Attributes:
+        can_start:
+            Whether the pair currently permits a new Ongoing.
+        reason:
+            Concise explanation when starting is unavailable.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    can_start: bool = Field(description="Whether a new Ongoing may be started.")
+    reason: str | None = Field(
+        default=None,
+        description="Explanation when a new Ongoing cannot be started.",
+    )

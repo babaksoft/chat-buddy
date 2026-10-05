@@ -34,4 +34,5 @@ __all__ = [
     "OngoingContextEligibility",
     "PersonaService",
     "RollingSummaryService",
+    "StartAvailability",
 ]

@@ -57,6 +57,8 @@ focused page with service-double and integration coverage.
 
 ## Slice 3 — Ongoing page and continuity hierarchy
 
+**Status: Complete.**
+
 - Extract Ongoing history and chat from the combined Characters page.
 - Render all identities, their available personas, and existing active and
   archived continuities as a nested sidebar hierarchy.

@@ -16,7 +16,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
     DbPersonaRepository,
 )
-from chat_buddy.characters.ui import ongoing, page
+from chat_buddy.characters.ui import ongoing, ongoing_page, page
 from tests.characters_support import FakeResponse, service
 
 
@@ -26,6 +26,14 @@ def _render() -> None:
     from chat_buddy.characters.ui import render
 
     render()
+
+
+def _render_ongoing() -> None:
+    """Render focused Ongoing navigation with isolated services."""
+
+    from chat_buddy.characters.ui import render_ongoing_page
+
+    render_ongoing_page()
 
 
 def test_reviewed_start_commits_and_selects_scoped_history(
@@ -50,6 +58,11 @@ def test_reviewed_start_commits_and_selects_scoped_history(
             return_value=(identities, personas, continuities),
         ),
         patch.object(
+            ongoing_page,
+            "create_ongoing_services",
+            return_value=(identities, personas, continuities),
+        ),
+        patch.object(
             ongoing,
             "create_conversation_service",
             side_effect=lambda: service(characters_session_factory, gateway),
@@ -70,7 +83,11 @@ def test_reviewed_start_commits_and_selects_scoped_history(
         assert continuities.start(request) == continuity
         assert identities.inspect(request.identity_id).is_frozen
         assert personas.inspect(persona.id).is_frozen
+        scope = app.session_state["characters_continuity_scope"]
+        app = AppTest.from_function(_render_ongoing)
+        app.session_state["characters_continuity_scope"] = scope
         app.run()
+        assert not app.exception
         assert len(continuities.list_grouped()[0].continuities) == 1
         app.chat_input[0].set_value("Hi").run()
         assert not app.exception
@@ -97,8 +114,6 @@ def test_reviewed_start_commits_and_selects_scoped_history(
             continuities.resume(request.identity_id, persona.id, selected).lifecycle
             == ContinuityLifecycle.ARCHIVED
         )
-        app.button(key=f"characters_select_{selected}").click().run()
-        assert not app.exception
         assert any("read-only" in item.value for item in app.info)
         assert not any(button.label == "Archive Ongoing" for button in app.button)
         assert app.chat_input[0].disabled

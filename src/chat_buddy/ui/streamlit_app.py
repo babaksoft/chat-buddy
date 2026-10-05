@@ -6,7 +6,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from chat_buddy.characters.ui import render as render_characters
-from chat_buddy.characters.ui import render_identities, render_personas
+from chat_buddy.characters.ui import (
+    render_identities,
+    render_ongoing_page,
+    render_personas,
+)
 from chat_buddy.chat.ui import render as render_chat
 from chat_buddy.shared.config.logging import configure_logging
 
@@ -25,6 +29,12 @@ def main() -> None:
     page = st.navigation(
         [
             st.Page(render_chat, title="Chat", icon="💬", default=True),
+            st.Page(
+                render_ongoing_page,
+                title="Ongoing",
+                icon="💞",
+                url_path="ongoing",
+            ),
             st.Page(
                 render_characters,
                 title="Characters",

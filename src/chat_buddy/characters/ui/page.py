@@ -14,7 +14,6 @@ from chat_buddy.characters.application import (
 from chat_buddy.characters.domain import (
     Affection,
     Boundary,
-    ContinuityLifecycle,
     Dynamic,
     Identity,
     IdentityDetails,
@@ -30,7 +29,6 @@ from chat_buddy.characters.domain import (
     Trust,
 )
 from chat_buddy.characters.infrastructure import create_profile_services
-from chat_buddy.characters.ui.ongoing import render_ongoing
 
 
 def render() -> None:
@@ -64,22 +62,13 @@ def _render_profiles(
     identity_rows = identities.list()
     persona_rows = personas.list()
     with st.sidebar:
-        st.header("Identity → Persona → Ongoing")
+        st.header("Start profiles")
         identity_id = _select_owner(
             "identity", {row.id: row.details.name for row in identity_rows}
         )
         persona_id = _select_owner(
             "persona", {row.id: row.core.name for row in persona_rows}
         )
-        for group in continuities.list_grouped():
-            if (group.identity_id, group.persona_id) != (identity_id, persona_id):
-                continue
-            for row in group.continuities:
-                if st.button(
-                    f"Ongoing · {row.lifecycle.value} · {str(row.id)[:8]}",
-                    key=f"characters_select_{row.id}",
-                ):
-                    st.session_state["characters_continuity_id"] = row.id
     identity = next(row for row in identity_rows if row.id == identity_id)
     persona = next((row for row in persona_rows if row.id == persona_id), None)
     st.caption(
@@ -97,25 +86,6 @@ def _render_profiles(
         st.info("Create a persona to review an Ongoing start.")
         return
     _render_start(identity, persona, continuities)
-    selected = st.session_state.get("characters_continuity_id")
-    rows = [
-        row
-        for group in continuities.list_grouped()
-        if (group.identity_id, group.persona_id) == (identity.id, persona.id)
-        for row in group.continuities
-    ]
-    if selected not in {row.id for row in rows}:
-        return
-    continuity = continuities.resume(identity.id, persona.id, selected)
-    st.subheader(f"Ongoing · {continuity.lifecycle.value}")
-    st.caption(f"Continuity: {continuity.id}")
-    _show_fields(continuity.relationship.model_dump(mode="json", exclude={"origins"}))
-    if continuity.lifecycle == ContinuityLifecycle.ARCHIVED:
-        st.info("Archived history is read-only. Profiles remain permanently frozen.")
-    elif st.button("Archive Ongoing", key="characters_archive"):
-        continuities.archive(identity.id, persona.id, continuity.id)
-        st.rerun()
-    render_ongoing(continuity)
 
 
 def _select_owner(kind: str, labels: dict[UUID, str]) -> UUID | None:
@@ -417,6 +387,11 @@ def _render_start(
             )
             return
         st.session_state["characters_continuity_id"] = continuity.id
+        st.session_state["characters_continuity_scope"] = (
+            continuity.identity_id,
+            continuity.persona_id,
+            continuity.id,
+        )
         st.session_state.pop("characters_review", None)
         st.rerun()
 

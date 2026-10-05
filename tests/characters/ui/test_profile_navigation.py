@@ -116,7 +116,6 @@ def services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             "create_profile_services",
             return_value=(identities, personas, continuities),
         ),
-        patch.object(page, "render_ongoing"),
     ):
         yield identities, personas, continuities
 
@@ -195,11 +194,11 @@ def test_review_cancel_confirm_and_reruns(
     assert request.relationship.intent == intent
     app.run()
     continuities.start.assert_called_once()
-    row = continuities.resume.return_value
-    continuities.resume.assert_called_with(row.identity_id, row.persona_id, row.id)
-    app.button(key="characters_archive").click().run()
-    continuities.archive.assert_called_once_with(
-        row.identity_id, row.persona_id, row.id
+    created = continuities.list_grouped.return_value[0].continuities[0]
+    assert app.session_state["characters_continuity_scope"] == (
+        created.identity_id,
+        created.persona_id,
+        created.id,
     )
     continuities.start.assert_called_once()
 
@@ -356,70 +355,24 @@ def test_invalid_established_start_does_not_create_review(
     services[2].start.assert_not_called()
 
 
-def test_grouped_navigation_never_resumes_another_owner(
+def test_combined_page_no_longer_renders_ongoing_history(
     services: tuple[Mock, Mock, Mock],
 ) -> None:
-    """Filter lifecycle entries by both owners and avoid stale scoped selections.
+    """Keep history and conversation rendering on the focused Ongoing page.
 
     Args:
         services:
             Application doubles.
     """
 
-    identities, personas, continuities = services
+    _, _, continuities = services
     app = AppTest.from_function(_render).run()
-    app.button(key="characters_review_start").click().run()
-    app.button(key="characters_confirm_start").click().run()
-    first = continuities.resume.return_value
-    archived = first.model_copy(
-        update={"id": uuid4(), "lifecycle": ContinuityLifecycle.ARCHIVED}
-    )
-    other_identity = identities.list.return_value[0].model_copy(
-        update={"id": uuid4(), "details": IdentityDetails(name="Other identity")}
-    )
-    other_persona = personas.list.return_value[0].model_copy(
-        update={
-            "id": uuid4(),
-            "core": PersonaCore(name="Other persona", definition="Other"),
-        }
-    )
-    identities.list.return_value.append(other_identity)
-    personas.list.return_value.append(other_persona)
-    foreign = first.model_copy(
-        update={
-            "id": uuid4(),
-            "identity_id": other_identity.id,
-            "persona_id": other_persona.id,
-        }
-    )
-    continuities.list_grouped.return_value = (
-        ContinuityGroup(
-            identity_id=first.identity_id,
-            persona_id=first.persona_id,
-            continuities=(first, archived),
-        ),
-        ContinuityGroup(
-            identity_id=foreign.identity_id,
-            persona_id=foreign.persona_id,
-            continuities=(foreign,),
-        ),
-    )
-    app.run()
-    assert "active" in app.button(key=f"characters_select_{first.id}").label
-    assert "archived" in app.button(key=f"characters_select_{archived.id}").label
-    assert not any(
-        button.key == f"characters_select_{foreign.id}" for button in app.button
-    )
-    continuities.resume.reset_mock()
-    app.selectbox(key="characters_persona_widget").set_value(other_persona.id).run()
+
     assert not app.exception
+    continuities.list_grouped.assert_not_called()
     continuities.resume.assert_not_called()
-    assert not any(item.value.startswith("Ongoing ·") for item in app.subheader)
-    app.selectbox(key="characters_identity_widget").set_value(other_identity.id).run()
-    assert not app.exception
-    continuities.resume.return_value = foreign
-    app.button(key=f"characters_select_{foreign.id}").click().run()
-    assert not app.exception
-    continuities.resume.assert_called_once_with(
-        other_identity.id, other_persona.id, foreign.id
+    continuities.archive.assert_not_called()
+    assert not any(
+        button.key and button.key.startswith("characters_select_")
+        for button in app.button
     )
