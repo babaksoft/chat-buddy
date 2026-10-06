@@ -161,7 +161,7 @@ or service participates in the workflow.
 
 ## Characters UX hardening
 
-**Status: In progress.**
+**Status: Complete.**
 
 Before Stage 5, replace the combined Characters prototype screen with focused
 identity, persona, continuity-navigation, start-review, and Ongoing chat pages.
