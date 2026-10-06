@@ -1,7 +1,7 @@
 """Durable Ongoing rolling-summary orchestration."""
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -36,18 +36,22 @@ class RollingSummaryService:
         self._repository = repository
         self._models = models
 
-    def current(self, scope: ConversationScope) -> SummaryRevision | None:
+    def current(
+        self, scope: ConversationScope, path_leaf_id: UUID | None = None
+    ) -> SummaryRevision | None:
         """Load the deepest summary compatible with the selected ancestry.
 
         Args:
             scope:
                 Complete required ownership.
+            path_leaf_id:
+                Exact ancestry leaf, or the selected leaf when absent.
 
         Returns:
             Current compatible durable revision when present.
         """
 
-        return self._repository.get_current(scope)
+        return self._repository.get_current(scope, path_leaf_id)
 
     def advance(
         self,

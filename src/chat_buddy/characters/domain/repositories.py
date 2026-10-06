@@ -7,6 +7,7 @@ from uuid import UUID
 from chat_buddy.characters.domain.branching import (
     AlternativeGroup,
     ConversationGraph,
+    RetryAvailability,
     SelectedPath,
 )
 from chat_buddy.characters.domain.continuity import (
@@ -404,6 +405,48 @@ class ConversationRepository(Protocol):
 
         ...
 
+    def retry_availability(
+        self, scope: ConversationScope, persona_message_id: UUID
+    ) -> RetryAvailability:
+        """Count durable completed alternatives for the selected response.
+
+        Args:
+            scope:
+                Complete required ownership.
+            persona_message_id:
+                Selected final persona response.
+
+        Returns:
+            Successful retry accounting for the response's user parent.
+        """
+
+        ...
+
+    def begin_retry(
+        self,
+        scope: ConversationScope,
+        generation: EffectiveGeneration,
+        settings: ConversationSettings,
+        expected_selected_leaf_id: UUID,
+    ) -> GenerationAttempt:
+        """Reserve a bounded retry for the selected completed response.
+
+        Args:
+            scope:
+                Complete required ownership.
+            generation:
+                Immutable effective response configuration.
+            settings:
+                Current requested selection to persist.
+            expected_selected_leaf_id:
+                Selected final persona response observed during preflight.
+
+        Returns:
+            Detached pending retry attempt.
+        """
+
+        ...
+
     def claim(self, scope: ConversationScope, attempt_id: UUID) -> GenerationAttempt:
         """Atomically transition a pending attempt to streaming.
 
@@ -488,12 +531,16 @@ class ConversationRepository(Protocol):
 class SummaryRepository(Protocol):
     """Persist immutable rolling-summary revisions."""
 
-    def get_current(self, scope: ConversationScope) -> SummaryRevision | None:
+    def get_current(
+        self, scope: ConversationScope, path_leaf_id: UUID | None = None
+    ) -> SummaryRevision | None:
         """Load the deepest compatible revision for the selected ancestry.
 
         Args:
             scope:
                 Complete required ownership.
+            path_leaf_id:
+                Exact ancestry leaf, or the selected leaf when absent.
 
         Returns:
             Current compatible revision when one exists.

@@ -17,6 +17,7 @@ from chat_buddy.characters.domain import (
     GenerationAttempt,
     IncompleteTurnError,
     Message,
+    RetryLimitError,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.models import (
@@ -392,3 +393,105 @@ def test_send_racing_completion_keeps_a_single_unmatched_tail(
         assert isinstance(sent, AttemptConflictError)
         assert len(saved.messages) == 2
         assert all(a.status == "completed" for a in saved.attempts)
+
+
+def test_retry_limit_is_serialized_across_reservation_and_completion(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Allow one final retry reservation and reject every fifth response.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    factory = _factory(characters_postgres_engine)
+    scope = start(factory)
+    gateway = FakeResponse()
+    app = service(factory, gateway)
+    initial = app.send(scope, SubmittedInput(content="Question"))
+    list(app.stream(scope, initial.id))
+    for number in range(2):
+        gateway.chunks = (f"Alternative {number}",)
+        retry = app.retry_completed_response(scope)
+        list(app.stream(scope, retry.id))
+
+    outcomes = _race(
+        lambda: app.retry_completed_response(scope),
+        lambda: app.retry_completed_response(scope),
+    )
+    pending = [item for item in outcomes if isinstance(item, GenerationAttempt)]
+    assert len(pending) == 1
+    assert sum(isinstance(item, AttemptConflictError) for item in outcomes) == 1
+    gateway.chunks = ("Final alternative",)
+    list(app.stream(scope, pending[0].id))
+    assert app.retry_availability(scope).successful_response_count == 4
+
+    def exceed_limit() -> object:
+        """Return the expected limit failure from a synchronized operation.
+
+        Returns:
+            Retry-limit failure raised by reservation.
+        """
+
+        try:
+            return app.retry_completed_response(scope)
+        except RetryLimitError as error:
+            return error
+
+    outcomes = _race(exceed_limit, exceed_limit)
+    assert all(isinstance(item, RetryLimitError) for item in outcomes)
+
+
+def test_archive_racing_retry_completion_cannot_commit_after_archive(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Serialize retry completion with archival under the continuity lock.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    factory = _factory(characters_postgres_engine)
+    scope = start(factory)
+    gateway = FakeResponse()
+    app = service(factory, gateway)
+    initial = app.send(scope, SubmittedInput(content="Question"))
+    list(app.stream(scope, initial.id))
+    repository = DbConversationRepository(factory)
+    retry = app.retry_completed_response(scope)
+    repository.claim(scope, retry.id)
+    repository.append(scope, retry.id, "Alternative")
+
+    def complete_retry() -> object:
+        """Complete the retry or retain the expected archive rejection.
+
+        Returns:
+            Completed message or archive failure.
+        """
+
+        try:
+            return repository.complete(scope, retry.id)
+        except ArchivedContinuityError as error:
+            return error
+
+    outcomes = _race(
+        lambda: DbContinuityRepository(factory).archive(
+            scope.identity_id, scope.persona_id, scope.continuity_id
+        ),
+        complete_retry,
+    )
+    completed = [item for item in outcomes if isinstance(item, Message)]
+    archived = [item for item in outcomes if isinstance(item, ArchivedContinuityError)]
+    assert len(completed) + len(archived) == 1
+    assert (
+        DbContinuityRepository(factory)
+        .get(scope.identity_id, scope.persona_id, scope.continuity_id)
+        .lifecycle
+        == "archived"
+    )
+    if archived:
+        assert app.retry_availability(scope).successful_response_count == 1
+    else:
+        assert app.retry_availability(scope).successful_response_count == 2

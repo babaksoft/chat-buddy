@@ -28,6 +28,7 @@ from chat_buddy.characters.domain import (
     ModelRegistry,
     PersonaRepository,
     PromptMessage,
+    RetryAvailability,
     SubmittedInput,
     SummaryRepository,
 )
@@ -171,6 +172,66 @@ class ConversationService:
 
         return self._prepare(scope, None)
 
+    def retry_availability(self, scope: ConversationScope) -> RetryAvailability:
+        """Return successful retry accounting for the selected final response.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Durable retry accounting for the selected turn.
+
+        Raises:
+            IncompleteTurnError:
+                If no completed persona response is selected.
+        """
+
+        history = self.history(scope)
+        tail = history.messages[-1] if history.messages else None
+        if tail is None or tail.role != "persona":
+            raise IncompleteTurnError("No completed response is available to retry")
+        return self._conversations.retry_availability(scope, tail.id)
+
+    def retry_completed_response(self, scope: ConversationScope) -> GenerationAttempt:
+        """Reserve a new attempt for the selected final persona response.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Durable pending retry attempt.
+        """
+
+        history = self.history(scope)
+        if any(attempt.status in {"pending", "streaming"} for attempt in history.attempts):
+            raise AttemptConflictError("An attempt is already active")
+
+        tail = history.messages[-1] if history.messages else None
+        if tail is None or tail.role != "persona":
+            raise IncompleteTurnError("No completed response is available to retry")
+
+        if history.settings is None:
+            generation = self._models.resolve_default("response")
+            settings = ConversationSettings(
+                provider=generation.model.provider, model=generation.model.model
+            )
+        else:
+            settings = history.settings
+            generation = self._models.resolve(
+                settings.provider, settings.model, "response", settings.requested
+            )
+        retry_history = history.model_copy(update={"messages": history.messages[:-1]})
+        self._prompt(
+            scope,
+            retry_history,
+            generation,
+            None,
+            retry_history.messages[-1].id,
+        )
+        return self._conversations.begin_retry(scope, generation, settings, tail.id)
+
     def stream(
         self, scope: ConversationScope, attempt_id: UUID
     ) -> Generator[str, None, None]:
@@ -195,7 +256,22 @@ class ConversationService:
         completed = False
         try:
             history = self.history(scope)
-            prompt = self._prompt(scope, history, attempt.generation, None)
+            summary_path_leaf_id: UUID | None = None
+            if (
+                history.messages
+                and history.messages[-1].role == "persona"
+                and len(history.messages) >= 2
+                and history.messages[-2].id == attempt.user_message_id
+            ):
+                summary_path_leaf_id = attempt.user_message_id
+                history = history.model_copy(update={"messages": history.messages[:-1]})
+            prompt = self._prompt(
+                scope,
+                history,
+                attempt.generation,
+                None,
+                summary_path_leaf_id,
+            )
             gateway = self._models.response_gateway(attempt.generation.model.provider)
             output = gateway.stream(prompt, attempt.generation)
             for chunk in output:
@@ -273,6 +349,7 @@ class ConversationService:
         history: ConversationHistory,
         generation: EffectiveGeneration,
         current_input: str | None,
+        summary_path_leaf_id: UUID | None = None,
     ) -> tuple[PromptMessage, ...]:
         """Assemble required blocks and reject full-history overflow deterministically.
 
@@ -285,6 +362,8 @@ class ConversationService:
                 Immutable output-reserved budget.
             current_input:
                 New input, absent for continuation.
+            summary_path_leaf_id:
+                Exact ancestry leaf used for compatible summary lookup.
 
         Returns:
             Bounded ordered prompt.
@@ -304,7 +383,7 @@ class ConversationService:
         persona = self._personas.get(scope.persona_id)
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
-        current = self._summaries.current(scope)
+        current = self._summaries.current(scope, summary_path_leaf_id)
         for _ in range(len(history.messages) // 2 + 1):
             eligible = self._eligibility.select(history, current, current_input)
             selection = self._budgeter.assemble(

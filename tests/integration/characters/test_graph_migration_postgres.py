@@ -159,6 +159,9 @@ def test_populated_linear_history_becomes_one_exact_selected_graph(
         attempt_count = connection.scalar(
             text("SELECT count(*) FROM characters.generation_attempts")
         )
+        selection_guard = connection.scalar(
+            text("SELECT selection_guard_id FROM characters.generation_attempts")
+        )
         summary = (
             connection.execute(
                 text(
@@ -175,6 +178,7 @@ def test_populated_linear_history_becomes_one_exact_selected_graph(
     )
     assert str(selected) == "70000000-0000-0000-0000-000000000002"
     assert attempt_count == 1
+    assert str(selection_guard) == "70000000-0000-0000-0000-000000000001"
     assert str(summary["id"]) == "90000000-0000-0000-0000-000000000001"
     assert _chat_snapshot(engine) == before
     columns = {

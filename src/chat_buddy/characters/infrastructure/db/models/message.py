@@ -97,6 +97,15 @@ class GenerationAttemptModel(CharactersBase):
             ],
             name="fk_attempt_persona",
         ),
+        ForeignKeyConstraint(
+            ["selection_guard_id", "conversation_id", "continuity_id"],
+            [
+                "characters.messages.id",
+                "characters.messages.conversation_id",
+                "characters.messages.continuity_id",
+            ],
+            name="fk_attempt_selection_guard",
+        ),
         UniqueConstraint("persona_message_id", name="uq_attempt_completion"),
         CheckConstraint(
             "status IN ('pending', 'streaming', 'completed', 'failed', 'interrupted')",
@@ -126,6 +135,9 @@ class GenerationAttemptModel(CharactersBase):
     continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     user_message_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Existing unmatched input message."
+    )
+    selection_guard_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Selected leaf required when the response commits."
     )
     persona_message_id: Mapped[UUID | None] = mapped_column(
         Uuid, doc="Atomically committed response identifier."

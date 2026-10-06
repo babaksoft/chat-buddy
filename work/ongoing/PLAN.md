@@ -101,7 +101,7 @@ branch. Bind prompt preparation and reservation to the same expected leaf.
 Complete when no sibling, abandoned descendant, or partial attempt can enter
 context and summaries recover correctly after path switches.
 
-### 4. Add bounded completed-response retries
+### 4. Add bounded completed-response retries — Complete
 
 Expose retry availability and stream a new attempt for the selected final persona
 response using current settings. On success, create/select a sibling with exact

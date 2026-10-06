@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
@@ -27,6 +27,8 @@ from chat_buddy.characters.domain import (
     MessageNode,
     ResponseProvenance,
     ResponseStyleSnapshot,
+    RetryAvailability,
+    RetryLimitError,
     SelectedPath,
     StaleSelectionError,
     SubmittedInput,
@@ -295,7 +297,107 @@ class DbConversationRepository:
                 conversation_id=scope.conversation_id,
                 continuity_id=scope.continuity_id,
                 user_message_id=user_id,
+                selection_guard_id=user_id,
                 submitted_input=content,
+                generation=generation.model_dump(mode="json"),
+                status="pending",
+                incomplete_output="",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(attempt)
+            session.flush()
+            return self._attempt(scope, attempt)
+
+    def retry_availability(
+        self, scope: ConversationScope, persona_message_id: UUID
+    ) -> RetryAvailability:
+        """Count completed siblings for the selected final response.
+
+        Args:
+            scope:
+                Complete required ownership.
+            persona_message_id:
+                Selected final persona response.
+
+        Returns:
+            Durable successful retry accounting.
+
+        Raises:
+            InvalidParentError:
+                If the target is not the selected owned persona leaf.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            target = self._selected_persona_message(
+                session, scope, row, persona_message_id
+            )
+            return self._retry_availability(session, scope, target)
+
+    def begin_retry(
+        self,
+        scope: ConversationScope,
+        generation: EffectiveGeneration,
+        settings: ConversationSettings,
+        expected_selected_leaf_id: UUID,
+    ) -> GenerationAttempt:
+        """Atomically reserve a bounded retry without changing selection.
+
+        Args:
+            scope:
+                Complete required ownership.
+            generation:
+                Immutable effective response configuration.
+            settings:
+                Current requested selection to persist.
+            expected_selected_leaf_id:
+                Selected final persona response observed during preflight.
+
+        Returns:
+            Detached pending retry attempt.
+
+        Raises:
+            RetryLimitError:
+                If three successful retries already exist.
+        """
+
+        if generation.capability != "response":
+            raise ValueError("A response generation is required")
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope, writable=True)
+            if (
+                row.generation_settings is not None
+                and row.generation_settings != settings.model_dump(mode="json")
+            ):
+                raise AttemptConflictError("Generation defaults changed; prepare again")
+
+            history = self._history(session, scope, row)
+            if any(attempt.status in {"pending", "streaming"} for attempt in history.attempts):
+                raise AttemptConflictError("An attempt is already active")
+            if row.selected_leaf_id != expected_selected_leaf_id:
+                raise AttemptConflictError("History changed; prepare the prompt again")
+
+            target = self._selected_persona_message(
+                session, scope, row, expected_selected_leaf_id
+            )
+            availability = self._retry_availability(session, scope, target)
+            if availability.retries_remaining == 0:
+                raise RetryLimitError("The completed response has no retries remaining")
+
+            parent = session.get(MessageModel, target.parent_id)
+            if parent is None or parent.role != "user":
+                raise InvalidParentError("Persona response has no owned user parent")
+
+            now = datetime.now(UTC)
+            row.generation_settings = settings.model_dump(mode="json")
+            attempt = GenerationAttemptModel(
+                conversation_id=scope.conversation_id,
+                continuity_id=scope.continuity_id,
+                user_message_id=parent.id,
+                selection_guard_id=target.id,
+                submitted_input=parent.content,
                 generation=generation.model_dump(mode="json"),
                 status="pending",
                 incomplete_output="",
@@ -364,12 +466,25 @@ class DbConversationRepository:
             row = self._owned(session, scope, writable=True)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
-            if row.selected_leaf_id != attempt.user_message_id:
-                raise AttemptConflictError("Attempt no longer owns the unmatched tail")
+            if row.selected_leaf_id != attempt.selection_guard_id:
+                raise AttemptConflictError("Attempt no longer owns the selected tail")
             if not attempt.incomplete_output.strip():
                 raise InvalidProviderResponseError(
                     "Provider returned an empty response"
                 )
+            if attempt.selection_guard_id != attempt.user_message_id:
+                successful_responses = session.scalar(
+                    select(func.count(MessageModel.id)).where(
+                        MessageModel.conversation_id == scope.conversation_id,
+                        MessageModel.continuity_id == scope.continuity_id,
+                        MessageModel.parent_id == attempt.user_message_id,
+                        MessageModel.role == "persona",
+                    )
+                )
+                if successful_responses is None or successful_responses >= 4:
+                    raise RetryLimitError(
+                        "The completed response has no retries remaining"
+                    )
             now = datetime.now(UTC)
             message = MessageModel(
                 conversation_id=scope.conversation_id,
@@ -394,6 +509,78 @@ class DbConversationRepository:
             session.flush()
             path = self._selected_path(session, scope, row)
             return self._message(path.messages[-1], len(path.messages))
+
+    @staticmethod
+    def _selected_persona_message(
+        session: Session,
+        scope: ConversationScope,
+        conversation: ConversationModel,
+        persona_message_id: UUID,
+    ) -> MessageModel:
+        """Resolve an exact selected persona leaf within full ownership.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Complete required ownership.
+            conversation:
+                Owned conversation row.
+            persona_message_id:
+                Expected selected persona identifier.
+
+        Returns:
+            Selected persona row.
+
+        Raises:
+            InvalidParentError:
+                If the identifier is not the selected owned persona leaf.
+        """
+
+        target = session.scalar(
+            select(MessageModel).where(
+                MessageModel.id == persona_message_id,
+                MessageModel.conversation_id == scope.conversation_id,
+                MessageModel.continuity_id == scope.continuity_id,
+                MessageModel.role == "persona",
+            )
+        )
+        if target is None or conversation.selected_leaf_id != target.id:
+            raise InvalidParentError("Retry target must be the selected persona leaf")
+        return target
+
+    @staticmethod
+    def _retry_availability(
+        session: Session, scope: ConversationScope, target: MessageModel
+    ) -> RetryAvailability:
+        """Count successful responses sharing the target's user parent.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Complete required ownership.
+            target:
+                Selected owned persona response.
+
+        Returns:
+            Durable successful retry accounting.
+        """
+
+        if target.parent_id is None:
+            raise InvalidParentError("Persona response has no user parent")
+        count = session.scalar(
+            select(func.count(MessageModel.id)).where(
+                MessageModel.conversation_id == scope.conversation_id,
+                MessageModel.continuity_id == scope.continuity_id,
+                MessageModel.parent_id == target.parent_id,
+                MessageModel.role == "persona",
+            )
+        )
+        return RetryAvailability(
+            user_message_id=target.parent_id,
+            successful_response_count=count or 1,
+        )
 
     def stop(
         self,

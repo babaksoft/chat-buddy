@@ -36,12 +36,16 @@ class DbSummaryRepository:
 
         self._factory = session_factory
 
-    def get_current(self, scope: ConversationScope) -> SummaryRevision | None:
+    def get_current(
+        self, scope: ConversationScope, path_leaf_id: UUID | None = None
+    ) -> SummaryRevision | None:
         """Load the deepest selected-ancestry-compatible revision.
 
         Args:
             scope:
                 Complete required ownership.
+            path_leaf_id:
+                Exact ancestry leaf, or the selected leaf when absent.
 
         Returns:
             Current compatible detached revision when present.
@@ -49,7 +53,7 @@ class DbSummaryRepository:
 
         with self._factory() as session, session.begin():
             self._owned(session, scope)
-            positions = self._selected_positions(session, scope)
+            positions = self._path_positions(session, scope, path_leaf_id)
             rows = tuple(
                 session.scalars(
                     select(SummaryRevisionModel).where(
@@ -103,7 +107,7 @@ class DbSummaryRepository:
         try:
             with self._factory() as session, session.begin():
                 self._owned(session, scope, lock=True, writable=True)
-                positions = self._selected_positions(session, scope)
+                positions = self._path_positions(session, scope)
                 candidates = tuple(
                     session.scalars(
                         select(SummaryRevisionModel)
@@ -304,8 +308,10 @@ class DbSummaryRepository:
         )
 
     @staticmethod
-    def _selected_positions(
-        session: Session, scope: ConversationScope
+    def _path_positions(
+        session: Session,
+        scope: ConversationScope,
+        path_leaf_id: UUID | None = None,
     ) -> dict[UUID, int]:
         """Return selected ancestry positions derived only from parent links.
 
@@ -314,17 +320,21 @@ class DbSummaryRepository:
                 Current transaction.
             scope:
                 Verified complete ownership.
+            path_leaf_id:
+                Exact ancestry leaf, or the selected leaf when absent.
 
         Returns:
             Message identifiers mapped to one-based path positions.
         """
 
-        selected_leaf_id = session.scalar(
-            select(ConversationModel.selected_leaf_id).where(
-                ConversationModel.id == scope.conversation_id,
-                ConversationModel.continuity_id == scope.continuity_id,
+        selected_leaf_id = path_leaf_id
+        if selected_leaf_id is None:
+            selected_leaf_id = session.scalar(
+                select(ConversationModel.selected_leaf_id).where(
+                    ConversationModel.id == scope.conversation_id,
+                    ConversationModel.continuity_id == scope.continuity_id,
+                )
             )
-        )
         if selected_leaf_id is None:
             return {}
         messages = tuple(
