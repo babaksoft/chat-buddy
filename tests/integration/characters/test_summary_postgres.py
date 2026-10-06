@@ -60,7 +60,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
         list(app.stream(scope, attempt.id))
     pending = app.send(scope, SubmittedInput(content="Fourth"))
     repository = DbSummaryRepository(factory)
-    active = repository.get_active(scope)
+    active = repository.get_current(scope)
     assert active is not None and active.revision == 2
     checkpoint = app.history(scope).messages[5]
 
@@ -85,7 +85,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
                 "content": label,
             }
         )
-        return repository.replace(
+        return repository.append(
             successor, active.revision, active.checkpoint_message_id
         )
 
@@ -103,7 +103,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
     assert len(revisions) == 3
     assert "is_active" not in revisions[0]
     assert "checkpoint_sequence" not in revisions[0]
-    assert repository.get_active(scope) is not None
+    assert repository.get_current(scope) is not None
     foreign_keys = inspect(engine).get_foreign_keys(
         "summary_revisions", schema="characters"
     )
@@ -119,7 +119,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
         assert connection.scalar(text("SELECT count(*) FROM characters.messages"))
     command.upgrade(configuration, "head")
     command.check(configuration)
-    assert repository.get_active(scope) is None
+    assert repository.get_current(scope) is None
     assert _chat_snapshot(engine) == before
 
 

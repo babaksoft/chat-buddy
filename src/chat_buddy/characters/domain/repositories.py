@@ -488,26 +488,26 @@ class ConversationRepository(Protocol):
 class SummaryRepository(Protocol):
     """Persist immutable rolling-summary revisions."""
 
-    def get_active(self, scope: ConversationScope) -> SummaryRevision | None:
-        """Load the active revision for an owned conversation.
+    def get_current(self, scope: ConversationScope) -> SummaryRevision | None:
+        """Load the deepest compatible revision for the selected ancestry.
 
         Args:
             scope:
                 Complete required ownership.
 
         Returns:
-            Active revision when one exists.
+            Current compatible revision when one exists.
         """
 
         ...
 
-    def replace(
+    def append(
         self,
         replacement: SummaryRevision,
         expected_revision: int | None,
         expected_checkpoint_id: UUID | None,
     ) -> SummaryRevision:
-        """Atomically replace the active revision.
+        """Atomically append a successor to the compatible lineage.
 
         Args:
             replacement:

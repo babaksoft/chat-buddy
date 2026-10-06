@@ -6,12 +6,20 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import ConversationService
+from chat_buddy.characters.application import (
+    ConversationService,
+    OngoingContextEligibility,
+)
 from chat_buddy.characters.domain import (
     ContextCapacityError,
+    ConversationHistory,
+    EffectiveGeneration,
+    GenerationConfiguration,
     Message,
+    ModelDescriptor,
     PromptMessage,
     SubmittedInput,
+    SummaryRevision,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
@@ -133,3 +141,59 @@ def test_capacity_boundary_includes_fixed_overhead_and_output_reserve(
     else:
         assert app.send(scope, SubmittedInput(content="Hi")).status == "pending"
     assert gateway.captured == []
+
+
+def test_context_rejects_same_depth_summary_from_a_sibling_branch(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Match summary coverage by exact checkpoint identity, never path position.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters repositories providing one owned scope.
+    """
+
+    scope = start(characters_session_factory)
+    messages = tuple(
+        Message(
+            id=uuid4(),
+            scope=scope,
+            sequence=index,
+            role="user" if index % 2 else "persona",
+            content=f"Message {index}",
+            created_at=datetime.now(UTC),
+        )
+        for index in range(1, 5)
+    )
+    generation = EffectiveGeneration(
+        model=ModelDescriptor(
+            provider="fake",
+            model="summary",
+            context_tokens=512,
+            output_tokens=64,
+            capabilities=frozenset({"summary"}),
+        ),
+        configuration=GenerationConfiguration(max_output_tokens=64),
+        capability="summary",
+        input_tokens=448,
+    )
+    sibling_summary = SummaryRevision(
+        id=uuid4(),
+        scope=scope,
+        revision=1,
+        predecessor_id=None,
+        checkpoint_message_id=uuid4(),
+        checkpoint_sequence=2,
+        content="Summary from an unselected sibling.",
+        generation=generation,
+        created_at=datetime.now(UTC),
+    )
+    history = ConversationHistory(
+        scope=scope,
+        settings=None,
+        messages=messages,
+        attempts=(),
+    )
+
+    with pytest.raises(ValueError, match="selected complete ancestry"):
+        OngoingContextEligibility().select(history, sibling_summary, "Next")

@@ -92,7 +92,7 @@ completion operations. Existing send/resume remains visually linear.
 
 Complete when production data is a valid graph and Stage 4 behavior still passes.
 
-### 3. Make context and summaries branch-correct
+### 3. Make context and summaries branch-correct — Complete
 
 Build response and summary prompts only from the selected ancestry. Resolve the
 deepest eligible summary checkpoint and create immutable successor lineages per

@@ -54,7 +54,6 @@ def test_summary_values_are_immutable_and_require_persona_checkpoints() -> None:
         checkpoint_sequence=2,
         content="A concise summary.",
         generation=generation,
-        is_active=True,
         created_at=datetime.now(UTC),
     )
     with pytest.raises(ValidationError):

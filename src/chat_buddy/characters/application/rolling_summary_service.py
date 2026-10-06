@@ -7,6 +7,7 @@ from chat_buddy.characters.domain import (
     CompletedTurn,
     ContextCapacityError,
     ConversationScope,
+    Message,
     ModelRegistry,
     PromptMessage,
     SummaryConflictError,
@@ -35,24 +36,25 @@ class RollingSummaryService:
         self._repository = repository
         self._models = models
 
-    def active(self, scope: ConversationScope) -> SummaryRevision | None:
-        """Load the active owned summary.
+    def current(self, scope: ConversationScope) -> SummaryRevision | None:
+        """Load the deepest summary compatible with the selected ancestry.
 
         Args:
             scope:
                 Complete required ownership.
 
         Returns:
-            Active durable revision when present.
+            Current compatible durable revision when present.
         """
 
-        return self._repository.get_active(scope)
+        return self._repository.get_current(scope)
 
     def advance(
         self,
         scope: ConversationScope,
         active: SummaryRevision | None,
         omitted: tuple[CompletedTurn, ...],
+        selected_messages: tuple[Message, ...],
     ) -> SummaryRevision:
         """Summarize the largest oldest prefix fitting the summary model.
 
@@ -63,6 +65,8 @@ class RollingSummaryService:
                 Previously observed active revision.
             omitted:
                 Oldest chronological turns requiring compression.
+            selected_messages:
+                Ancestry used to prepare the response prompt.
 
         Returns:
             Persisted active successor.
@@ -117,10 +121,9 @@ class RollingSummaryService:
                 checkpoint_sequence=checkpoint.sequence,
                 content=content,
                 generation=generation,
-                is_active=True,
                 created_at=datetime.now(UTC),
             )
-            return self._repository.replace(
+            return self._repository.append(
                 replacement,
                 expected_revision=active.revision if active is not None else None,
                 expected_checkpoint_id=(
@@ -130,10 +133,12 @@ class RollingSummaryService:
         except ContextCapacityError:
             raise
         except SummaryConflictError:
-            current = self._repository.get_active(scope)
+            current = self._repository.get_current(scope)
             if (
                 covered
                 and current is not None
+                and current.checkpoint_message_id
+                in {message.id for message in selected_messages}
                 and current.checkpoint_sequence >= covered[-1].persona.sequence
             ):
                 return current

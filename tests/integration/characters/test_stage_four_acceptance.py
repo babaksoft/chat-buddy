@@ -114,7 +114,7 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
         attempt = app.send(scope, SubmittedInput(content=content))
         assert list(app.stream(scope, attempt.id)) == ["Hello", " there"]
     saved = app.history(scope)
-    summary = summaries.get_active(scope)
+    summary = summaries.get_current(scope)
     assert summary is not None and summary.revision == 2
     assert summary.scope == scope
     assert summary.checkpoint_message_id == saved.messages[3].id
@@ -128,14 +128,14 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     responses, summary_provider = FakeResponse(), FakeSummary()
     restarted = _service(factory, responses, summary_provider)
     assert restarted.resume(scope) == saved
-    assert summaries.get_active(scope) == summary
+    assert summaries.get_current(scope) == summary
     assert continuities.resume(identity.id, persona.id, continuity.id) == continuity
     responses.chunks, responses.fail = ("Uncommitted fragment",), True
     failed = restarted.send(scope, SubmittedInput(content="Fifth"))
     with pytest.raises(ProviderInvocationError):
         list(restarted.stream(scope, failed.id))
     incomplete = restarted.history(scope)
-    checkpoint = summaries.get_active(scope)
+    checkpoint = summaries.get_current(scope)
     assert incomplete.messages[:-1] == saved.messages
     assert incomplete.attempts[-1].status == "failed"
     assert incomplete.attempts[-1].incomplete_output == "Uncommitted fragment"
@@ -149,7 +149,7 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     assert len(final.messages) == 10
     assert final.messages[:8] == saved.messages
     assert final.attempts[-2] == incomplete.attempts[-1]
-    assert summaries.get_active(scope) == checkpoint
+    assert summaries.get_current(scope) == checkpoint
     assert all("Uncommitted fragment" not in m.content for m in responses.captured[-1])
     assert identities.inspect(identity.id) == frozen_identity
     assert personas.inspect(persona.id) == frozen_persona
@@ -204,9 +204,9 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     assert fresh.relationship.origins.social == "default"
     assert recovered.history(fresh_scope).messages == ()
     assert recovered.history(fresh_scope).attempts == ()
-    assert summaries.get_active(fresh_scope) is None
+    assert summaries.get_current(fresh_scope) is None
     assert recovered.history(scope) == final
-    assert summaries.get_active(scope) == checkpoint
+    assert summaries.get_current(scope) == checkpoint
     assert continuities.resume(identity.id, persona.id, continuity.id) == archived
     assert archived.relationship == continuity.relationship
 
@@ -225,7 +225,7 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
         with pytest.raises(ConversationNotFoundError):
             recovered.continue_incomplete_turn(forged)
         with pytest.raises(ConversationNotFoundError):
-            summaries.get_active(forged)
+            summaries.get_current(forged)
     with pytest.raises(ContinuityNotFoundError):
         continuities.archive(other_identity.id, persona.id, continuity.id)
     with pytest.raises(ConversationNotFoundError):

@@ -1,15 +1,20 @@
 """Bounded durable Ongoing rolling-summary context behavior."""
 
-from uuid import uuid4
+from unittest.mock import patch
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import ConversationService
 from chat_buddy.characters.domain import (
+    AttemptConflictError,
     ContextCapacityError,
     ConversationNotFoundError,
+    ConversationScope,
+    ConversationSettings,
     EffectiveGeneration,
+    GenerationAttempt,
     ModelDescriptor,
     PromptMessage,
     ProviderInvocationError,
@@ -103,7 +108,7 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
         list(app.stream(scope, attempt.id))
 
     fourth = app.send(scope, SubmittedInput(content="Fourth"))
-    active = DbSummaryRepository(factory).get_active(scope)
+    active = DbSummaryRepository(factory).get_current(scope)
     assert active is not None
     assert active.revision == 2
     assert active.checkpoint_sequence == 4
@@ -126,7 +131,7 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
 
     restarted = _service(factory, responses, summaries)
     fifth = restarted.send(scope, SubmittedInput(content="Fifth"))
-    resumed = DbSummaryRepository(factory).get_active(scope)
+    resumed = DbSummaryRepository(factory).get_current(scope)
     assert resumed is not None
     assert resumed.revision == 3
     assert resumed.checkpoint_sequence == 6
@@ -174,7 +179,7 @@ def test_required_summary_failure_preserves_history_and_active_revision(
     with pytest.raises(ContextCapacityError, match="compression failed"):
         failing.send(scope, SubmittedInput(content="Fourth"))
     assert failing.history(scope) == before
-    assert DbSummaryRepository(factory).get_active(scope) is None
+    assert DbSummaryRepository(factory).get_current(scope) is None
     assert len(failing_summary.captured) == 1
 
 
@@ -199,7 +204,7 @@ def test_summary_repository_requires_ownership_and_rejects_stale_replacement(
         list(app.stream(scope, attempt.id))
     fourth = app.send(scope, SubmittedInput(content="Fourth"))
     repository = DbSummaryRepository(factory)
-    active = repository.get_active(scope)
+    active = repository.get_current(scope)
     assert active is not None
     checkpoint = app.history(scope).messages[5]
     successor = active.model_copy(
@@ -212,7 +217,7 @@ def test_summary_repository_requires_ownership_and_rejects_stale_replacement(
             "content": "Manual valid successor",
         }
     )
-    saved = repository.replace(successor, active.revision, active.checkpoint_message_id)
+    saved = repository.append(successor, active.revision, active.checkpoint_message_id)
     assert saved.revision == active.revision + 1
     stale = successor.model_copy(
         update={
@@ -221,12 +226,161 @@ def test_summary_repository_requires_ownership_and_rejects_stale_replacement(
         }
     )
     with pytest.raises(SummaryConflictError):
-        repository.replace(stale, active.revision, active.checkpoint_message_id)
+        repository.append(stale, active.revision, active.checkpoint_message_id)
     for field in ("continuity_id", "conversation_id"):
         bad_scope = scope.model_copy(update={field: getattr(foreign, field)})
         with pytest.raises(ConversationNotFoundError):
-            repository.get_active(bad_scope)
+            repository.get_current(bad_scope)
     list(app.stream(scope, fourth.id))
+
+
+def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Keep divergent summary lineages and prompts isolated across selections.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters sessions.
+    """
+
+    factory = characters_session_factory
+    scope = start(factory)
+    responses = FakeResponse()
+    summaries = FakeSummary()
+    app = _service(factory, responses, summaries)
+    repository = DbConversationRepository(factory)
+    summary_repository = DbSummaryRepository(factory)
+
+    for content in ("First", "Second", "Third", "Fourth", "Fifth"):
+        attempt = app.send(scope, SubmittedInput(content=content))
+        list(app.stream(scope, attempt.id))
+    old_path = repository.selected_path(scope)
+    old_leaf_id = old_path.selected_leaf_id
+    assert old_leaf_id is not None
+    branch_point_id = old_path.messages[1].id
+    old_summary = summary_repository.get_current(scope)
+    assert old_summary is not None
+
+    repository.select_leaf(scope, branch_point_id, old_leaf_id)
+    for content in ("Branch second", "Branch third", "Branch fourth"):
+        attempt = app.send(scope, SubmittedInput(content=content))
+        list(app.stream(scope, attempt.id))
+    new_leaf_id = repository.selected_path(scope).selected_leaf_id
+    assert new_leaf_id is not None
+    branch_summary = summary_repository.get_current(scope)
+    assert branch_summary is not None
+    assert branch_summary.id != old_summary.id
+    assert branch_summary.predecessor_id != old_summary.id
+
+    repository.select_leaf(scope, old_leaf_id, new_leaf_id)
+    assert summary_repository.get_current(scope) == old_summary
+    inspect_old = app.send(scope, SubmittedInput(content="Inspect old"))
+    list(app.stream(scope, inspect_old.id))
+    old_prompt = "\n".join(message.content for message in responses.captured[-1])
+    assert "Fifth" in old_prompt
+    assert "Branch fourth" not in old_prompt
+
+    extended_old_leaf_id = repository.selected_path(scope).selected_leaf_id
+    assert extended_old_leaf_id is not None
+    repository.select_leaf(scope, new_leaf_id, extended_old_leaf_id)
+    assert summary_repository.get_current(scope) == branch_summary
+    inspect_branch = app.send(scope, SubmittedInput(content="Inspect branch"))
+    list(app.stream(scope, inspect_branch.id))
+    branch_prompt = "\n".join(message.content for message in responses.captured[-1])
+    assert "Branch fourth" in branch_prompt
+    assert "Fifth" not in branch_prompt
+
+
+def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Reject reservation when selection changes after prompt preparation.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters sessions.
+    """
+
+    factory = characters_session_factory
+    scope = start(factory)
+    responses = FakeResponse()
+    app = _service(factory, responses, FakeSummary())
+    repository = DbConversationRepository(factory)
+    first = app.send(scope, SubmittedInput(content="First"))
+    list(app.stream(scope, first.id))
+    branch_point_id = repository.selected_path(scope).selected_leaf_id
+    assert branch_point_id is not None
+    old_future = app.send(scope, SubmittedInput(content="Old future"))
+    list(app.stream(scope, old_future.id))
+    old_leaf_id = repository.selected_path(scope).selected_leaf_id
+    assert old_leaf_id is not None
+    repository.select_leaf(scope, branch_point_id, old_leaf_id)
+    new_future = app.send(scope, SubmittedInput(content="New future"))
+    list(app.stream(scope, new_future.id))
+    observed_leaf_id = repository.selected_path(scope).selected_leaf_id
+    assert observed_leaf_id is not None
+    before = app.history(scope)
+    original_begin = DbConversationRepository.begin
+
+    def switch_before_begin(
+        self: DbConversationRepository,
+        requested_scope: ConversationScope,
+        generation: EffectiveGeneration,
+        settings: ConversationSettings,
+        expected_selected_leaf_id: UUID | None,
+        submitted: SubmittedInput | None,
+    ) -> GenerationAttempt:
+        """Switch selection immediately before the guarded reservation.
+
+        Args:
+            self:
+                Patched repository instance.
+            requested_scope:
+                Scope passed by the service.
+            generation:
+                Prepared effective response generation.
+            settings:
+                Prepared persisted settings.
+            expected_selected_leaf_id:
+                Leaf observed during prompt preparation.
+            submitted:
+                New user input.
+
+        Returns:
+            A reservation only if the stale guard unexpectedly permits it.
+        """
+
+        assert requested_scope == scope
+        self.select_leaf(scope, old_leaf_id, expected_selected_leaf_id)
+        return original_begin(
+            self,
+            scope,
+            generation,
+            settings,
+            expected_selected_leaf_id,
+            submitted,
+        )
+
+    with (
+        patch.object(
+            DbConversationRepository,
+            "begin",
+            autospec=True,
+            side_effect=switch_before_begin,
+        ),
+        pytest.raises(AttemptConflictError, match="History changed"),
+    ):
+        app.send(scope, SubmittedInput(content="Must not commit"))
+
+    after = app.history(scope)
+    assert after.messages[:2] == before.messages[:2]
+    assert [message.content for message in after.messages[2:]] == [
+        "Old future",
+        "Hello there",
+    ]
+    assert all(message.content != "Must not commit" for message in after.messages)
+    assert after.attempts == before.attempts
 
 
 def _service(

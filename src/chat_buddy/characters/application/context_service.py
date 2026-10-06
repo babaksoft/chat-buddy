@@ -58,7 +58,27 @@ class OngoingContextEligibility:
         if len(messages) % 2:
             raise ValueError("Committed Ongoing history is not made of whole turns.")
 
-        checkpoint = summary.checkpoint_sequence if summary is not None else 0
+        checkpoint = 0
+        if summary is not None:
+            if summary.scope != history.scope:
+                raise ValueError("Summary ownership does not match the history.")
+            checkpoint_message = next(
+                (
+                    message
+                    for message in messages
+                    if message.id == summary.checkpoint_message_id
+                ),
+                None,
+            )
+            if (
+                checkpoint_message is None
+                or checkpoint_message.role != "persona"
+                or checkpoint_message.sequence != summary.checkpoint_sequence
+            ):
+                raise ValueError(
+                    "Summary checkpoint is not on the selected complete ancestry."
+                )
+            checkpoint = checkpoint_message.sequence
         uncovered = tuple(
             message for message in messages if message.sequence > checkpoint
         )

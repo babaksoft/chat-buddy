@@ -24,7 +24,7 @@ from chat_buddy.characters.infrastructure.db.models import (
 
 
 class DbSummaryRepository:
-    """Persist one active summary under continuity and lineage locks."""
+    """Persist branch-addressable summaries under continuity and lineage locks."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the summary repository.
@@ -36,15 +36,15 @@ class DbSummaryRepository:
 
         self._factory = session_factory
 
-    def get_active(self, scope: ConversationScope) -> SummaryRevision | None:
-        """Load the active revision only after verifying complete ownership.
+    def get_current(self, scope: ConversationScope) -> SummaryRevision | None:
+        """Load the deepest selected-ancestry-compatible revision.
 
         Args:
             scope:
                 Complete required ownership.
 
         Returns:
-            Active detached revision when present.
+            Current compatible detached revision when present.
         """
 
         with self._factory() as session, session.begin():
@@ -75,13 +75,13 @@ class DbSummaryRepository:
                 else None
             )
 
-    def replace(
+    def append(
         self,
         replacement: SummaryRevision,
         expected_revision: int | None,
         expected_checkpoint_id: UUID | None,
     ) -> SummaryRevision:
-        """Atomically validate ownership, checkpoint, and expected lineage.
+        """Atomically validate and append one immutable lineage successor.
 
         Args:
             replacement:
@@ -98,9 +98,6 @@ class DbSummaryRepository:
             SummaryConflictError:
                 If the lineage is stale or the checkpoint is invalid.
         """
-
-        if not replacement.is_active:
-            raise SummaryConflictError("A replacement must become active.")
 
         scope = replacement.scope
         try:
@@ -303,7 +300,6 @@ class DbSummaryRepository:
             checkpoint_sequence=checkpoint_sequence,
             content=row.content,
             generation=EffectiveGeneration.model_validate(row.generation),
-            is_active=True,
             created_at=created_at,
         )
 

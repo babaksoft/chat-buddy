@@ -68,8 +68,6 @@ class SummaryRevision(BaseModel):
             Nonblank generated summary.
         generation:
             Effective summary provider and model provenance.
-        is_active:
-            Whether this is the sole active revision.
         created_at:
             UTC creation timestamp.
     """
@@ -84,7 +82,6 @@ class SummaryRevision(BaseModel):
     checkpoint_sequence: int = Field(gt=0, description="Covered path position.")
     content: str = Field(min_length=1, pattern=r"\S", description="Summary text.")
     generation: EffectiveGeneration = Field(description="Generation provenance.")
-    is_active: bool = Field(description="Sole active-version designation.")
     created_at: datetime = Field(description="UTC creation timestamp.")
 
     @model_validator(mode="after")

@@ -258,8 +258,13 @@ class ConversationService:
         self._prompt(
             scope, history, generation, submitted.content if submitted else None
         )
+        expected_selected_leaf_id = tail.id if tail is not None else None
         return self._conversations.begin(
-            scope, generation, settings, tail.id if tail else None, submitted
+            scope,
+            generation,
+            settings,
+            expected_selected_leaf_id,
+            submitted,
         )
 
     def _prompt(
@@ -299,15 +304,20 @@ class ConversationService:
         persona = self._personas.get(scope.persona_id)
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
-        active = self._summaries.active(scope)
+        current = self._summaries.current(scope)
         for _ in range(len(history.messages) // 2 + 1):
-            eligible = self._eligibility.select(history, active, current_input)
+            eligible = self._eligibility.select(history, current, current_input)
             selection = self._budgeter.assemble(
                 persona, identity, continuity, eligible, generation, counter
             )
             if not selection.omitted_turns:
                 return selection.prompt
-            active = self._summaries.advance(scope, active, selection.omitted_turns)
+            current = self._summaries.advance(
+                scope,
+                current,
+                selection.omitted_turns,
+                history.messages,
+            )
         raise ContextCapacityError(
             "Conversation summary did not make bounded progress."
         )
