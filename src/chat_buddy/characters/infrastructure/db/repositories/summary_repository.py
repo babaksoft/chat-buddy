@@ -49,15 +49,31 @@ class DbSummaryRepository:
 
         with self._factory() as session, session.begin():
             self._owned(session, scope)
-            row = session.scalar(
-                select(SummaryRevisionModel).where(
-                    SummaryRevisionModel.conversation_id == scope.conversation_id,
-                    SummaryRevisionModel.continuity_id == scope.continuity_id,
-                    SummaryRevisionModel.is_active.is_(True),
+            positions = self._selected_positions(session, scope)
+            rows = tuple(
+                session.scalars(
+                    select(SummaryRevisionModel).where(
+                        SummaryRevisionModel.conversation_id == scope.conversation_id,
+                        SummaryRevisionModel.continuity_id == scope.continuity_id,
+                        SummaryRevisionModel.checkpoint_message_id.in_(positions),
+                    )
                 )
             )
-
-            return self._summary(scope, row) if row is not None else None
+            row = max(
+                rows,
+                key=lambda candidate: (
+                    positions[candidate.checkpoint_message_id],
+                    candidate.revision,
+                    candidate.created_at,
+                    str(candidate.id),
+                ),
+                default=None,
+            )
+            return (
+                self._summary(scope, row, positions[row.checkpoint_message_id])
+                if row is not None
+                else None
+            )
 
     def replace(
         self,
@@ -90,14 +106,37 @@ class DbSummaryRepository:
         try:
             with self._factory() as session, session.begin():
                 self._owned(session, scope, lock=True, writable=True)
-                active = session.scalar(
-                    select(SummaryRevisionModel)
-                    .where(
-                        SummaryRevisionModel.conversation_id == scope.conversation_id,
-                        SummaryRevisionModel.continuity_id == scope.continuity_id,
-                        SummaryRevisionModel.is_active.is_(True),
+                positions = self._selected_positions(session, scope)
+                candidates = tuple(
+                    session.scalars(
+                        select(SummaryRevisionModel)
+                        .where(
+                            SummaryRevisionModel.conversation_id
+                            == scope.conversation_id,
+                            SummaryRevisionModel.continuity_id == scope.continuity_id,
+                            SummaryRevisionModel.checkpoint_message_id.in_(positions),
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
+                )
+                active_row = max(
+                    candidates,
+                    key=lambda candidate: (
+                        positions[candidate.checkpoint_message_id],
+                        candidate.revision,
+                        candidate.created_at,
+                        str(candidate.id),
+                    ),
+                    default=None,
+                )
+                active = (
+                    self._summary(
+                        scope,
+                        active_row,
+                        positions[active_row.checkpoint_message_id],
+                    )
+                    if active_row is not None
+                    else None
                 )
 
                 self._validate_lineage(
@@ -110,16 +149,16 @@ class DbSummaryRepository:
                         MessageModel.conversation_id == scope.conversation_id,
                         MessageModel.continuity_id == scope.continuity_id,
                         MessageModel.role == "persona",
-                        MessageModel.sequence == replacement.checkpoint_sequence,
                     )
                 )
-                if checkpoint is None:
+                if (
+                    checkpoint is None
+                    or positions.get(checkpoint.id) != replacement.checkpoint_sequence
+                ):
                     raise SummaryConflictError(
                         "Summary checkpoint is not an owned turn."
                     )
 
-                if active is not None:
-                    active.is_active = False
                 row = SummaryRevisionModel(
                     id=replacement.id,
                     conversation_id=scope.conversation_id,
@@ -127,16 +166,14 @@ class DbSummaryRepository:
                     revision=replacement.revision,
                     predecessor_id=replacement.predecessor_id,
                     checkpoint_message_id=replacement.checkpoint_message_id,
-                    checkpoint_sequence=replacement.checkpoint_sequence,
                     content=replacement.content,
                     generation=replacement.generation.model_dump(mode="json"),
-                    is_active=True,
                     created_at=replacement.created_at,
                 )
                 session.add(row)
                 session.flush()
 
-                return self._summary(scope, row)
+                return self._summary(scope, row, replacement.checkpoint_sequence)
         except IntegrityError:
             raise SummaryConflictError(
                 "Summary lineage changed concurrently."
@@ -192,7 +229,7 @@ class DbSummaryRepository:
 
     @staticmethod
     def _validate_lineage(
-        active: SummaryRevisionModel | None,
+        active: SummaryRevision | None,
         replacement: SummaryRevision,
         expected_revision: int | None,
         expected_checkpoint_id: UUID | None,
@@ -235,7 +272,7 @@ class DbSummaryRepository:
 
     @staticmethod
     def _summary(
-        scope: ConversationScope, row: SummaryRevisionModel
+        scope: ConversationScope, row: SummaryRevisionModel, checkpoint_sequence: int
     ) -> SummaryRevision:
         """Detach one validated domain revision.
 
@@ -244,6 +281,8 @@ class DbSummaryRepository:
                 Verified complete ownership.
             row:
                 Persisted revision row.
+            checkpoint_sequence:
+                Selected-path position derived from parent traversal.
 
         Returns:
             Immutable domain snapshot.
@@ -261,9 +300,52 @@ class DbSummaryRepository:
             revision=row.revision,
             predecessor_id=row.predecessor_id,
             checkpoint_message_id=row.checkpoint_message_id,
-            checkpoint_sequence=row.checkpoint_sequence,
+            checkpoint_sequence=checkpoint_sequence,
             content=row.content,
             generation=EffectiveGeneration.model_validate(row.generation),
-            is_active=row.is_active,
+            is_active=True,
             created_at=created_at,
         )
+
+    @staticmethod
+    def _selected_positions(
+        session: Session, scope: ConversationScope
+    ) -> dict[UUID, int]:
+        """Return selected ancestry positions derived only from parent links.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Verified complete ownership.
+
+        Returns:
+            Message identifiers mapped to one-based path positions.
+        """
+
+        selected_leaf_id = session.scalar(
+            select(ConversationModel.selected_leaf_id).where(
+                ConversationModel.id == scope.conversation_id,
+                ConversationModel.continuity_id == scope.continuity_id,
+            )
+        )
+        if selected_leaf_id is None:
+            return {}
+        messages = tuple(
+            session.scalars(
+                select(MessageModel).where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+        )
+        by_id = {message.id: message for message in messages}
+        current = by_id.get(selected_leaf_id)
+        reversed_ids: list[UUID] = []
+        while current is not None:
+            reversed_ids.append(current.id)
+            current = by_id.get(current.parent_id) if current.parent_id else None
+        return {
+            message_id: position
+            for position, message_id in enumerate(reversed(reversed_ids), start=1)
+        }

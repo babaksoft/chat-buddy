@@ -8,18 +8,27 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    AlternativeGroup,
     ArchivedContinuityError,
     AttemptConflictError,
     AttemptStatus,
+    ConversationGraph,
     ConversationHistory,
     ConversationNotFoundError,
     ConversationScope,
     ConversationSettings,
     EffectiveGeneration,
+    EvolutionStrategyId,
     GenerationAttempt,
     IncompleteTurnError,
+    InvalidParentError,
     InvalidProviderResponseError,
     Message,
+    MessageNode,
+    ResponseProvenance,
+    ResponseStyleSnapshot,
+    SelectedPath,
+    StaleSelectionError,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.models import (
@@ -31,7 +40,19 @@ from chat_buddy.characters.infrastructure.db.models import (
 
 
 class DbConversationRepository:
-    """Persist sole-path turns under the same row lock used by archive."""
+    """Persist selected-path turns under the archive serialization lock."""
+
+    _RESPONSE_STYLE = ResponseStyleSnapshot(
+        name="ongoing.default",
+        version="1.0.0",
+        instruction=(
+            "Respond as the persona in a natural conversation. Use clear text and "
+            "preserve the authored identity and relationship boundaries."
+        ),
+    )
+    _EVOLUTION_STRATEGY = EvolutionStrategyId(
+        name="baseline.no_change", version="1.0.0"
+    )
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the conversation repository.
@@ -58,6 +79,139 @@ class DbConversationRepository:
             row = self._owned(session, scope)
             return self._history(session, scope, row)
 
+    def selected_path(self, scope: ConversationScope) -> SelectedPath:
+        """Read only the selected root-to-leaf ancestry.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached selected path excluding every sibling.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            return self._selected_path(session, scope, row)
+
+    def graph(self, scope: ConversationScope) -> ConversationGraph:
+        """Read every immutable node in deterministic creation order.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached complete graph inspection snapshot.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            nodes = session.scalars(
+                select(MessageModel)
+                .where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+                .order_by(MessageModel.created_at, MessageModel.id)
+            )
+            return ConversationGraph(
+                scope=scope,
+                selected_leaf_id=row.selected_leaf_id,
+                nodes=tuple(self._node(scope, node) for node in nodes),
+            )
+
+    def alternatives(
+        self, scope: ConversationScope, user_message_id: UUID
+    ) -> AlternativeGroup:
+        """Read completed persona siblings for one owned user node.
+
+        Args:
+            scope:
+                Complete required ownership.
+            user_message_id:
+                Exact shared user parent.
+
+        Returns:
+            Deterministically ordered completed alternatives.
+
+        Raises:
+            InvalidParentError:
+                If the parent is absent, foreign, or not a user node.
+        """
+
+        with self._factory() as session, session.begin():
+            self._owned(session, scope)
+            parent = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == user_message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+            if parent is None or parent.role != "user":
+                raise InvalidParentError(
+                    "Alternative parent must be an owned user node"
+                )
+            siblings = session.scalars(
+                select(MessageModel)
+                .where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                    MessageModel.parent_id == user_message_id,
+                    MessageModel.role == "persona",
+                )
+                .order_by(MessageModel.created_at, MessageModel.id)
+            )
+            return AlternativeGroup(
+                scope=scope,
+                user_message_id=user_message_id,
+                responses=tuple(self._node(scope, sibling) for sibling in siblings),
+            )
+
+    def select_leaf(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID | None,
+    ) -> SelectedPath:
+        """Select an exact owned persona node under a compare-and-swap guard.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact persona node to select.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected root-to-node ancestry.
+
+        Raises:
+            StaleSelectionError:
+                If the selected leaf changed since the caller read it.
+            InvalidParentError:
+                If the target is absent, foreign, or not a persona node.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope, writable=True)
+            if row.selected_leaf_id != expected_selected_leaf_id:
+                raise StaleSelectionError("Selected conversation path changed")
+            target = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+            if target is None or target.role != "persona":
+                raise InvalidParentError("Selected leaf must be an owned persona node")
+            row.selected_leaf_id = target.id
+            session.flush()
+            return self._selected_path(session, scope, row)
+
     def configure(
         self, scope: ConversationScope, settings: ConversationSettings
     ) -> None:
@@ -79,7 +233,7 @@ class DbConversationRepository:
         scope: ConversationScope,
         generation: EffectiveGeneration,
         settings: ConversationSettings,
-        expected_sequence: int,
+        expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
@@ -91,8 +245,8 @@ class DbConversationRepository:
                 Immutable effective response configuration.
             settings:
                 Current requested selection to persist.
-            expected_sequence:
-                Last message position observed during prompt preflight.
+            expected_selected_leaf_id:
+                Last selected leaf observed during prompt preflight.
             submitted:
                 New input, or None to continue the existing unmatched tail.
 
@@ -114,7 +268,7 @@ class DbConversationRepository:
             if any(a.status in {"pending", "streaming"} for a in history.attempts):
                 raise AttemptConflictError("An attempt is already active")
             tail = history.messages[-1] if history.messages else None
-            if (tail.sequence if tail else 0) != expected_sequence:
+            if row.selected_leaf_id != expected_selected_leaf_id:
                 raise AttemptConflictError("History changed; prepare the prompt again")
             now = datetime.now(UTC)
             if submitted is not None:
@@ -123,13 +277,14 @@ class DbConversationRepository:
                 message = MessageModel(
                     conversation_id=scope.conversation_id,
                     continuity_id=scope.continuity_id,
-                    sequence=expected_sequence + 1,
                     role="user",
                     content=submitted.content,
+                    parent_id=tail.id if tail is not None else None,
                     created_at=now,
                 )
                 session.add(message)
                 session.flush()
+                row.selected_leaf_id = message.id
                 user_id, content = message.id, message.content
             else:
                 if tail is None or tail.role != "user":
@@ -209,9 +364,7 @@ class DbConversationRepository:
             row = self._owned(session, scope, writable=True)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
-            history = self._history(session, scope, row)
-            tail = history.messages[-1]
-            if tail.id != attempt.user_message_id or tail.role != "user":
+            if row.selected_leaf_id != attempt.user_message_id:
                 raise AttemptConflictError("Attempt no longer owns the unmatched tail")
             if not attempt.incomplete_output.strip():
                 raise InvalidProviderResponseError(
@@ -221,19 +374,26 @@ class DbConversationRepository:
             message = MessageModel(
                 conversation_id=scope.conversation_id,
                 continuity_id=scope.continuity_id,
-                sequence=tail.sequence + 1,
                 role="persona",
                 content=attempt.incomplete_output,
-                reply_to=tail.id,
+                parent_id=attempt.user_message_id,
+                response_provenance=ResponseProvenance(
+                    generation=EffectiveGeneration.model_validate(attempt.generation),
+                    response_style=self._RESPONSE_STYLE,
+                    evolution_strategy=self._EVOLUTION_STRATEGY,
+                    attempt_id=attempt.id,
+                ).model_dump(mode="json"),
                 created_at=now,
             )
             session.add(message)
             session.flush()
+            row.selected_leaf_id = message.id
             attempt.persona_message_id = message.id
             attempt.status = "completed"
             attempt.updated_at = attempt.finished_at = now
             session.flush()
-            return self._message(scope, message)
+            path = self._selected_path(session, scope, row)
+            return self._message(path.messages[-1], len(path.messages))
 
     def stop(
         self,
@@ -408,14 +568,7 @@ class DbConversationRepository:
             Detached immutable history.
         """
 
-        messages = session.scalars(
-            select(MessageModel)
-            .where(
-                MessageModel.conversation_id == scope.conversation_id,
-                MessageModel.continuity_id == scope.continuity_id,
-            )
-            .order_by(MessageModel.sequence)
-        )
+        path = cls._selected_path(session, scope, row)
         attempts = session.scalars(
             select(GenerationAttemptModel)
             .where(
@@ -431,31 +584,119 @@ class DbConversationRepository:
                 if row.generation_settings
                 else None
             ),
-            messages=tuple(cls._message(scope, message) for message in messages),
+            messages=tuple(
+                cls._message(node, sequence)
+                for sequence, node in enumerate(path.messages, start=1)
+            ),
             attempts=tuple(cls._attempt(scope, attempt) for attempt in attempts),
         )
 
     @staticmethod
-    def _message(scope: ConversationScope, row: MessageModel) -> Message:
+    def _message(node: MessageNode, sequence: int) -> Message:
         """Detach a committed message from persistence.
 
         Args:
-            scope:
-                Verified ownership.
-            row:
-                Owned message.
+            node:
+                Selected graph node.
+            sequence:
+                Derived root-to-leaf position.
 
         Returns:
             Immutable message snapshot.
         """
 
         return Message(
+            id=node.id,
+            scope=node.scope,
+            sequence=sequence,
+            role=node.role,
+            content=node.content,
+            created_at=node.created_at,
+        )
+
+    @classmethod
+    def _selected_path(
+        cls, session: Session, scope: ConversationScope, row: ConversationModel
+    ) -> SelectedPath:
+        """Traverse parents from the selected leaf without persisted positions.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Verified complete ownership.
+            row:
+                Owned conversation.
+
+        Returns:
+            Detached selected root-to-leaf ancestry.
+
+        Raises:
+            InvalidParentError:
+                If persisted graph ownership or ancestry is invalid.
+        """
+
+        if row.selected_leaf_id is None:
+            return SelectedPath(scope=scope, selected_leaf_id=None, messages=())
+        rows = tuple(
+            session.scalars(
+                select(MessageModel).where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+        )
+        by_id = {message.id: message for message in rows}
+        current = by_id.get(row.selected_leaf_id)
+        if current is None:
+            raise InvalidParentError("Selected leaf is absent from its conversation")
+        reversed_path: list[MessageNode] = []
+        seen: set[UUID] = set()
+        while current is not None:
+            if current.id in seen:
+                raise InvalidParentError("Conversation graph contains a cycle")
+            seen.add(current.id)
+            reversed_path.append(cls._node(scope, current))
+            if current.parent_id is None:
+                break
+            current = by_id.get(current.parent_id)
+            if current is None:
+                raise InvalidParentError("Message parent is absent or foreign")
+        try:
+            return SelectedPath(
+                scope=scope,
+                selected_leaf_id=row.selected_leaf_id,
+                messages=tuple(reversed(reversed_path)),
+            )
+        except ValueError as error:
+            raise InvalidParentError(str(error)) from error
+
+    @staticmethod
+    def _node(scope: ConversationScope, row: MessageModel) -> MessageNode:
+        """Detach one immutable persisted graph node.
+
+        Args:
+            scope:
+                Verified complete ownership.
+            row:
+                Persisted graph node.
+
+        Returns:
+            Immutable graph node.
+        """
+
+        return MessageNode(
             id=row.id,
             scope=scope,
-            sequence=row.sequence,
+            parent_id=row.parent_id,
             role=cast(Literal["user", "persona"], row.role),
             content=row.content,
             created_at=_utc(row.created_at),
+            response_provenance=(
+                ResponseProvenance.model_validate(row.response_provenance)
+                if row.response_provenance is not None
+                else None
+            ),
         )
 
     @staticmethod

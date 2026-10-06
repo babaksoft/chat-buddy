@@ -452,7 +452,7 @@ def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflig
             scope,
             pending.generation,
             ConversationSettings(provider="fake", model="first"),
-            2,
+            uuid4(),
             SubmittedInput(content="Stale"),
         )
     assert len(app.history(scope).messages) == 2

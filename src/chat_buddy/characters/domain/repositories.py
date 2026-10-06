@@ -4,7 +4,11 @@ from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
-from chat_buddy.characters.domain.branching import ConversationGraph, SelectedPath
+from chat_buddy.characters.domain.branching import (
+    AlternativeGroup,
+    ConversationGraph,
+    SelectedPath,
+)
 from chat_buddy.characters.domain.continuity import (
     Continuity,
     StartContinuity,
@@ -302,6 +306,45 @@ class ConversationGraphRepository(Protocol):
 
         ...
 
+    def alternatives(
+        self, scope: ConversationScope, user_message_id: UUID
+    ) -> AlternativeGroup:
+        """Read completed persona siblings for one owned user node.
+
+        Args:
+            scope:
+                Complete required ownership.
+            user_message_id:
+                Exact shared user parent.
+
+        Returns:
+            Deterministically ordered alternatives.
+        """
+
+        ...
+
+    def select_leaf(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID | None,
+    ) -> SelectedPath:
+        """Select an exact persona node under a compare-and-swap guard.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact persona node to select.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected ancestry.
+        """
+
+        ...
+
 
 class ConversationRepository(Protocol):
     """Serialize message and attempt writes with continuity archival."""
@@ -338,7 +381,7 @@ class ConversationRepository(Protocol):
         scope: ConversationScope,
         generation: EffectiveGeneration,
         settings: ConversationSettings,
-        expected_sequence: int,
+        expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
@@ -350,8 +393,8 @@ class ConversationRepository(Protocol):
                 Immutable effective response configuration.
             settings:
                 Current requested selection to persist.
-            expected_sequence:
-                Last message position observed during prompt preflight.
+            expected_selected_leaf_id:
+                Last selected leaf observed during prompt preflight.
             submitted:
                 New input, or None to continue the existing unmatched tail.
 

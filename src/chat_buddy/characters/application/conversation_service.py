@@ -259,7 +259,7 @@ class ConversationService:
             scope, history, generation, submitted.content if submitted else None
         )
         return self._conversations.begin(
-            scope, generation, settings, tail.sequence if tail else 0, submitted
+            scope, generation, settings, tail.id if tail else None, submitted
         )
 
     def _prompt(

@@ -81,7 +81,7 @@ order, immutability, all five action kinds, and Ongoing/Storyline/Timeline polic
 
 Complete when the contracts are executable without persistence or UI.
 
-### 2. Persist the graph without changing the Stage 4 workflow
+### 2. Persist the graph without changing the Stage 4 workflow — Complete
 
 Migrate messages to parent links, conversations to a selected leaf, persona nodes
 to immutable provenance, and summaries to branch-addressable lineages. Backfill the

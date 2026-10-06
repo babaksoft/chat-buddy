@@ -10,7 +10,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -23,7 +22,7 @@ from chat_buddy.characters.infrastructure.db import CharactersBase
 
 
 class MessageModel(CharactersBase):
-    """Store committed sole-path messages, never partial provider output."""
+    """Store immutable graph nodes, never partial provider output."""
 
     __tablename__ = "messages"
     __table_args__ = (
@@ -35,21 +34,20 @@ class MessageModel(CharactersBase):
         UniqueConstraint(
             "id", "conversation_id", "continuity_id", name="uq_message_ownership"
         ),
-        UniqueConstraint("conversation_id", "sequence", name="uq_message_sequence"),
-        UniqueConstraint("reply_to", name="uq_message_response"),
         ForeignKeyConstraint(
-            ["reply_to", "conversation_id", "continuity_id"],
+            ["parent_id", "conversation_id", "continuity_id"],
             [
                 "characters.messages.id",
                 "characters.messages.conversation_id",
                 "characters.messages.continuity_id",
             ],
-            name="fk_message_reply",
+            name="fk_message_parent",
         ),
         CheckConstraint(
-            "sequence > 0 AND ((role = 'user' AND sequence % 2 = 1 AND reply_to IS NULL) OR (role = 'persona' AND sequence % 2 = 0 AND reply_to IS NOT NULL))",
-            name="ck_message_path",
+            "(role = 'user' AND response_provenance IS NULL) OR (role = 'persona' AND parent_id IS NOT NULL AND response_provenance IS NOT NULL)",
+            name="ck_message_graph_shape",
         ),
+        CheckConstraint("role IN ('user', 'persona')", name="ck_message_role"),
         CheckConstraint("length(content) > 0", name="ck_message_content"),
     )
 
@@ -58,11 +56,13 @@ class MessageModel(CharactersBase):
     )
     conversation_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning conversation.")
     continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
-    sequence: Mapped[int] = mapped_column(Integer, doc="Deterministic path position.")
     role: Mapped[str] = mapped_column(String(16), doc="User or persona speaker.")
     content: Mapped[str] = mapped_column(Text, doc="Exact committed text.")
-    reply_to: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="User message completed by this response."
+    parent_id: Mapped[UUID | None] = mapped_column(
+        Uuid, doc="Immediate parent node or the implicit root."
+    )
+    response_provenance: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, doc="Immutable completed-response provenance for persona nodes."
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), doc="UTC commit timestamp."

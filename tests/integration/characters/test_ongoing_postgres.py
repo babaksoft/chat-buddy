@@ -21,7 +21,6 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure.db.models import (
     GenerationAttemptModel,
-    MessageModel,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
@@ -97,24 +96,14 @@ def test_turn_migration_round_trips_and_preserves_populated_chat(
             )
         )
     list(app.stream(existing, attempt.id))
-    with (
-        pytest.raises(IntegrityError, match="uq_message_sequence"),
-        factory() as session,
-        session.begin(),
-    ):
-        tail = session.get(MessageModel, attempt.user_message_id)
-        assert tail is not None
-        session.add(
-            MessageModel(
-                conversation_id=tail.conversation_id,
-                continuity_id=tail.continuity_id,
-                sequence=tail.sequence,
-                role="user",
-                content="Duplicate",
-                created_at=tail.created_at,
-            )
-        )
-        session.flush()
+    message_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("messages", schema="characters")
+    }
+    assert "parent_id" in message_columns
+    assert "response_provenance" in message_columns
+    assert "sequence" not in message_columns
+    assert "reply_to" not in message_columns
     for table in ["messages", "generation_attempts"]:
         assert all(
             fk["referred_schema"] == "characters"

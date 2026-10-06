@@ -65,7 +65,7 @@ class ContinuityModel(CharactersBase):
 
 
 class ConversationModel(CharactersBase):
-    """Persist the sole Ongoing conversation with matching profile ownership."""
+    """Persist one Ongoing conversation and its selected graph leaf."""
 
     __tablename__ = "conversations"
     __table_args__ = (
@@ -78,6 +78,16 @@ class ConversationModel(CharactersBase):
                 "characters.continuities.persona_id",
             ],
             name="fk_conversation_ownership",
+        ),
+        ForeignKeyConstraint(
+            ["selected_leaf_id", "id", "continuity_id"],
+            [
+                "characters.messages.id",
+                "characters.messages.conversation_id",
+                "characters.messages.continuity_id",
+            ],
+            name="fk_conversation_selected_leaf",
+            use_alter=True,
         ),
     )
 
@@ -99,6 +109,9 @@ class ConversationModel(CharactersBase):
 
     generation_settings: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, doc="Requested provider model and defaults for future attempts."
+    )
+    selected_leaf_id: Mapped[UUID | None] = mapped_column(
+        Uuid, doc="Currently selected message graph leaf."
     )
 
 

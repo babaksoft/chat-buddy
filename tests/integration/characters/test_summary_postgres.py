@@ -99,7 +99,11 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
         ]
     assert sum(isinstance(item, SummaryRevision) for item in outcomes) == 1
     assert sum(isinstance(item, SummaryConflictError) for item in outcomes) == 1
-    assert sum(1 for row in _all_revisions(engine) if row["is_active"]) == 1
+    revisions = _all_revisions(engine)
+    assert len(revisions) == 3
+    assert "is_active" not in revisions[0]
+    assert "checkpoint_sequence" not in revisions[0]
+    assert repository.get_active(scope) is not None
     foreign_keys = inspect(engine).get_foreign_keys(
         "summary_revisions", schema="characters"
     )
@@ -111,7 +115,8 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
     assert "summary_revisions" not in inspect(engine).get_table_names(
         schema="characters"
     )
-    assert app.history(scope).messages
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM characters.messages"))
     command.upgrade(configuration, "head")
     command.check(configuration)
     assert repository.get_active(scope) is None
@@ -119,7 +124,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
 
 
 def _all_revisions(engine: Engine) -> list[dict[str, object]]:
-    """Read summary activity flags for database-constraint verification.
+    """Read branch-addressable summary rows for database verification.
 
     Args:
         engine:
@@ -133,6 +138,6 @@ def _all_revisions(engine: Engine) -> list[dict[str, object]]:
         return [
             dict(row)
             for row in connection.execute(
-                text("SELECT id, is_active FROM characters.summary_revisions")
+                text("SELECT * FROM characters.summary_revisions")
             ).mappings()
         ]

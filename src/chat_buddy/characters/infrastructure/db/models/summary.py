@@ -6,7 +6,6 @@ from uuid import UUID
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -15,7 +14,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,17 +51,14 @@ class SummaryRevisionModel(CharactersBase):
         UniqueConstraint(
             "id", "conversation_id", "continuity_id", name="uq_summary_ownership"
         ),
-        UniqueConstraint("conversation_id", "revision", name="uq_summary_revision"),
-        UniqueConstraint("predecessor_id", name="uq_summary_successor"),
+        UniqueConstraint(
+            "conversation_id",
+            "checkpoint_message_id",
+            name="uq_summary_checkpoint",
+        ),
         CheckConstraint("revision > 0", name="ck_summary_revision"),
         CheckConstraint("length(content) > 0", name="ck_summary_content"),
-        Index(
-            "uq_active_conversation_summary",
-            "conversation_id",
-            unique=True,
-            postgresql_where=text("is_active"),
-            sqlite_where=text("is_active = 1"),
-        ),
+        Index("ix_summary_conversation_revision", "conversation_id", "revision"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, doc="Stable revision.")
@@ -76,15 +71,9 @@ class SummaryRevisionModel(CharactersBase):
     checkpoint_message_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Last covered persona message."
     )
-    checkpoint_sequence: Mapped[int] = mapped_column(
-        Integer, doc="Covered message path position."
-    )
     content: Mapped[str] = mapped_column(Text, doc="Generated summary content.")
     generation: Mapped[dict[str, Any]] = mapped_column(
         JSON, doc="Effective summary generation provenance."
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, doc="Sole active revision designation."
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), doc="UTC creation timestamp."
