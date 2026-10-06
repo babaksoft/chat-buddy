@@ -79,3 +79,19 @@ class ContextCapacityError(ValueError):
 
 class SummaryConflictError(ValueError):
     """A summary replacement used stale lineage or an invalid checkpoint."""
+
+
+class InvalidParentError(ValueError):
+    """A message parent is absent, foreign, cyclic, or has an invalid role."""
+
+
+class StaleSelectionError(ValueError):
+    """A graph mutation used an outdated selected-leaf identifier."""
+
+
+class RetryLimitError(ValueError):
+    """A completed persona turn has consumed all retry alternatives."""
+
+
+class ForkRequiredError(ValueError):
+    """The requested mode action requires a future continuity fork workflow."""

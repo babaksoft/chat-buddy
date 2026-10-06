@@ -1,5 +1,6 @@
 """Application services for the Characters area."""
 
+from chat_buddy.characters.application.branch_policy import decide_branch_mode
 from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
@@ -35,4 +36,5 @@ __all__ = [
     "PersonaService",
     "RollingSummaryService",
     "StartAvailability",
+    "decide_branch_mode",
 ]

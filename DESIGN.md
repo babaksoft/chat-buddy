@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-03
+Last updated: 2026-10-06
 
 ## Purpose and scope
 
@@ -247,9 +247,14 @@ Characters messages are immutable nodes with parent-message relationships. A
 conversation records one selected leaf, and only its root-to-leaf path is eligible
 for context and downstream derivation.
 
+- Root children are user messages, roles alternate on every edge, and parent
+  traversal defines path order without a persisted sequence or depth.
+- Selected-path reads are separate from graph inspection. Selection and append
+  compare the caller's expected leaf so stale actions cannot replace the active
+  path.
 - Branching preserves the existing future.
 - Retrying a completed persona response creates a sibling response to the same
-  user message.
+  user message; failed or interrupted attempts create no node and consume no retry.
 - A persona turn permits at most three retry alternatives in addition to its
   initial response.
 - Selecting an alternative changes future context without deleting other paths.
@@ -261,7 +266,10 @@ for context and downstream derivation.
   a Timeline fork.
 
 Persona messages retain their effective response style, provider, model,
-generation metadata, and strategy version.
+generation metadata and budget, strategy version, and completing attempt. Summary
+revisions retain predecessor and persona-checkpoint references; the current summary
+is the deepest compatible checkpoint on the selected ancestry rather than a
+conversation-wide active row.
 
 ### Characters memory and relationship state
 

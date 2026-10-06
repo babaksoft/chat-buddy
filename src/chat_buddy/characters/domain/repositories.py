@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
+from chat_buddy.characters.domain.branching import ConversationGraph, SelectedPath
 from chat_buddy.characters.domain.continuity import (
     Continuity,
     StartContinuity,
@@ -267,6 +268,36 @@ class ContinuityRepository(Protocol):
 
         Returns:
             The archived snapshot, including repeated archive requests.
+        """
+
+        ...
+
+
+class ConversationGraphRepository(Protocol):
+    """Keep selected-path reads separate from complete graph inspection."""
+
+    def selected_path(self, scope: ConversationScope) -> SelectedPath:
+        """Read only the selected root-to-leaf ancestry.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached selected path, excluding every sibling.
+        """
+
+        ...
+
+    def graph(self, scope: ConversationScope) -> ConversationGraph:
+        """Inspect every node independently from ordinary history reads.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached graph with deterministic sibling ordering.
         """
 
         ...

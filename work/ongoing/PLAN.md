@@ -1,454 +1,161 @@
 # Stage 5 Execution Plan — Characters retry and branching
 
-Status: Proposed
+Status: In progress
 
 Last updated: 2026-10-06
 
-## Scope and starting point
-
-Deliver [Stage 5 of the master plan](../../PLAN.md): Characters messages become
-immutable nodes in a recoverable conversation graph, each conversation records one
-selected leaf, completed persona responses can have at most three retry
-alternatives, and users can branch from an earlier point without deleting either
-future. Only the selected root-to-leaf path may enter context, rolling summaries,
-or later derivation.
-
-Stage 4 is complete. It supplies one Ongoing conversation per continuity, a linear
-alternating message history, durable generation attempts, immutable effective
-provider/model configuration, rolling summaries, and a usable Streamlit workflow.
-Its schema already has message-to-conversation ownership, persona responses linked
-to their user message, globally unique message sequence positions, one response per
-user message, and one active summary per conversation. Message sequence and a
-conversation-wide active summary do not have useful equivalents in a branching
-graph; those linear structures must be migrated rather than worked around.
-
-Storyline and Timeline creation do not exist yet. Stage 5 therefore implements and
-tests their branching decision contract without inventing placeholder scenes, days,
-or forks. Stage 6 must connect older-scene decisions to a real Storyline fork, and
-Stage 8 must connect closed-day decisions to a real Timeline fork. Until then such
-requests fail closed with an explicit `fork_required` result; they must never fall
-back to an in-place branch.
-
-The master plan and accepted ADRs remain authoritative. Before implementation,
-record the detailed graph, retry-counting, selection, and summary-lineage behavior
-below in a concise Characters ADR or the Characters design section.
-
-## Behavioral contract to record
-
-- A conversation has an implicit root. A message has one optional parent in the
-  same conversation and continuity; persisted root children are user messages.
-  Roles alternate along every edge: user messages descend from persona messages,
-  and persona messages descend from user messages. Siblings are alternatives; rows
-  and parent links are immutable after insertion.
-- Messages do not persist a linear sequence or denormalized path depth. Parent
-  traversal defines path order, and graph inspection orders siblings
-  deterministically by creation time and identifier. The migration uses existing
-  Stage 4 sequence values only to backfill one parent chain, then removes the
-  sequence field without changing identifiers, contents, timestamps, or
-  generation-attempt links.
-- A conversation stores one nullable selected leaf. Empty conversations have no
-  leaf. A new user message, completed response, selected retry alternative, or
-  accepted branch action advances or replaces that pointer atomically. Reads return
-  the selected root-to-leaf path in ancestor order; graph/alternative inspection is
-  a separate repository operation so unselected nodes cannot accidentally enter a
-  prompt.
-- Branch and alternative selection use an expected selected-leaf identifier as a
-  compare-and-swap guard. A stale browser tab or competing action receives a typed
-  conflict and cannot silently change the active path.
-- **Retry persona response** applies only to the selected path's last completed
-  persona response. It creates a new generation attempt for the same parent user
-  message, never a duplicate user message. It does not truncate or branch from an
-  older turn; that is the separate **Branch from here** workflow. A successful
-  completion creates a sibling persona node and selects it. Failed or interrupted
-  attempts remain attempt evidence, create no message, do not change selection,
-  and do not consume an alternative slot.
-- The initial persona response plus at most three successful retries permits four
-  persona siblings for one user message. The repository enforces this limit inside
-  the same transaction that reserves a retry attempt. Retry availability is derived
-  from durable completed siblings, not Streamlit state. Incomplete-turn continuation
-  remains distinct and does not consume this allowance.
-- **Select alternative** selects an exact existing persona node. Selecting a sibling
-  itself makes that response the leaf; selecting one of its saved descendant leaves
-  restores that exact future. The implementation must not guess among multiple
-  descendant futures.
-- **Branch from here** accepts an older persona message on the selected path. It
-  changes the selected leaf to that point under the compare-and-swap guard; the
-  next send creates a new user child. The existing descendants remain a recoverable
-  alternate future. The current last persona message needs no branch action because
-  an ordinary send already continues from it. A user-message branch point is
-  represented by persona-response alternatives and is not a second branch command.
-  Moving the selection alone does not delete nodes, attempts, or summaries.
-- A persona message stores its immutable response provenance directly: effective
-  provider, model, generation configuration/budget, fixed Stage 5 response-style
-  snapshot, persona-evolution strategy name/version, and completing
-  generation-attempt identifier. The strategy value identifies the configured
-  Characters persona-evolution strategy associated with the turn; it is distinct
-  from provider generation configuration. The attempt ledger remains the source
-  for streaming lifecycle and partial output. Stage 5 records the current fixed
-  style and baseline persona-evolution strategy; editable style controls remain
-  Stage 8 and evolution effects remain Stage 7.
-- Rolling summaries form immutable, branch-addressable lineages rather than one
-  conversation-wide active chain. A summary records its predecessor, checkpoint
-  persona message, and generation provenance. Because message parents are
-  immutable, the checkpoint uniquely identifies the summarized root-to-checkpoint
-  ancestry; a separate copied path is unnecessary. A summary is eligible only when
-  its checkpoint is an ancestor of the selected leaf and its predecessor lineage is
-  compatible with that ancestry. The current summary is derived at read time as
-  the deepest eligible checkpoint; no persisted `active` flag applies across the
-  whole conversation. Advancing a summary creates an immutable successor on the
-  selected path, and different branches may create different successors from a
-  shared predecessor. Switching paths never edits, deactivates, or deletes another
-  lineage. Unselected alternatives and partial attempts never enter response or
-  summary prompts.
-- Ongoing always branches in place. The mode policy returns `in_place` for the
-  latest Storyline scene and an open Timeline day, and `fork_required` for an older
-  Storyline scene with dependent scenes or a closed Timeline day. A caller cannot
-  override a fork-required decision. Storyline/Timeline persistence integration is
-  deferred to their owning stages.
-
-## Delivery and verification rules
-
-Implement the slices in order. Every slice must leave the application runnable,
-have focused automated acceptance criteria, and avoid relying on a later slice for
-its claimed outcome.
-
-For every slice:
-
-- Put immutable values and repository protocols in Characters domain packages,
-  orchestration and policy in Characters application services, SQLAlchemy access in
-  Characters repositories, and widgets in Characters UI. Do not import Chat.
-- Add focused tests under `tests/characters/` and cross-layer scenarios under
-  `tests/integration/characters/`. Use fake providers for ordinary tests and
-  application-service doubles for Streamlit tests.
-- Require explicit identity, persona, continuity, and conversation ownership on
-  every graph operation. Reject foreign parents, leaves, attempts, checkpoints, and
-  alternatives with typed errors.
-- Preserve archive serialization and the one-open-attempt rule. Provider calls stay
-  outside database transactions; completion must recheck ownership, writability,
-  retry capacity, and the expected branch state.
-- Run the slice's focused tests and `scripts/check.sh`. A slice that changes
-  persistence also runs its PostgreSQL migration and concurrency tests; skipped
-  PostgreSQL cases do not count as verification.
-
-For each persistence change, add a new revision under
-`alembic/characters/versions/` and use `alembic-characters.ini`. Never edit an
-applied migration. Verify fresh upgrade and upgrade from the Stage 4 head on
-disposable PostgreSQL. Compare representative Chat rows, schema objects, and
-`chat.alembic_version` before and after, and reject cross-schema SQL in offline
-migration output. Graph-to-linear downgrade is destructive once branches exist and
-is not a routine compatibility promise. Keep an explicitly destructive downgrade
-only as an emergency escape hatch if the multi-branch behavior proves unusable or
-its UX proves too complicated; test it on an immediately upgraded
-Stage 4-compatible dataset, document that it discards Stage 5-only branches and
-provenance, and do not present it as data-preserving.
-
-## Slice sequence
-
-| Slice | Self-contained outcome | Depends on | Database impact |
-|---|---|---|---|
-| 1 | Freeze graph, retry, selection, provenance, and mode-policy contracts | Stage 4 | None |
-| 2 | Persist and read a selected immutable message graph while preserving Stage 4 behavior | 1 | Message, conversation, attempt, and summary migration |
-| 3 | Assemble and summarize only the selected path | 2 | Existing graph/summary operations only |
-| 4 | Create and select bounded persona-response alternatives | 2–3 | Existing graph/attempt operations only |
-| 5 | Branch Ongoing from an earlier persona point without deleting either future | 2–4 | Existing graph operations only |
-| 6 | Enforce mode-specific in-place versus fork-required decisions | 1, 5 | None; future mode adapters use the contract |
-| 7 | Expose retries, alternatives, provenance, and branch controls in Ongoing UI | 4–6 | Existing application operations only |
-| 8 | Prove Stage 5 branch isolation, recovery, and migration safety | 1–7 | Verification only |
-
-### Slice 1 — Domain graph and branching decisions
-
-Status: Proposed
-
-Add frozen domain values for message parents, selected paths, alternative groups,
-response provenance, retry availability, branch requests/results, and typed stale
-selection, invalid-parent, retry-limit, and fork-required failures. Extend the
-repository protocol with deliberately separate selected-path and graph-inspection
-reads. Define the mode-policy input so Storyline can report dependent later scenes
-and Timeline can report a closed day without importing future persistence models.
-
-Keep generation-attempt lifecycle separate from completed alternatives. Define
-exactly which effective generation, fixed style, and persona-evolution strategy
-fields are copied to a persona node at completion. Update package-boundary exports
-and architecture rules.
-
-Verification:
-
-- Domain tests accept valid alternating trees from the implicit root and reject
-  cross-scope parents, multiple root nodes in one selected path, role violations,
-  cycles, and mutable values. They prove selected-path order is derived from parent
-  traversal without a persisted sequence or depth.
-- Policy tests cover Ongoing, latest and older Storyline scenes, open and closed
-  Timeline days, including the fail-closed result when required facts are absent.
-- Contract tests distinguish initial generation, incomplete-turn continuation,
-  completed-response retry, alternative selection, and branch-from-here.
-- Architecture tests prove the contracts import no application, infrastructure,
-  UI, Chat, or future Storyline/Timeline model.
-
-Complete when the graph and mode decisions are unambiguous and executable in unit
-tests without persistence or UI.
-
-### Slice 2 — Graph persistence and Stage 4 compatibility
-
-Status: Proposed
-
-Add the Characters migration and repository implementation for generalized parent
-links, the selected conversation leaf, and persona-message provenance. Use the old
-`sequence` only to backfill each existing Stage 4 conversation into its exact parent
-chain, then remove the column and its global uniqueness and parity constraints.
-Remove the one-response-per-user constraint; replace it with same-scope parent and
-selection foreign keys, response-attempt integrity, and indexes for parent and
-sibling lookup. Role alternation, acyclicity, and parent-path validity are enforced
-by domain validation and repository operations under the locked conversation;
-ordinary foreign keys and constraints enforce row-local ownership and uniqueness.
-Point selection at the final backfilled message, while empty conversations remain
-unselected. Backfill completed persona provenance from its generation attempt plus
-the fixed style and baseline persona-evolution strategy version.
-
-Make summary rows branch-addressable in the same migration. Preserve their
-immutable checkpoint/source data, remove the conversation-wide active designation,
-and add indexes needed to resolve checkpoints by selected ancestry. The immutable
-checkpoint's parent chain is the source-path provenance; do not copy the full path
-into each summary row. Existing Stage 4 summaries become one immutable lineage on
-the backfilled path; do not discard them.
-
-Implement repository operations to load the selected path, inspect children and
-persona siblings, compare-and-swap the selected leaf, append a child, reserve an
-attempt against a specific user node, and atomically complete an attempt with
-provenance. Adapt existing send/continue/stream code to these operations while
-retaining the linear Stage 4 user experience; no retry or branch button ships yet.
-
-Verification:
-
-- Repository tests round-trip a multi-level tree and prove selected-path reads omit
-  siblings while graph inspection can recover every node and attempt.
-- Upgrade tests preserve all Stage 4 identifiers, content, timestamps, attempt
-  links, selected history, summary checkpoints, and effective generation data.
-- Fresh and Stage 4-head upgrade tests verify Characters constraints and leave the
-  populated Chat schema and migration head unchanged. An emergency downgrade test
-  uses only an immediately upgraded linear dataset and explicitly verifies its
-  documented destructive boundary.
-- PostgreSQL repository tests reject cross-conversation parents/selections, wrong
-  parent roles, cycles, duplicate attempt completion, stale selected-leaf updates,
-  and completion after archive. Concurrent selection or append actions have one
-  deterministic winner.
-- Existing Stage 4 conversation, recovery, summary, UI, and acceptance tests pass
-  with unchanged visible behavior.
-
-Complete when production data has a valid immutable graph and selected leaf, but
-ordinary send/resume still behaves like Stage 4.
-
-### Slice 3 — Selected-path context and branch-correct summaries
-
-Status: Proposed
-
-Change context eligibility and rolling-summary resolution to consume only the
-repository's selected path. Resolve the deepest saved summary whose checkpoint is
-on that path; when branching before a checkpoint, fall back to an eligible ancestor
-summary or create a new lineage from selected messages. Summary advancement records
-the selected checkpoint and predecessor lineage and never designates a single
-summary as active for the entire conversation or rewrites a summary belonging to
-another future.
-
-Keep complete-turn budgeting semantics from Stage 4. A selected user leaf remains
-an incomplete turn; siblings, descendants of an unselected sibling, failed output,
-and abandoned attempts are excluded. Prepare the same selected-path snapshot and
-expected leaf for attempt reservation so a selection race cannot send a prompt for
-one path and persist it on another.
-
-Verification:
-
-- Unit tests build two branches with contradictory content and assert that response
-  and summary prompts contain only the selected ancestry.
-- Tests switch before, at, and after summary checkpoints and verify deepest-ancestor
-  reuse, new-lineage creation, chronological rendering, and no stale-summary leak.
-- Integration tests restart the service, change selection, force compression on
-  both branches, and recover each branch's correct summary and recent tail.
-- A PostgreSQL race between prompt preparation and selection change rejects the
-  stale reservation without calling the provider or changing either path.
-- Existing capacity, summary failure, incomplete-turn, and ownership guarantees
-  remain intact.
-
-Complete when selected-path isolation is the only route into provider context and
-rolling summaries are recoverable and correct on every stored branch.
-
-### Slice 4 — Bounded persona-response retries
-
-Status: Proposed
-
-Add application operations to inspect retry availability, begin a retry of the
-selected path's last persona response, stream it through the existing gateway, and
-complete it as a sibling of the original response. Retry uses current saved
-provider/model settings for the new attempt and stores that attempt's immutable
-effective generation, fixed response style, and persona-evolution strategy version
-on the resulting persona message. On successful completion, select the new
-alternative.
-
-Enforce three successful retries per user turn in both service policy and the
-repository transaction. Recheck the expected selected leaf and sibling count at
-reservation and completion. Failed/interrupted output stays separately recoverable
-as attempt evidence but does not change the selected path or alternative count.
-Do not route retry through incomplete-turn continuation.
-
-Verification:
-
-- Unit tests cover availability from zero through three retries, current settings
-  versus immutable old provenance, rejection when the selected leaf is not a
-  completed persona response, and rejection of attempts to use retry on an older
-  persona message.
-- Integration tests create four persona siblings for one user, select each one,
-  and reject a fifth while retaining every response and attempt.
-- Failure before output, partial failure, cancellation, restart, and stale-selection
-  cases preserve the original selected response and retry allowance.
-- PostgreSQL races at the final slot cannot exceed four completed siblings; an
-  archive race cannot commit or select the retry.
-- Captured fake-provider prompts prove an unselected alternative never influences
-  its sibling retry.
-
-Complete when a completed persona turn has up to three durable alternatives with
-exact provenance and deterministic recovery, selection, and limits.
-
-### Slice 5 — Ongoing branch-from-here and alternative selection
-
-Status: Proposed
-
-Add application operations to select an exact persona alternative or saved leaf and
-to branch an active Ongoing conversation from an older persona node on the selected
-path.
-Both operations require the expected selected leaf and apply the mode policy before
-changing selection. The next send attaches to the newly selected point. Preserve
-the abandoned future, its alternatives, attempts, provenance, and summaries.
-
-Return a graph view sufficient for UI rendering: selected path, alternatives at
-each user turn, whether each node is selected, branchable points, and retry counts.
-Keep it detached from SQLAlchemy and deterministically ordered by creation time and
-identifier. Archived continuities remain inspectable but cannot change selection,
-retry, branch, or send.
-
-Verification:
-
-- Application tests branch from older persona turns near the beginning and middle
-  of a selected path; send a distinct future; switch between futures; and recover
-  exact histories after restart.
-- Selecting an alternative with descendants never guesses a descendant. Choosing
-  the alternative itself truncates the selected path there; choosing an exact saved
-  leaf restores that future. A later branch/send builds only under the chosen node.
-- Tests reject root, current-leaf, user-node, foreign, and off-path branch commands,
-  stale leaf guards, active attempts, unmatched user tails where the action is
-  ambiguous, and archives.
-- Repository/application integration tests prove no branch action updates or
-  deletes an existing message, parent, attempt, summary, or provenance snapshot.
-- Concurrent branch/select/send actions serialize to one selected future without
-  orphaning a committed write.
-
-Complete when Ongoing users can create and revisit divergent futures without
-destructive history changes or cross-branch context.
-
-### Slice 6 — Mode-specific branch policy seam
-
-Status: Proposed
-
-Integrate the pure branching policy into every retry and branch application entry
-point. Ongoing returns an in-place authorization. Define adapter-facing results for
-latest versus older Storyline scenes and open versus closed Timeline days. A
-fork-required result contains the source continuity/conversation/message references
-needed by the owning future workflow, but performs no persistence itself.
-
-Do not add Storyline scene tables, Timeline day/timezone fields, synthetic
-continuities, or generic copy-all repository methods. Stage 6 will implement the
-Storyline fork transaction after scenes exist; Stage 8 will implement Timeline
-closure and fork transactions with its clock and timezone rules.
-
-Verification:
-
-- Table-driven unit tests cover every mode/state decision and reject incomplete or
-  contradictory facts.
-- Application contract tests prove retry/branch invokes policy before any graph
-  mutation and that `fork_required` leaves selection and attempts unchanged.
-- Ongoing integration tests prove all valid actions remain in the same continuity.
-- Architecture tests ensure the policy stays Characters-owned and has no dependency
-  on future infrastructure or Chat.
-
-Complete when current Ongoing behavior is authorized through the same fail-closed
-contract that later Storyline and Timeline workflows must obey.
-
-### Slice 7 — Ongoing retry and branch UI
-
-Status: Proposed
-
-Render the selected path by default and expose alternatives at their persona turn.
-Show the initial response plus used/remaining retry count, immutable provider/model,
-persona-evolution strategy version, fixed response-style summary, and generation
-details. Add **Retry response**, **Select alternative**, and **Branch from here**
-controls only when their application preconditions hold. Require a clear branch
-confirmation because changing selection alters subsequent context, but never imply
-that the old future will be deleted.
-
-Keep incomplete-turn continuation visually distinct from completed-response retry.
-Disable graph mutations during an active attempt and for archives. Use scoped
-widget keys so reruns, continuity switches, and area switches cannot replay an
-action or show another continuity's alternatives. Surface stale-selection conflicts
-by reloading the graph rather than retrying the mutation automatically.
-
-Verification:
-
-- Streamlit tests cover retry counts, four alternatives, selection, branch
-  confirmation/cancel, retained old futures, provenance display, and reruns.
-- Tests distinguish failed-turn continuation from completed-response retry and
-  verify the appropriate control is shown for each state.
-- Archived, active-attempt, unmatched-tail, retry-exhausted, and stale-browser states
-  expose no invalid write path and present a useful explanation.
-- Switching identities, continuities, or product areas clears graph-specific UI
-  state and never calls a service with stale ownership.
-- UI architecture tests continue to reject repositories, SQLAlchemy, provider SDKs,
-  and Chat imports.
-
-Complete when Ongoing branching and alternatives are usable and their limits,
-selection, and provenance are visible without exposing persistence details.
-
-### Slice 8 — Stage 5 acceptance and regression proof
-
-Status: Proposed
-
-Add one milestone scenario that starts an Ongoing continuity, creates enough turns
-to summarize, retries one persona response three times, selects an alternative,
-branches from before the summary checkpoint, creates a contradictory future,
-switches between both futures after service restart, and verifies the exact prompt,
-summary, provenance, and graph each time. Include incomplete generation recovery,
-archival, and negative ownership cases.
-
-Exercise the complete Characters migration chain on disposable PostgreSQL beside a
-populated Chat schema. Document branch/retry behavior and the explicit handoff of
-Storyline/Timeline fork persistence to Stages 6 and 8. Update the master plan only
-after every Stage 5 completion criterion is demonstrated.
-
-Verification:
-
-- The milestone proves prior paths remain recoverable and no unselected response,
-  descendant, summary, partial output, or foreign record enters current context.
-- Repository and application suites cover branch selection, retry limits,
-  compare-and-swap conflicts, archive serialization, and immutable provenance.
-- Migration tests prove Stage 4 data survives graph backfill and that Chat objects,
-  rows, and migration version remain unchanged.
-- Characters tests run without importing or initializing Chat. Existing Chat,
-  shell-routing, architecture, and Stage 4 regression tests remain green.
-- `scripts/check.sh` and the non-skipped PostgreSQL migration/concurrency suite pass;
-  a mocked Ollama contract test confirms retries use the existing provider seam.
-
-Complete when the master Stage 5 criteria are met for the implemented Ongoing
-workflow, the future mode rules fail closed through a tested contract, and no later
-stage behavior has been simulated with placeholder persistence.
-
-## Deferred scope
-
-- Stage 6 owns Storyline creation, ordered scenes, actual older-scene continuity
-  forks, branch-scoped extracted memory, temporal eligibility, and memory controls.
-- Stage 7 owns relationship/persona proposals, events, projections, correction, and
-  rebuilding derived state after selection or continuity forks. Stage 5 only
-  guarantees that these consumers can request the selected path.
-- Stage 8 owns Timeline creation, local dates, closure, timezone/DST behavior,
-  actual closed-day forks, and user-editable response-style controls. Stage 5 stores
-  the fixed effective style needed for provenance compatibility.
-- Stage 9 owns broad observability, export/deletion, and extraction hardening beyond
-  the focused isolation and migration proof required here.
-- Branch visualization beyond a selected transcript with per-turn alternatives and
-  branch controls remains a later UX decision. Branch naming is not introduced.
+## Outcome
+
+Turn each Characters conversation into an immutable message graph with one selected
+root-to-leaf path. Users can retry the latest completed persona response up to three
+times, select an exact saved future, or branch Ongoing from an earlier persona
+message without deleting history. Only the selected path may affect prompts,
+summaries, or later derivation.
+
+Stage 4 supplies linear Ongoing history, durable attempts, provider provenance,
+rolling summaries, and the Streamlit workflow. Stage 5 migrates those records in
+place. Storyline and Timeline persistence remain deferred; their policy contract
+fails closed with `fork_required` where their future workflows must create a fork.
+
+## Fixed contract
+
+- A message is an immutable node. Its optional parent belongs to the same identity,
+  persona, continuity, and conversation. Root children are user messages; roles
+  alternate on every edge; siblings are alternatives.
+- Parent traversal defines order. No sequence or cached depth survives the graph
+  migration. Siblings are displayed by creation time and identifier.
+- A conversation stores a nullable selected leaf. Normal reads return only its
+  ancestry; graph inspection is a separate operation. Selection and append use the
+  expected selected leaf as a compare-and-swap guard.
+- A completed-response retry creates an attempt for the same parent user node. A
+  successful retry adds and selects a persona sibling. Failed or interrupted
+  attempts add no message, change no selection, and consume no retry allowance.
+- One initial response plus three successful retries allows four persona siblings.
+  The repository rechecks that bound when reserving and completing an attempt.
+  Incomplete-turn continuation remains a different operation.
+- Selecting an alternative selects that exact persona node. Restoring an existing
+  future requires its exact saved leaf; the application never guesses descendants.
+- Branching accepts an older persona node on the selected path, selects it under
+  the compare-and-swap guard, and lets the next send create a new user child. It
+  never deletes the old future, attempts, provenance, or summaries.
+- Every persona node copies immutable response provenance: effective provider,
+  model, generation configuration and budget, fixed Stage 5 response style,
+  persona-evolution strategy name/version, and completing attempt identifier.
+- Summaries are immutable branch-addressable lineages. A revision records its
+  predecessor and persona checkpoint. At read time, use the deepest compatible
+  checkpoint on the selected ancestry; never activate/deactivate revisions across
+  the whole conversation.
+- Ongoing branches in place. A latest Storyline scene and open Timeline day may
+  branch in place. An older Storyline scene with later dependents and a closed
+  Timeline day require a fork. Missing mode facts fail closed.
+
+## Delivery rules
+
+Keep values and repository contracts in Characters domain, orchestration and
+policy in application, persistence in repositories, and widgets in UI. Require the
+full ownership scope for every graph operation. Keep provider calls outside
+transactions, preserve one-open-attempt and archive serialization, and recheck
+selection, ownership, writability, and retry capacity on completion.
+
+Each slice adds focused unit tests and cross-layer coverage where needed, then runs
+its focused tests and `scripts/check.sh`. Persistence slices also run non-skipped
+PostgreSQL migration and concurrency tests.
+
+Use a new Characters migration and `alembic-characters.ini`; never edit applied
+migrations. Test fresh and Stage 4-head upgrades beside populated Chat data, verify
+`chat.alembic_version` and Chat objects are unchanged, and reject cross-schema SQL
+offline. Downgrade is an explicitly destructive emergency escape hatch: test only
+an immediately upgraded linear dataset and document that Stage 5 branches and
+provenance are discarded.
+
+## Slices
+
+### 1. Freeze graph and branching contracts — Complete
+
+Add immutable graph/path, alternative, retry, response-provenance, action, and
+mode-policy values; typed invalid-parent, stale-selection, retry-limit, and
+fork-required failures; separate selected-path and graph-inspection repository
+reads; package exports; and architecture checks. Record the detailed semantics in
+ADR 009. Unit tests cover ownership, roots, role alternation, cycles, parent-derived
+order, immutability, all five action kinds, and Ongoing/Storyline/Timeline policy.
+
+Complete when the contracts are executable without persistence or UI.
+
+### 2. Persist the graph without changing the Stage 4 workflow
+
+Migrate messages to parent links, conversations to a selected leaf, persona nodes
+to immutable provenance, and summaries to branch-addressable lineages. Backfill the
+existing sequence into one exact chain, select its final node, preserve identifiers,
+timestamps, attempts, and summaries, then remove linear constraints. Implement
+selected-path, graph, sibling, append, guarded selection, reservation, and atomic
+completion operations. Existing send/resume remains visually linear.
+
+Complete when production data is a valid graph and Stage 4 behavior still passes.
+
+### 3. Make context and summaries branch-correct
+
+Build response and summary prompts only from the selected ancestry. Resolve the
+deepest eligible summary checkpoint and create immutable successor lineages per
+branch. Bind prompt preparation and reservation to the same expected leaf.
+
+Complete when no sibling, abandoned descendant, or partial attempt can enter
+context and summaries recover correctly after path switches.
+
+### 4. Add bounded completed-response retries
+
+Expose retry availability and stream a new attempt for the selected final persona
+response using current settings. On success, create/select a sibling with exact
+provenance. Enforce three successful retries under repository locking at both
+reservation and completion; preserve allowance after failures or interruptions.
+
+Complete when four persona alternatives are durable and a fifth cannot commit,
+including under PostgreSQL races and archival.
+
+### 5. Add Ongoing branch and exact-future selection
+
+Select an exact persona alternative or saved descendant leaf, and branch from an
+older selected-path persona node. Return a detached deterministic graph view with
+alternatives, retry counts, selected state, and branchable points. Reject stale,
+foreign, off-path, ambiguous, current-leaf, active-attempt, and archived actions.
+
+Complete when divergent Ongoing futures survive restart and switching never
+mutates prior nodes, attempts, summaries, or provenance.
+
+### 6. Apply the mode policy seam
+
+Authorize every retry/branch operation through the pure policy. Ongoing mutates in
+place; future mode adapters receive either `in_place` or `fork_required` plus exact
+source references. Add no Storyline scene or Timeline day persistence.
+
+Complete when missing/contradictory facts fail closed before any graph mutation.
+
+### 7. Ship Ongoing controls
+
+Render the selected transcript and per-turn alternatives with retry counts and
+provenance. Add distinct **Retry response**, **Select alternative**, and confirmed
+**Branch from here** controls only when valid. Keep incomplete continuation
+distinct, disable writes for archives/open attempts, scope widget state, and reload
+on stale selection.
+
+Complete when users can safely create, inspect, select, and revisit Ongoing futures.
+
+### 8. Prove the milestone
+
+Exercise summary creation, three retries, alternative selection, branching before a
+checkpoint, contradictory futures, restart, incomplete recovery, archival, exact
+prompts, and ownership failures. Run the full isolated migration chain beside Chat
+and the complete quality suite; update the master plan and shipped documentation.
+
+Complete when selected-path isolation, recovery, migration safety, and all Stage 5
+master-plan criteria are demonstrated without placeholder future-mode persistence.
+
+## Deferred
+
+- Stage 6: Storylines, scenes, continuity-scoped memory, temporal eligibility, and
+  real older-scene forks.
+- Stage 7: relationship/persona effects and rebuilding derived state after branch
+  changes or continuity forks.
+- Stage 8: Timeline dates, closure, timezone/DST rules, real closed-day forks, and
+  editable response style.
+- Stage 9: broad observability, export/deletion, and extraction hardening.
+- Rich graph visualization and branch naming remain future UX decisions.
