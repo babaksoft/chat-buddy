@@ -1,5 +1,12 @@
 """Typed validation, operational and management failures."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chat_buddy.characters.domain.branching import BranchDecision
+
 
 class IdentityNotFoundError(LookupError):
     """The requested identity does not exist."""
@@ -95,3 +102,14 @@ class RetryLimitError(ValueError):
 
 class ForkRequiredError(ValueError):
     """The requested mode action requires a future continuity fork workflow."""
+
+    def __init__(self, decision: BranchDecision) -> None:
+        """Retain the fail-closed decision for the future mode adapter.
+
+        Args:
+            decision:
+                Fork-required decision with exact source references.
+        """
+
+        self.decision = decision
+        super().__init__(f"Mode action requires a fork: {decision.reason}")

@@ -1,12 +1,45 @@
 """Pure mode-specific branch authorization."""
 
 from typing import Literal
+from uuid import UUID
 
 from chat_buddy.characters.domain import (
     BranchDecision,
     BranchModeFacts,
+    BranchModeFactsResolver,
     ContinuityMode,
+    ConversationScope,
 )
+
+
+class DeferredBranchModeFactsResolver(BranchModeFactsResolver):
+    """Resolve Ongoing facts while leaving future-mode facts unavailable."""
+
+    def resolve(
+        self,
+        scope: ConversationScope,
+        source_message_id: UUID,
+        mode: ContinuityMode,
+    ) -> BranchModeFacts:
+        """Return exact references and no unimplemented mode-specific facts.
+
+        Args:
+            scope:
+                Exact source conversation references.
+            source_message_id:
+                Exact persona response governing the action.
+            mode:
+                Persisted continuity mode.
+
+        Returns:
+            Ongoing authorization facts or fail-closed future-mode facts.
+        """
+
+        return BranchModeFacts(
+            scope=scope,
+            source_message_id=source_message_id,
+            mode=mode,
+        )
 
 
 def decide_branch_mode(facts: BranchModeFacts) -> BranchDecision:

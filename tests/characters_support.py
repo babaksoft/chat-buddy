@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import ContinuityService, ConversationService
 from chat_buddy.characters.domain import (
+    BranchModeFactsResolver,
     ConversationScope,
     EffectiveGeneration,
     ModelDescriptor,
@@ -104,7 +105,10 @@ def registry(gateway: FakeResponse, context: int = 8192) -> ConfiguredModelRegis
 
 
 def service(
-    factory: sessionmaker[Session], gateway: FakeResponse, context: int = 8192
+    factory: sessionmaker[Session],
+    gateway: FakeResponse,
+    context: int = 8192,
+    branch_mode_facts: BranchModeFactsResolver | None = None,
 ) -> ConversationService:
     """Compose a fresh service using only real Characters repositories.
 
@@ -115,6 +119,8 @@ def service(
             Fake response provider.
         context:
             Model context window.
+        branch_mode_facts:
+            Optional mode-specific policy facts for branching tests.
 
     Returns:
         Fresh application service.
@@ -127,6 +133,7 @@ def service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(gateway, context),
+        branch_mode_facts,
     )
 
 

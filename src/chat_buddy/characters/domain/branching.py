@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Literal, Protocol, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -568,6 +568,32 @@ class BranchModeFacts(BaseModel):
     timeline_day_closed: bool | None = Field(
         default=None, description="Timeline closure fact."
     )
+
+
+class BranchModeFactsResolver(Protocol):
+    """Supply persistence-neutral facts for one mode-sensitive graph action."""
+
+    def resolve(
+        self,
+        scope: ConversationScope,
+        source_message_id: UUID,
+        mode: ContinuityMode,
+    ) -> BranchModeFacts:
+        """Resolve facts without mutating conversation state.
+
+        Args:
+            scope:
+                Exact source conversation references.
+            source_message_id:
+                Exact persona response governing the action.
+            mode:
+                Persisted continuity mode.
+
+        Returns:
+            Available mode facts, with unavailable facts left absent.
+        """
+
+        ...
 
 
 class BranchDecision(BaseModel):

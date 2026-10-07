@@ -5,6 +5,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from chat_buddy.characters.application.branch_policy import (
+    DeferredBranchModeFactsResolver,
+    decide_branch_mode,
+)
 from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
@@ -15,7 +19,10 @@ from chat_buddy.characters.application.rolling_summary_service import (
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     AttemptConflictError,
+    BranchDecision,
+    BranchModeFactsResolver,
     ContextCapacityError,
+    ContinuityMode,
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationGraphView,
@@ -24,6 +31,7 @@ from chat_buddy.characters.domain import (
     ConversationScope,
     ConversationSettings,
     EffectiveGeneration,
+    ForkRequiredError,
     GenerationAttempt,
     GraphAction,
     GraphActionRequest,
@@ -58,6 +66,7 @@ class ConversationService:
         personas: PersonaRepository,
         summaries: SummaryRepository,
         models: ModelRegistry,
+        branch_mode_facts: BranchModeFactsResolver | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -74,6 +83,8 @@ class ConversationService:
                 Owned rolling-summary persistence.
             models:
                 Replaceable provider/model capabilities.
+            branch_mode_facts:
+                Optional future-mode fact adapter; unavailable facts fail closed.
         """
 
         self._conversations = conversations
@@ -81,6 +92,7 @@ class ConversationService:
         self._identities = identities
         self._personas = personas
         self._models = models
+        self._branch_mode_facts = branch_mode_facts or DeferredBranchModeFactsResolver()
         self._eligibility = OngoingContextEligibility()
         self._budgeter = OngoingContextBudgeter()
         self._summaries = RollingSummaryService(summaries, models)
@@ -158,6 +170,11 @@ class ConversationService:
                 else ()
             )
             selected_leaf = node.id == graph.selected_leaf_id
+            mode_allows_branch = (
+                node.role == "persona"
+                and self._branch_decision(scope, node.id, continuity.mode).disposition
+                == "in_place"
+            )
             views.append(
                 GraphNodeView(
                     message=node,
@@ -170,6 +187,7 @@ class ConversationService:
                         and node.role == "persona"
                         and node.id in selected_ids
                         and not selected_leaf
+                        and mode_allows_branch
                     ),
                 )
             )
@@ -199,6 +217,7 @@ class ConversationService:
             Newly selected root-to-leaf ancestry.
         """
 
+        self._authorize_mode_action(scope, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
@@ -250,6 +269,7 @@ class ConversationService:
             Truncated selected ancestry without deleting its prior future.
         """
 
+        self._authorize_mode_action(scope, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
@@ -363,6 +383,8 @@ class ConversationService:
         if tail is None or tail.role != "persona":
             raise IncompleteTurnError("No completed response is available to retry")
 
+        self._authorize_mode_action(scope, tail.id)
+
         if history.settings is None:
             generation = self._models.resolve_default("response")
             settings = ConversationSettings(
@@ -382,6 +404,27 @@ class ConversationService:
             retry_history.messages[-1].id,
         )
         return self._conversations.begin_retry(scope, generation, settings, tail.id)
+
+    def branch_decision(
+        self, scope: ConversationScope, source_message_id: UUID
+    ) -> BranchDecision:
+        """Resolve the mode disposition with exact source references.
+
+        Args:
+            scope:
+                Complete required ownership.
+            source_message_id:
+                Exact persona response governing the action.
+
+        Returns:
+            In-place or fork-required policy decision.
+        """
+
+        self._conversations.history(scope)
+        continuity = self._continuities.get(
+            scope.identity_id, scope.persona_id, scope.continuity_id
+        )
+        return self._branch_decision(scope, source_message_id, continuity.mode)
 
     def stream(
         self, scope: ConversationScope, attempt_id: UUID
@@ -493,6 +536,64 @@ class ConversationService:
             expected_selected_leaf_id,
             submitted,
         )
+
+    def _branch_decision(
+        self,
+        scope: ConversationScope,
+        source_message_id: UUID,
+        mode: ContinuityMode,
+    ) -> BranchDecision:
+        """Resolve and validate adapter facts before applying pure policy.
+
+        Args:
+            scope:
+                Exact source conversation references.
+            source_message_id:
+                Exact persona response governing the action.
+            mode:
+                Persisted continuity mode.
+
+        Returns:
+            Fail-closed policy decision.
+        """
+
+        facts = self._branch_mode_facts.resolve(scope, source_message_id, mode)
+        if (
+            facts.scope != scope
+            or facts.source_message_id != source_message_id
+            or facts.mode != mode
+        ):
+            return BranchDecision(
+                disposition="fork_required",
+                scope=scope,
+                source_message_id=source_message_id,
+                reason="missing_or_contradictory_mode_facts",
+            )
+        return decide_branch_mode(facts)
+
+    def _authorize_mode_action(
+        self, scope: ConversationScope, source_message_id: UUID
+    ) -> BranchDecision:
+        """Require an in-place policy result before graph mutation.
+
+        Args:
+            scope:
+                Complete required ownership.
+            source_message_id:
+                Exact persona response governing the action.
+
+        Returns:
+            Authorized in-place decision.
+
+        Raises:
+            ForkRequiredError:
+                If facts are missing, contradictory, or require a future fork.
+        """
+
+        decision = self.branch_decision(scope, source_message_id)
+        if decision.disposition == "fork_required":
+            raise ForkRequiredError(decision)
+        return decision
 
     def _prompt(
         self,

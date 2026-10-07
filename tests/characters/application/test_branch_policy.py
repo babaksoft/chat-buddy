@@ -5,7 +5,10 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from chat_buddy.characters.application import decide_branch_mode
+from chat_buddy.characters.application import (
+    DeferredBranchModeFactsResolver,
+    decide_branch_mode,
+)
 from chat_buddy.characters.domain import (
     BranchModeFacts,
     ContinuityMode,
@@ -115,3 +118,59 @@ def test_mode_policy_is_explicit_and_fails_closed(
     assert decision.source_message_id == source_message_id
     with pytest.raises(ValidationError):
         decision.reason = "changed"  # type: ignore[assignment]
+
+
+@pytest.mark.parametrize(
+    ("mode", "storyline_later", "timeline_closed"),
+    [
+        (ContinuityMode.ONGOING, False, None),
+        (ContinuityMode.ONGOING, None, False),
+        (ContinuityMode.STORYLINE, False, False),
+        (ContinuityMode.TIMELINE, True, False),
+    ],
+)
+def test_mode_policy_rejects_every_contradictory_fact_shape(
+    mode: ContinuityMode,
+    storyline_later: bool | None,
+    timeline_closed: bool | None,
+) -> None:
+    """Require only facts belonging to the persisted continuity mode.
+
+    Args:
+        mode:
+            Governing continuity mode.
+        storyline_later:
+            Optional dependent-scene fact.
+        timeline_closed:
+            Optional day-closure fact.
+    """
+
+    decision = decide_branch_mode(
+        BranchModeFacts(
+            scope=_scope(),
+            source_message_id=uuid4(),
+            mode=mode,
+            storyline_has_later_scenes=storyline_later,
+            timeline_day_closed=timeline_closed,
+        )
+    )
+    assert decision.disposition == "fork_required"
+    assert decision.reason == "missing_or_contradictory_mode_facts"
+
+
+def test_deferred_resolver_preserves_exact_references_and_fails_future_modes_closed() -> (
+    None
+):
+    """Leave unimplemented Storyline and Timeline facts absent."""
+
+    scope = _scope()
+    source_message_id = uuid4()
+    facts = DeferredBranchModeFactsResolver().resolve(
+        scope, source_message_id, ContinuityMode.STORYLINE
+    )
+    decision = decide_branch_mode(facts)
+
+    assert facts.scope == scope
+    assert facts.source_message_id == source_message_id
+    assert decision.disposition == "fork_required"
+    assert decision.reason == "missing_or_contradictory_mode_facts"

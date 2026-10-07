@@ -1,6 +1,7 @@
 """Ongoing branch actions and exact saved-future selection."""
 
-from uuid import uuid4
+from collections.abc import Callable
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -8,7 +9,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     AttemptConflictError,
+    BranchModeFacts,
+    ContinuityMode,
     ConversationNotFoundError,
+    ConversationScope,
+    ForkRequiredError,
     InvalidParentError,
     StaleSelectionError,
     SubmittedInput,
@@ -17,6 +22,43 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
 )
 from tests.characters_support import FakeResponse, service, start
+
+
+class _ContradictoryModeFacts:
+    """Return mismatched mode facts while recording exact action sources."""
+
+    def __init__(self) -> None:
+        """Initialize empty source capture."""
+
+        self.sources: list[UUID] = []
+
+    def resolve(
+        self,
+        scope: ConversationScope,
+        source_message_id: UUID,
+        mode: ContinuityMode,
+    ) -> BranchModeFacts:
+        """Return facts contradicting the persisted Ongoing mode.
+
+        Args:
+            scope:
+                Exact source conversation references.
+            source_message_id:
+                Exact persona response governing the action.
+            mode:
+                Persisted continuity mode.
+
+        Returns:
+            Contradictory facts that must fail closed.
+        """
+
+        self.sources.append(source_message_id)
+        return BranchModeFacts(
+            scope=scope,
+            source_message_id=source_message_id,
+            mode=ContinuityMode.STORYLINE,
+            storyline_has_later_scenes=False,
+        )
 
 
 def test_branch_and_exact_future_selection_preserve_every_saved_node(
@@ -188,3 +230,59 @@ def test_archived_conversation_rejects_selection_and_branching(
         app.select_alternative(scope, original_id, selected_id)
     with pytest.raises(ArchivedContinuityError):
         app.branch_from_here(scope, selected_id, selected_id)
+
+
+def test_contradictory_mode_facts_fail_before_every_graph_mutation(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Reject retry, selection, and branching before durable state changes.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters sessions.
+    """
+
+    scope = start(characters_session_factory)
+    gateway = FakeResponse()
+    setup = service(characters_session_factory, gateway)
+    first = setup.send(scope, SubmittedInput(content="First"))
+    list(setup.stream(scope, first.id))
+    original_id = setup.history(scope).messages[-1].id
+    gateway.chunks = ("Alternative",)
+    retry = setup.retry_completed_response(scope)
+    list(setup.stream(scope, retry.id))
+    branch_point_id = setup.history(scope).messages[-1].id
+    second = setup.send(scope, SubmittedInput(content="Second"))
+    list(setup.stream(scope, second.id))
+    selected_leaf_id = setup.history(scope).messages[-1].id
+
+    facts = _ContradictoryModeFacts()
+    app = service(
+        characters_session_factory,
+        gateway,
+        branch_mode_facts=facts,
+    )
+    original_graph = app.inspect_graph(scope)
+    original_history = app.history(scope)
+
+    actions: tuple[tuple[Callable[[], object], UUID], ...] = (
+        (lambda: app.retry_completed_response(scope), selected_leaf_id),
+        (
+            lambda: app.select_alternative(scope, original_id, selected_leaf_id),
+            original_id,
+        ),
+        (
+            lambda: app.branch_from_here(scope, branch_point_id, selected_leaf_id),
+            branch_point_id,
+        ),
+    )
+    for action, source_message_id in actions:
+        with pytest.raises(ForkRequiredError) as raised:
+            action()
+        assert raised.value.decision.scope == scope
+        assert raised.value.decision.source_message_id == source_message_id
+        assert raised.value.decision.reason == "missing_or_contradictory_mode_facts"
+
+    assert facts.sources[-3:] == [selected_leaf_id, original_id, branch_point_id]
+    assert app.history(scope) == original_history
+    assert app.inspect_graph(scope) == original_graph

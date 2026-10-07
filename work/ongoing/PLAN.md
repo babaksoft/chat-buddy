@@ -121,7 +121,7 @@ foreign, off-path, ambiguous, current-leaf, active-attempt, and archived actions
 Complete when divergent Ongoing futures survive restart and switching never
 mutates prior nodes, attempts, summaries, or provenance.
 
-### 6. Apply the mode policy seam
+### 6. Apply the mode policy seam — Complete
 
 Authorize every retry/branch operation through the pure policy. Ongoing mutates in
 place; future mode adapters receive either `in_place` or `fork_required` plus exact
