@@ -129,7 +129,7 @@ source references. Add no Storyline scene or Timeline day persistence.
 
 Complete when missing/contradictory facts fail closed before any graph mutation.
 
-### 7. Ship Ongoing controls
+### 7. Ship Ongoing controls — Complete
 
 Render the selected transcript and per-turn alternatives with retry counts and
 provenance. Add distinct **Retry response**, **Select alternative**, and confirmed

@@ -1043,6 +1043,7 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
     from chat_buddy.characters.domain import (
         Continuity,
         ContinuityGroup,
+        ConversationGraphView,
         ConversationHistory,
         ConversationScope,
         ConversationSettings,
@@ -1111,6 +1112,9 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
             ),
         ),
         attempts=(),
+    )
+    conversation.inspect_graph.return_value = ConversationGraphView(
+        scope=scope, selected_leaf_id=None, nodes=()
     )
     with patch.object(
         ongoing, "create_conversation_service", return_value=conversation
