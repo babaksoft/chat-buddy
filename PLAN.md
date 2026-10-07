@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-10-05
+Last updated: 2026-10-07
 
 ## How to use this plan
 
@@ -169,6 +169,8 @@ Deliver this work through the small slices in the
 [Characters UX hardening plan](work/characters-ux/PLAN.md).
 
 ## Stage 5 — Add Characters retry and branching
+
+**Status: Complete.**
 
 - Make messages immutable nodes with parent-message relationships.
 - Track the selected conversation leaf and include only that path in context and

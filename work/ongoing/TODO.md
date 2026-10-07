@@ -1,7 +1,6 @@
 # Ongoing status
 
-Next delivery focus: complete Characters UX hardening, then continue with Stage 5
-— Characters retry and branching.
+Next delivery focus: Stage 6 — Storylines and continuity-scoped memory.
 
 Deferred engineering:
 

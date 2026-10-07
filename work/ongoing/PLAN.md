@@ -1,6 +1,6 @@
 # Stage 5 Execution Plan — Characters retry and branching
 
-Status: In progress
+Status: Complete
 
 Last updated: 2026-10-07
 
@@ -139,7 +139,7 @@ on stale selection.
 
 Complete when users can safely create, inspect, select, and revisit Ongoing futures.
 
-### 8. Prove the milestone
+### 8. Prove the milestone — Complete
 
 Exercise summary creation, three retries, alternative selection, branching before a
 checkpoint, contradictory futures, restart, incomplete recovery, archival, exact

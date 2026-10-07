@@ -38,6 +38,10 @@ experiences:
 - Stream persona responses through a Characters-owned Ollama configuration.
 - Compress long conversations with continuity-scoped rolling summaries.
 - Recover incomplete turns without committing partial output.
+- Retry a completed persona response up to three times and select any saved
+  alternative.
+- Branch an Ongoing conversation from an earlier persona response without losing
+  either future.
 - Duplicate frozen profiles when authored changes are needed.
 
 ## Product model and scope
@@ -185,8 +189,9 @@ default page; use the sidebar to open the focused Characters pages.
 3. Open **New Ongoing**, select an identity and persona, and define the starting
    relationship.
 4. Preview and confirm the Ongoing start.
-5. Send a message, then use **Ongoing** to navigate active or archived histories
-   under their identity and persona.
+5. Send a message, then use **Ongoing** to retry a response, select an alternative,
+   or branch from an earlier response without deleting the existing future.
+6. Navigate active or archived histories under their identity and persona.
 
 Confirming the first continuity permanently freezes the selected identity and
 persona. Duplicate a frozen profile to create an editable variant. Archived
