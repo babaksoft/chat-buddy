@@ -59,13 +59,21 @@ During the Stage 1 split, recreate the development database and apply both area 
 Before committing, run the same checks as CI:
 
 ```bash
-uv run black --check src tests
+timeout 30s uv run black --check src tests
 uv run isort --check-only src tests
 uv run ruff check src tests
 uv run mypy src tests
 uv run pytest -v
-# or: scripts/check.sh
 ```
+
+Cap every Black invocation at 30 seconds. If Black times out, do not retry it or
+allow it to delay the task; continue running the other checks independently and
+report the incomplete Black run in the final handoff. A timeout is not a successful
+format check. The developer may rerun Black separately with their local uv cache.
+Treat formatting failures returned within the time limit normally: fix them and
+rerun once with the same cap. `scripts/check.sh` remains available for local use,
+but do not use it when its uncapped Black step could prevent the remaining checks
+from running.
 
 ## Testing and Contributions
 

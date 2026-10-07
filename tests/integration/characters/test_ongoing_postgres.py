@@ -18,6 +18,8 @@ from chat_buddy.characters.domain import (
     IncompleteTurnError,
     Message,
     RetryLimitError,
+    SelectedPath,
+    StaleSelectionError,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.models import (
@@ -441,6 +443,44 @@ def test_retry_limit_is_serialized_across_reservation_and_completion(
 
     outcomes = _race(exceed_limit, exceed_limit)
     assert all(isinstance(item, RetryLimitError) for item in outcomes)
+
+
+def test_competing_branch_actions_use_one_selection_winner(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Serialize branch selection with one compare-and-swap winner.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    factory = _factory(characters_postgres_engine)
+    scope = start(factory)
+    app = service(factory, FakeResponse())
+    first = app.send(scope, SubmittedInput(content="First"))
+    list(app.stream(scope, first.id))
+    branch_point_id = app.history(scope).messages[-1].id
+    second = app.send(scope, SubmittedInput(content="Future"))
+    list(app.stream(scope, second.id))
+    expected_leaf_id = app.history(scope).messages[-1].id
+
+    def branch() -> object:
+        """Return the selected path or its expected stale-selection loss.
+
+        Returns:
+            Winning path or stale-selection failure.
+        """
+
+        try:
+            return app.branch_from_here(scope, branch_point_id, expected_leaf_id)
+        except StaleSelectionError as error:
+            return error
+
+    outcomes = _race(branch, branch)
+    assert sum(isinstance(item, SelectedPath) for item in outcomes) == 1
+    assert sum(isinstance(item, StaleSelectionError) for item in outcomes) == 1
+    assert app.history(scope).messages[-1].id == branch_point_id
 
 
 def test_archive_racing_retry_completion_cannot_commit_after_archive(

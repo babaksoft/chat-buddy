@@ -7,6 +7,7 @@ from uuid import UUID
 from chat_buddy.characters.domain.branching import (
     AlternativeGroup,
     ConversationGraph,
+    GraphActionRequest,
     RetryAvailability,
     SelectedPath,
 )
@@ -339,6 +340,19 @@ class ConversationGraphRepository(Protocol):
                 Exact persona node to select.
             expected_selected_leaf_id:
                 Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected ancestry.
+        """
+
+        ...
+
+    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
+        """Apply one validated graph action under the selection lock.
+
+        Args:
+            request:
+                Fully owned action target and compare-and-swap guard.
 
         Returns:
             Newly selected ancestry.

@@ -284,6 +284,116 @@ class ConversationGraph(BaseModel):
         )
 
 
+class GraphNodeView(BaseModel):
+    """Detached action metadata for one immutable graph node.
+
+    Attributes:
+        message:
+            Immutable message represented by this entry.
+        alternative_ids:
+            Deterministically ordered persona siblings for the same user turn.
+        retry_count:
+            Successful retries completed for that turn.
+        selected:
+            Whether the node belongs to the selected ancestry.
+        selected_leaf:
+            Whether the node is the exact selected leaf.
+        branchable:
+            Whether an in-place branch may start from this node now.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    message: MessageNode = Field(description="Immutable graph message.")
+    alternative_ids: tuple[UUID, ...] = Field(
+        description="Ordered persona alternatives for the same user turn."
+    )
+    retry_count: int = Field(
+        ge=0, le=3, description="Successful retry count for the user turn."
+    )
+    selected: bool = Field(description="Whether the node is on the selected path.")
+    selected_leaf: bool = Field(description="Whether this node is selected exactly.")
+    branchable: bool = Field(description="Whether branching is currently allowed.")
+
+    @model_validator(mode="after")
+    def validate_state(self) -> Self:
+        """Keep view flags and alternative metadata internally consistent.
+
+        Returns:
+            Validated graph-node view.
+
+        Raises:
+            ValueError:
+                If flags or alternative metadata contradict the message.
+        """
+
+        if self.selected_leaf and not self.selected:
+            raise ValueError("The selected leaf must belong to the selected path.")
+        if self.branchable and (
+            self.message.role != "persona" or not self.selected or self.selected_leaf
+        ):
+            raise ValueError("Only older selected-path persona nodes are branchable.")
+        if self.message.role == "user":
+            if self.alternative_ids or self.retry_count:
+                raise ValueError("User nodes do not carry persona alternatives.")
+        elif self.message.id not in self.alternative_ids:
+            raise ValueError("A persona node must appear in its alternatives.")
+        elif self.retry_count != len(self.alternative_ids) - 1:
+            raise ValueError("Retry count must derive from completed alternatives.")
+        return self
+
+
+class ConversationGraphView(BaseModel):
+    """Deterministic detached graph inspection prepared for user actions.
+
+    Attributes:
+        scope:
+            Complete conversation ownership.
+        selected_leaf_id:
+            Exact selected persona leaf, or none for an empty graph.
+        nodes:
+            Every graph node with derived selection and action metadata.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: ConversationScope = Field(description="Complete ownership.")
+    selected_leaf_id: UUID | None = Field(description="Selected graph leaf.")
+    nodes: tuple[GraphNodeView, ...] = Field(
+        description="Deterministically ordered graph-node views."
+    )
+
+    @model_validator(mode="after")
+    def validate_view(self) -> Self:
+        """Require owned deterministic nodes and one matching selected leaf.
+
+        Returns:
+            Validated graph view.
+
+        Raises:
+            ValueError:
+                If ownership, ordering, or selected state is inconsistent.
+        """
+
+        if any(node.message.scope != self.scope for node in self.nodes):
+            raise ValueError("Every graph-view node must use the supplied ownership.")
+        order = tuple(
+            (node.message.created_at, str(node.message.id)) for node in self.nodes
+        )
+        if order != tuple(sorted(order)):
+            raise ValueError("Graph-view nodes must use deterministic ordering.")
+        selected_leaves = tuple(node for node in self.nodes if node.selected_leaf)
+        if self.selected_leaf_id is None:
+            if selected_leaves:
+                raise ValueError("An empty selection cannot mark a selected leaf.")
+        elif (
+            len(selected_leaves) != 1
+            or selected_leaves[0].message.id != self.selected_leaf_id
+        ):
+            raise ValueError("The graph view must mark its exact selected leaf.")
+        return self
+
+
 class AlternativeGroup(BaseModel):
     """Completed persona alternatives for one user parent.
 

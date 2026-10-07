@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 ## Outcome
 
@@ -111,7 +111,7 @@ reservation and completion; preserve allowance after failures or interruptions.
 Complete when four persona alternatives are durable and a fifth cannot commit,
 including under PostgreSQL races and archival.
 
-### 5. Add Ongoing branch and exact-future selection
+### 5. Add Ongoing branch and exact-future selection — Complete
 
 Select an exact persona alternative or saved descendant leaf, and branch from an
 older selected-path persona node. Return a detached deterministic graph view with

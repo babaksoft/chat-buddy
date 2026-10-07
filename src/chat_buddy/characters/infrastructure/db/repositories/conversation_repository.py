@@ -20,6 +20,8 @@ from chat_buddy.characters.domain import (
     EffectiveGeneration,
     EvolutionStrategyId,
     GenerationAttempt,
+    GraphAction,
+    GraphActionRequest,
     IncompleteTurnError,
     InvalidParentError,
     InvalidProviderResponseError,
@@ -214,6 +216,94 @@ class DbConversationRepository:
             session.flush()
             return self._selected_path(session, scope, row)
 
+    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
+        """Apply exact-future selection or branching under one ownership lock.
+
+        Args:
+            request:
+                Fully owned graph action with its compare-and-swap guard.
+
+        Returns:
+            Newly selected ancestry.
+
+        Raises:
+            AttemptConflictError:
+                If a generation attempt is active.
+            InvalidParentError:
+                If the target is foreign, ambiguous, or invalid for the action.
+            StaleSelectionError:
+                If the selected leaf changed after the caller observed it.
+        """
+
+        if request.action not in {
+            GraphAction.ALTERNATIVE_SELECTION,
+            GraphAction.BRANCH_FROM_HERE,
+        }:
+            raise ValueError("Only selection and branching are graph actions")
+        if request.target_message_id is None:
+            raise ValueError("A graph action requires an exact target")
+
+        scope = request.scope
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope, writable=True)
+            if row.selected_leaf_id != request.expected_selected_leaf_id:
+                raise StaleSelectionError("Selected conversation path changed")
+            active_attempt = session.scalar(
+                select(GenerationAttemptModel.id)
+                .where(
+                    GenerationAttemptModel.conversation_id == scope.conversation_id,
+                    GenerationAttemptModel.continuity_id == scope.continuity_id,
+                    GenerationAttemptModel.status.in_(["pending", "streaming"]),
+                )
+                .limit(1)
+            )
+            if active_attempt is not None:
+                raise AttemptConflictError("An attempt is already active")
+
+            target = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == request.target_message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                    MessageModel.role == "persona",
+                )
+            )
+            if target is None:
+                raise InvalidParentError("Graph target must be an owned persona node")
+
+            path = self._selected_path(session, scope, row)
+            selected_ids = {message.id for message in path.messages}
+            if target.id == row.selected_leaf_id:
+                raise InvalidParentError("The current leaf is already selected")
+
+            if request.action == GraphAction.BRANCH_FROM_HERE:
+                if target.id not in selected_ids:
+                    raise InvalidParentError(
+                        "A branch point must be on the selected path"
+                    )
+            else:
+                if target.id in selected_ids:
+                    raise InvalidParentError(
+                        "Use branching for an older selected-path persona node"
+                    )
+                child_id = session.scalar(
+                    select(MessageModel.id)
+                    .where(
+                        MessageModel.conversation_id == scope.conversation_id,
+                        MessageModel.continuity_id == scope.continuity_id,
+                        MessageModel.parent_id == target.id,
+                    )
+                    .limit(1)
+                )
+                if child_id is not None:
+                    raise InvalidParentError(
+                        "Select the exact saved descendant leaf, not an ambiguous future"
+                    )
+
+            row.selected_leaf_id = target.id
+            session.flush()
+            return self._selected_path(session, scope, row)
+
     def configure(
         self, scope: ConversationScope, settings: ConversationSettings
     ) -> None:
@@ -374,7 +464,10 @@ class DbConversationRepository:
                 raise AttemptConflictError("Generation defaults changed; prepare again")
 
             history = self._history(session, scope, row)
-            if any(attempt.status in {"pending", "streaming"} for attempt in history.attempts):
+            if any(
+                attempt.status in {"pending", "streaming"}
+                for attempt in history.attempts
+            ):
                 raise AttemptConflictError("An attempt is already active")
             if row.selected_leaf_id != expected_selected_leaf_id:
                 raise AttemptConflictError("History changed; prepare the prompt again")

@@ -2,6 +2,7 @@
 
 from collections.abc import Generator, Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from uuid import UUID
 
 from chat_buddy.characters.application.context_service import (
@@ -16,12 +17,17 @@ from chat_buddy.characters.domain import (
     AttemptConflictError,
     ContextCapacityError,
     ContinuityRepository,
+    ConversationGraphRepository,
+    ConversationGraphView,
     ConversationHistory,
     ConversationRepository,
     ConversationScope,
     ConversationSettings,
     EffectiveGeneration,
     GenerationAttempt,
+    GraphAction,
+    GraphActionRequest,
+    GraphNodeView,
     IdentityRepository,
     IncompleteTurnError,
     ModelDescriptor,
@@ -29,9 +35,16 @@ from chat_buddy.characters.domain import (
     PersonaRepository,
     PromptMessage,
     RetryAvailability,
+    SelectedPath,
     SubmittedInput,
     SummaryRepository,
 )
+
+
+class _ConversationPersistence(
+    ConversationRepository, ConversationGraphRepository, Protocol
+):
+    """Combined persistence capabilities required by Ongoing orchestration."""
 
 
 class ConversationService:
@@ -39,7 +52,7 @@ class ConversationService:
 
     def __init__(
         self,
-        conversations: ConversationRepository,
+        conversations: _ConversationPersistence,
         continuities: ContinuityRepository,
         identities: IdentityRepository,
         personas: PersonaRepository,
@@ -109,6 +122,142 @@ class ConversationService:
         """
 
         return self._conversations.history(scope)
+
+    def inspect_graph(self, scope: ConversationScope) -> ConversationGraphView:
+        """Return a detached deterministic view of every saved future.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Graph nodes with alternatives, retry counts, selection, and current
+            branch availability.
+        """
+
+        graph = self._conversations.graph(scope)
+        history = self._conversations.history(scope)
+        continuity = self._continuities.get(
+            scope.identity_id, scope.persona_id, scope.continuity_id
+        )
+        selected_ids = {message.id for message in graph.selected_path().messages}
+        alternatives_by_parent: dict[UUID, tuple[UUID, ...]] = {}
+        for node in graph.nodes:
+            if node.role != "persona" or node.parent_id is None:
+                continue
+            alternatives_by_parent.setdefault(node.parent_id, ())
+            alternatives_by_parent[node.parent_id] += (node.id,)
+        blocked = continuity.lifecycle != "active" or any(
+            attempt.status in {"pending", "streaming"} for attempt in history.attempts
+        )
+        views = []
+        for node in graph.nodes:
+            alternatives = (
+                alternatives_by_parent.get(node.parent_id, ())
+                if node.role == "persona" and node.parent_id is not None
+                else ()
+            )
+            selected_leaf = node.id == graph.selected_leaf_id
+            views.append(
+                GraphNodeView(
+                    message=node,
+                    alternative_ids=alternatives,
+                    retry_count=max(len(alternatives) - 1, 0),
+                    selected=node.id in selected_ids,
+                    selected_leaf=selected_leaf,
+                    branchable=(
+                        not blocked
+                        and node.role == "persona"
+                        and node.id in selected_ids
+                        and not selected_leaf
+                    ),
+                )
+            )
+        return ConversationGraphView(
+            scope=scope,
+            selected_leaf_id=graph.selected_leaf_id,
+            nodes=tuple(views),
+        )
+
+    def select_alternative(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID,
+    ) -> SelectedPath:
+        """Select an exact off-path persona alternative or saved future leaf.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact alternative or saved descendant leaf.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected root-to-leaf ancestry.
+        """
+
+        return self._conversations.apply_action(
+            GraphActionRequest(
+                scope=scope,
+                action=GraphAction.ALTERNATIVE_SELECTION,
+                expected_selected_leaf_id=expected_selected_leaf_id,
+                target_message_id=message_id,
+            )
+        )
+
+    def select_saved_future(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID,
+    ) -> SelectedPath:
+        """Restore one exact saved future leaf without guessing descendants.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact saved descendant leaf.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected root-to-leaf ancestry.
+        """
+
+        return self.select_alternative(scope, message_id, expected_selected_leaf_id)
+
+    def branch_from_here(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID,
+    ) -> SelectedPath:
+        """Select an older persona node on the current path for the next send.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact older selected-path persona node.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Truncated selected ancestry without deleting its prior future.
+        """
+
+        return self._conversations.apply_action(
+            GraphActionRequest(
+                scope=scope,
+                action=GraphAction.BRANCH_FROM_HERE,
+                expected_selected_leaf_id=expected_selected_leaf_id,
+                target_message_id=message_id,
+            )
+        )
 
     def resume(self, scope: ConversationScope) -> ConversationHistory:
         """Reconcile attempts without progress for five minutes, then reload.
@@ -205,7 +354,9 @@ class ConversationService:
         """
 
         history = self.history(scope)
-        if any(attempt.status in {"pending", "streaming"} for attempt in history.attempts):
+        if any(
+            attempt.status in {"pending", "streaming"} for attempt in history.attempts
+        ):
             raise AttemptConflictError("An attempt is already active")
 
         tail = history.messages[-1] if history.messages else None
