@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-06
+Last updated: 2026-10-24
 
 ## Purpose and scope
 
@@ -218,7 +218,15 @@ Starting a continuity:
 - Creates an independent starting relationship without invented shared events.
 - Is idempotent for an identical confirmation and rejects conflicting reuse.
 - Does not transfer conversation, memory, relationship, or adaptation state from
-  another continuity.
+  another continuity unless it is the explicit remapped Storyline fork below.
+
+A confirmed Storyline start also supplies its user-authored name and initial
+scene. The initial scene owns a title, setup, fixed response-style snapshot,
+conversation graph, and summary lineage. All confirmed fields participate in
+idempotency. An identity/persona pair may own at most one active Storyline. Archival
+leaves its scenes and memory read-only but permits a fresh, independent Storyline
+with a new confirmation and starting relationship. The same pair may independently
+own an Ongoing continuity.
 
 Archiving a continuity is explicit and makes it permanently read-only. It does not
 unfreeze profiles or create a replacement.
@@ -230,12 +238,18 @@ Every continuity has exactly one mode:
 - **Ongoing** is one continuous conversation. At most one Ongoing continuity is
   active for an identity/persona pair. It uses rolling summaries and does not
   extract long-term memory.
-- **Storyline** is a named, chronologically ordered sequence of scenes. Scene order
-  freezes when interaction begins. A scene may use eligible memories from itself
-  and earlier scenes, never from later scenes.
-- **Timeline** is a sequence of local calendar-day conversations. It has at most
-  one conversation per represented date, creates no empty days, and keeps resolved
-  historical dates immutable.
+- **Storyline** is a named, chronologically ordered sequence of named scenes. Its
+  initial scene is created with the continuity. The latest scene is the only
+  normally writable scene; after it has a complete exchange and no incomplete
+  attempt, the user may resume it or append one next scene. Scenes cannot be
+  pre-created, inserted, or reordered, so at most the latest scene is empty. Each
+  scene's setup freezes on its own first user message; its title remains editable
+  presentation metadata and never enters a prompt. A scene may use eligible
+  memories from itself and earlier scenes, never from later scenes.
+- **Timeline** is a sequence of untitled local-calendar-day scenes. It has at most
+  one conversation per represented date, creates a day with its first user input
+  and attempt rather than as a placeholder, and keeps resolved historical dates
+  immutable.
 
 Timeline closure uses the continuity's IANA timezone. The current local day is
 writable; a past day is closed and read-only, including when closure is first
@@ -262,6 +276,12 @@ for context and downstream derivation.
   or persona adaptation.
 - Ongoing branches in place.
 - Changing a Storyline scene with dependent later scenes forks the Storyline.
+- Because a Storyline fork preserves the active source while creating another
+  active future, it creates a distinct pair by exactly duplicating at least one
+  source profile. It copies only ordered scene metadata and selected conversation
+  paths through the chosen point, assigns new continuity-owned identifiers, remaps
+  compatible summary and completed-attempt provenance, excludes later scenes and
+  alternatives, and changes only the fork.
 - A closed Timeline day cannot retry or branch in place; an alternate past requires
   a Timeline fork.
 
@@ -273,17 +293,48 @@ conversation-wide active row.
 
 ### Characters memory and relationship state
 
-Characters memory belongs to one continuity and records its source, occurrence
-time, learned time, lifecycle, and branch provenance. A memory is eligible only
-when it:
+Storyline memory belongs to one continuity. A logical fact has a stable identity
+and an immutable revision lineage. Exactly one revision is current and active or
+excluded; older revisions are superseded. Extraction creates an active revision,
+reinforcement adds distinct evidence without changing the revision, and an
+unambiguous automatic change may supersede only an active extracted revision.
+User correction may change subject and content, creates a user-authored active
+revision, and preserves the corrected revision's source and temporal provenance.
+Exclusion and reactivation each create a revision while retaining content and
+provenance; an excluded memory must be reactivated before correction. Every
+management change names the expected current revision. Hard deletion removes the
+complete lineage, evidence, and associated conflicts without a tombstone.
+
+Every extracted revision and reinforcement identifies its source scene, complete
+selected turn, persona-message checkpoint, extraction configuration, and creation
+time. Occurrence position is the ordered scene where the asserted event or state
+occurred. Learned position is the source scene where the persona learned it, and
+cannot precede occurrence. Both use immutable scene order for comparison. A
+memory is eligible only when it:
 
 - Belongs to the current continuity.
 - Comes from the selected branch or an applicable ancestor.
-- Is not from the future relative to the current scene or Timeline day.
+- Has current-content source evidence on the selected ancestry.
+- Has occurrence and learned positions no later than the target scene.
 - Is active and not excluded.
 
 Extraction occurs only after a complete selected turn. Users can inspect, correct,
-exclude, reactivate, and permanently delete extracted interpretations.
+exclude, reactivate, and permanently delete extracted interpretations. Switching
+away from the current revision's source branch makes it ineligible without
+deleting it; switching back restores eligibility. A deselected reinforcement does
+not invalidate content whose originating evidence remains selected.
+
+An explicit Storyline fork may copy an eligible active lineage only when its
+originating evidence is on the copied selected histories. The fork remaps copied
+source and temporal provenance into a new independent lineage owned by the fork's
+distinct profile pair and copies only supporting evidence whose source was also
+copied. Excluded or future memory and unresolved conflicts do not cross the fork.
+No continuity-owned row is shared.
+
+Stage 6 provides no source-scene, conversation, or message deletion. Any future
+source-deletion workflow must reject deletion while memory provenance refers to
+the source. Archival preserves those records. Hard deletion of a logical memory
+removes its own provenance but does not delete its sources.
 
 Relationship state belongs to one identity, persona, and continuity. It separates:
 
@@ -386,6 +437,12 @@ Persona core
 Each mode owns its eligibility policy. Eligibility, token budgeting, summary
 generation, and provider invocation remain separate responsibilities.
 
+Storyline response context uses that general order with the scene's fixed response
+style and only that scene's compatible summary and selected-path messages. Other
+scene transcripts and titles are not short-term context. Response-memory selection
+has its own budget and strategy version; optional memories never displace required
+prompt blocks.
+
 Ongoing summary revisions are continuity- and conversation-scoped. They cover only
 complete selected turns and record their predecessor, checkpoint, effective
 summary generation, and creation time. Unmatched user messages and incomplete
@@ -397,9 +454,43 @@ After a complete selected turn, eligible modes may extract memory and ask the
 configured versioned strategy for structured relationship or persona proposals.
 The application validates and persists accepted effects with source provenance.
 
-Changing the selected branch or correcting source interpretation rebuilds affected
-derived state from eligible evidence. Unselected alternatives cannot continue to
-influence context, memory, relationship projections, or persona adaptation.
+Storyline memory extraction has one retryable effect per source persona message.
+It moves from reserved to terminal no-change or applied, cannot roll back the
+visible turn, and cannot duplicate a terminal effect. Failures leave the same
+effect retryable. Selection first builds an immutable, dedicated-budget snapshot
+containing identity and persona labels, starting relationship, scene setup,
+compatible summary, recent selected-path turns,
+eligible memories, and the exact source turn marked as new evidence. Mandatory
+ownership and source blocks must fit; optional records are selected whole and
+deterministically. Extraction selection and response-memory selection remain
+separate versioned strategies.
+
+The versioned extractor returns no change or a bounded delta of create, reinforce,
+supersede, and conflict operations. Each non-empty operation cites the exact new
+source turn and can target only opaque current-memory identifiers supplied in the
+snapshot. Prior context may disambiguate the new evidence but cannot independently
+support a new assertion. The application rejects the entire delta for stale,
+foreign, omitted, excluded, duplicate, contradictory, unsupported, or over-limit
+operations. It alone may create a lineage, add unchanged evidence, supersede an
+active extracted revision, or record a conflict. A conflict preserves the current
+revision and its eligibility; proposed conflicting content never enters prompts.
+Automatic extraction never supersedes user-authored memory.
+
+Conflicts begin unresolved and retain proposed content, source evidence, and the
+current revision observed during validation. Explicit dismissal against that
+expected revision is their only state transition and keeps the current memory.
+User correction remains a separate memory transition.
+
+Extraction effects and derived memory record selector, extractor, and prompt
+schema versions together with provider, model, effective configuration, source
+checkpoint, and time. Selection, extraction, and later consolidation or ranking
+may evolve independently without changing ownership, evidence, or temporal rules.
+
+Changing the selected branch recomputes memory eligibility at read time without
+rewriting its lineage. Derived relationship and persona projections rebuild from
+eligible evidence when those capabilities are present. Unselected alternatives
+cannot continue to influence context, memory, relationship projections, or persona
+adaptation.
 
 Response style changes apply at a message boundary and affect only subsequent
 persona responses. They never rewrite prior messages, facts, memories, or
@@ -429,11 +520,13 @@ Important transaction boundaries include:
 - Correcting, excluding, reactivating, or deleting memory.
 - Applying a validated relationship or persona proposal and its projection.
 - Selecting a Characters branch or continuity fork.
+- Applying one validated Storyline memory delta and its terminal extraction
+  effect.
 
 Optimistic revision checks reject stale authored edits and reviewed starts.
 Database uniqueness and row locking enforce invariants that must survive concurrent
 processes, including active-continuity limits, open-attempt limits, summary
-replacement, archival races, and retry limits.
+replacement, active Storyline-pair uniqueness, archival races, and retry limits.
 
 Derived records retain enough provenance to explain and rebuild their state.
 Deletion respects ownership: deleting one area's record never queries or mutates

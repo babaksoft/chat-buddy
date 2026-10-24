@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-10-07
+Last updated: 2026-10-24
 
 ## How to use this plan
 
@@ -166,7 +166,7 @@ or service participates in the workflow.
 Before Stage 5, replace the combined Characters prototype screen with focused
 identity, persona, continuity-navigation, start-review, and Ongoing chat pages.
 Deliver this work through the small slices in the
-[Characters UX hardening plan](work/characters-ux/PLAN.md).
+[Characters UX hardening plan](work/pending/06-improve-characters-flow.md).
 
 ## Stage 5 — Add Characters retry and branching
 
@@ -189,9 +189,11 @@ application tests.
 
 ## Stage 6 — Add Storylines and continuity-scoped memory
 
-- Add named Storylines with chronologically ordered scenes.
-- Store scene setup separately from title and response style and lock scene order
-  after interaction begins.
+- Allow at most one active named Storyline per identity/persona pair; archival
+  permits a fresh independent Storyline while retaining read-only history.
+- Start with one scene and append only the next named scene after the latest has a
+  complete exchange; do not pre-create, insert, or reorder scenes.
+- Store scene setup separately from title and fixed response style.
 - Add provenance-aware Characters memory scoped to a continuity and selected
   branch.
 - Track source message, occurrence time, learned time, and active, superseded,
@@ -199,7 +201,8 @@ application tests.
 - Extract memory only after a complete turn and enforce as-of queries so a scene
   cannot see future knowledge.
 - Add inspection, correction, exclusion, and hard-deletion UI.
-- Fork the Storyline when branching an older scene with dependent scenes.
+- Fork an older scene with dependents only under a distinct pair created by exact
+  source-profile duplication.
 
 **Complete when:** Storylines and their memories are isolated, temporal rules
 hold, corrections immediately affect context, and no Characters memory is

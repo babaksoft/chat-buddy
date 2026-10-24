@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
+- Last revised: 2026-10-24
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
 
 ## Context
@@ -42,12 +43,16 @@ and a closed Timeline day return a fork-required decision. Missing or contradict
 mode facts also require a fork; persistence for those forks belongs to the stages
 that introduce Storylines and Timelines.
 
+A Storyline fork follows ADR 025. Because it leaves the active source Storyline
+unchanged and creates another active future, it uses a distinct pair created
+through exact authored profile duplication before copying selected history.
+
 ## Consequences
 
 - Prior paths remain recoverable rather than being overwritten.
 - Services must preserve the selected path when assembling context or deriving
   downstream state.
-- Mode-specific branching rules apply: Chat branches in place; the latest
+- Mode-specific branching rules apply: Ongoing branches in place; the latest
   Storyline scene branches in place while an older changed scene forks its
   Storyline; an open Timeline day branches in place while a closed day requires
   a Timeline fork.
@@ -64,4 +69,4 @@ that introduce Storylines and Timelines.
 - Selecting a retry alternative changes future context and extraction; the
   unselected alternative remains stored but has no downstream effect.
 - Branching an older Storyline scene with later scenes preserves the old future
-  by creating a separate Storyline continuity.
+  by creating a separate Storyline under a distinct profile pair.

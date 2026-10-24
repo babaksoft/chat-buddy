@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 6 — Storylines and continuity-scoped memory.
+Next delivery focus: Stage 6, Slice 2 — executable Storyline and scene contracts.
 
 Deferred engineering:
 

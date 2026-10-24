@@ -2,11 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-09-09
+- Last revised: 2026-10-24
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
 
 ## Context
 
-Chat, Storyline, and Timeline have different temporal and narrative semantics.
+Ongoing, Storyline, and Timeline have different temporal and narrative semantics.
 Using one global memory policy would reveal future or unrelated knowledge to the
 model.
 
@@ -14,7 +15,7 @@ model.
 
 Assemble model context in this stable order: persona core, identity, relationship
 intent and state, eligible memories, scene setup and current state, response
-style, then conversation summary and recent selected-branch messages. Keep Chat
+style, then conversation summary and recent selected-branch messages. Keep Ongoing
 free of extracted long-term memory; use its rolling summary only for context
 compression. Extract Storyline and Timeline memories after complete turns, and
 admit only active, in-scope, temporally eligible memories from the selected
@@ -32,8 +33,8 @@ branch or its applicable ancestors.
 
 - Inject all stored memories into every prompt — not selected because it leaks
   information across continuities, branches, and time.
-- Extract long-term memory for Chat — not selected because Chat's relationship
-  development and compression remain local to that chat continuity.
+- Extract long-term memory for Ongoing — not selected because its relationship
+  development and compression remain local to that continuity.
 
 ## Behavioral examples
 

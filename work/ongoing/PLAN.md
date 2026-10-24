@@ -1,6 +1,6 @@
 # Stage 6 Execution Plan — Storylines and continuity-scoped memory
 
-Status: Ready
+Status: In progress
 
 Last updated: 2026-10-24
 
@@ -11,7 +11,10 @@ long-term Characters memory for Storyline only. Each scene owns an independent
 conversation graph, setup, title, and fixed Stage 6 response-style snapshot.
 Only selected, temporally eligible memory from the same continuity may enter a
 prompt. Users can inspect and manage memory, and branching an older scene with
-later dependents creates a separate Storyline without changing the original.
+later dependents creates a separate Storyline under a distinct duplicated profile
+pair without changing the original. A profile pair owns only one active Storyline
+at a time, and scenes are appended only when the latest has a complete
+exchange. Archival permits a fresh independent Storyline for the same pair.
 Memory extraction is context-aware: it interprets each new complete turn against
 the selected scene history and current eligible memory, then proposes a bounded
 delta instead of blindly emitting an unrelated set of facts.
@@ -25,30 +28,34 @@ adaptation, and editable response-style controls remain deferred.
 ## Proposed delivery contract
 
 - A Storyline is a Characters continuity and therefore has one immutable identity,
-  persona, mode, starting relationship, lifecycle, and memory boundary. Multiple
-  active Storylines may exist for the same identity/persona pair; the active-pair
-  uniqueness rule remains specific to Ongoing.
-- A Storyline has a user-authored name and one or more scenes. A scene has its own
+  persona, mode, starting relationship, lifecycle, and memory boundary. An
+  identity/persona pair may own at most one active Storyline. Archival retains its
+  history and memory read-only but releases the pair for a fresh Storyline with an
+  independent starting relationship and memory boundary. The same pair may
+  independently own an Ongoing continuity.
+- A Storyline has a user-authored name and starts with one scene. A scene has its own
   stable identifier, chronological position, title, setup, fixed response-style
   snapshot, conversation graph, and branch-addressable summary lineage.
-- Scene position is an authored narrative order, not message creation time. Before
-  interaction, scenes may be reordered with an expected Storyline revision. Once
-  any scene has committed its first user message, existing scene order is frozen;
-  later scenes may only be appended. Scene setup freezes when that scene receives
-  its first user message so prior prompts cannot be silently reinterpreted. A
-  title remains editable presentation metadata and never enters prompts.
+- Scene order is append-only narrative chronology. The latest scene is the only
+  normally writable scene. A next scene may be appended only after the latest has
+  a complete selected exchange and has no unmatched input or open attempt. Scenes
+  cannot be pre-created, inserted, reordered, or deleted, so at most the latest is
+  empty. Scene setup freezes with its first user message. A title remains editable
+  presentation metadata and never enters prompts.
 - Storyline start uses the reviewed profile revisions and relationship selection
   already required for Ongoing. It atomically freezes newly used profiles, creates
   the named continuity and initial scene, and is idempotent by confirmation
-  identifier. Ongoing availability does not block a Storyline start.
+  identifier. Ongoing availability and archived Storylines do not block a start,
+  but an existing active Storyline for the pair does.
 - The latest scene uses Stage 5 retry, alternative-selection, and in-place branch
   behavior. Acting from an older scene that has a later dependent scene requires
-  an explicit Storyline fork. The fork copies the selected histories and scene
-  metadata through the chosen source point into a new continuity with new owned
-  identifiers, records source provenance, and leaves the source Storyline
-  untouched. It does not copy later scenes or unselected alternatives. Eligible
-  memory backed by copied evidence becomes an independent remapped lineage in the
-  fork; no mutable or continuity-owned row is shared.
+  an explicit Storyline fork. The reviewed fork exactly duplicates at least one
+  source profile to form a distinct pair with no Storyline, then copies the
+  selected histories and scene metadata through the chosen source point into a
+  new continuity with new owned identifiers. It leaves the source untouched and
+  copies no later scene or unselected alternative. Eligible memory backed by
+  copied evidence becomes an independent remapped lineage; no mutable or
+  continuity-owned row is shared.
 - A Storyline memory is a logical fact with a stable identifier and immutable
   revision lineage. The current revision is active or excluded; correction
   supersedes the prior revision, reactivation creates a new active revision, and
@@ -97,12 +104,14 @@ adaptation, and editable response-style controls remain deferred.
   scene setup, fixed response style, then the compatible scene summary and recent
   selected-path messages. Eligibility, budgeting, summarization, extraction, and
   provider invocation remain separate responsibilities.
-- Memory never crosses a continuity or enters Ongoing or Chat. No Stage 6 table,
-  query, prompt, service, migration, or UI operation may import or inspect Chat.
+- Memory crosses a continuity only through the reviewed fork and copied evidence
+  rules above; it never enters Ongoing or Chat. No Stage 6 table, query, prompt,
+  service, migration, or UI operation may import or inspect Chat.
 
-Slice 1 must verify these proposed details against ADRs 006, 008, 009, and 013 and
-record any adjustment before persistence work begins. If an accepted decision
-changes, supersede it rather than silently implementing a different rule.
+Slice 1 records these details in ADRs 025, 031, and 032 and verifies them against
+ADRs 006, 008, 009, and 013 before persistence work begins. If an accepted
+decision changes, revise or supersede it rather than silently implementing a
+different rule.
 
 ## Delivery and verification rules
 
@@ -151,7 +160,7 @@ same cap.
 | 2 | Add executable Storyline and scene contracts | 1 | None |
 | 3 | Add executable memory and contextual-delta contracts | 1 | None |
 | 4 | Persist named Storylines and ordered scene ownership | 2 | Storyline and scene migration |
-| 5 | Start, configure, append, reorder, resume, and archive Storylines | 4 | Existing Storyline operations only |
+| 5 | Start, resume, append the next scene, and archive Storylines | 4 | Existing Storyline operations only |
 | 6 | Converse and summarize within one scene | 4–5 | Existing conversation and summary operations |
 | 7 | Branch latest scenes and structurally fork older scenes | 4–6 | Fork provenance in the Storyline migration |
 | 8 | Persist memory lineages, evidence, effects, and conflicts | 3–4 | Memory migration |
@@ -176,23 +185,25 @@ fork slices similarly separate graph copying from later memory remapping.
 
 ### Slice 1 — Record the Storyline and memory decisions
 
-Status: Pending
+Status: Complete
 
-Record the durable choices above in a concise Characters ADR and reconcile the
+Record the durable choices above in focused Characters ADRs and reconcile the
 relevant `DESIGN.md` rules in the same change. In particular, settle initial-scene
-creation, append/reorder locking, fork copy/remapping behavior, logical memory
-revision state, the meaning of occurrence and learned positions, correction
-provenance, extraction idempotency, and whether deletion of source records is
-allowed while memory provenance exists. Also fix the extraction snapshot blocks,
-dedicated budget behavior, allowed delta vocabulary, evidence requirements,
-application-side conflict rules, and strategy-version provenance. Do not borrow
-Chat ADRs 017–020 as Characters contracts.
+creation, active-pair uniqueness and replacement after archive, append eligibility,
+fork copy/remapping
+behavior, logical memory revision state, the meaning of occurrence and learned
+positions, correction provenance, extraction idempotency, and whether deletion of
+source records is allowed while memory provenance exists. Split scene lifecycle,
+memory lifecycle, and contextual extraction into focused ADRs. Also fix extraction
+snapshot blocks, dedicated budget behavior, delta vocabulary, evidence rules,
+application-side conflicts, and strategy provenance. Do not borrow Chat ADRs
+017–020 as Characters contracts.
 
 Verification:
 
 - ADR and design text agree with ADRs 006, 008, 009, and 013 and contain no Stage 7
   relationship/persona evolution or Stage 8 Timeline/style behavior.
-- The decision defines every state transition, temporal comparison, fork-copy
+- The decisions define every state transition, temporal comparison, fork-copy
   rule, delta operation, protected-memory rule, and extension seam used by later
   slices without prescribing repository or provider mechanics.
 - Run `git diff --check -- DESIGN.md docs/decisions/` and verify relative links.
@@ -204,18 +215,19 @@ behavior in repositories, provider adapters, or UI.
 
 Status: Pending
 
-Add immutable Storyline, scene, ordering, fork-source, and mode-action values with
-complete validation and package exports. Extend the fail-closed mode policy so real
-Storyline facts produce `in_place` or `fork_required` without persistence guesses.
-Define repository protocols at the owning package boundary and typed failures for
-stale Storyline revisions, locked order/setup, invalid scene ownership, stale
-selected leaves, and fork conflicts. Add no SQLAlchemy models or services.
+Add immutable Storyline, scene, append-eligibility, fork-source, and mode-action
+values with complete validation and package exports. Extend the fail-closed mode
+policy so real Storyline facts produce `in_place` or `fork_required` without
+persistence guesses. Define repository protocols at the owning package boundary
+and typed failures for an active Storyline conflict, stale Storyline revisions,
+locked setup, an incomplete latest scene, invalid scene ownership, stale selected
+leaves, and fork conflicts. Add no SQLAlchemy models or services.
 
 Verification:
 
-- Unit tests cover field bounds, immutability, ordering and setup-lock transitions,
-  append-only behavior after locking, fork inputs, and every Storyline branch-policy
-  outcome.
+- Unit tests cover field bounds, immutability, active-pair uniqueness, archived
+  replacement, immutable append order, next-scene eligibility, setup locking, fork
+  inputs, and every Storyline branch-policy outcome.
 - Protocol and architecture tests prove the contracts import neither application,
   infrastructure, UI, nor Chat.
 
@@ -254,24 +266,26 @@ Status: Pending
 
 Generalize continuity persistence so Ongoing retains its sole conversation while
 a Storyline owns multiple scene conversations. Add Storyline metadata, optimistic
-revision and order-lock state, scene metadata and ordinal, fixed Stage 6 style,
-and optional fork provenance. Create every scene conversation with the same full
-identity/persona/continuity ownership used by Stage 5 graphs. Keep Ongoing rows and
-behavior unchanged and continue rejecting Timeline creation.
+revision, active profile-pair ownership, scene metadata and immutable ordinal,
+fixed Stage 6 style, and optional fork provenance. Create every scene conversation
+with the same full identity/persona/continuity ownership used by Stage 5 graphs.
+Keep Ongoing rows and behavior unchanged and continue rejecting Timeline creation.
 
 Implement Characters-owned repository protocols and `Db` implementations for
 owned Storyline and scene reads, deterministic listing, guarded metadata changes,
-append/reorder, setup locking, and atomic initial creation. Enforce unique scene
-positions per Storyline, cross-row ownership, append-only order after locking, and
-mode/lifecycle constraints in PostgreSQL as well as application preflight.
+eligible next-scene append, setup locking, and atomic initial creation. Enforce one
+active Storyline per identity/persona pair, unique immutable scene positions,
+cross-row ownership, latest-scene append rules, and mode/lifecycle constraints in
+PostgreSQL as well as application preflight.
 
 Verification:
 
 - Repository tests round-trip every Storyline and scene field and reject foreign
-  continuity, wrong mode, duplicate order, stale revision, archived writes, and
-  cross-owner conversation references.
-- PostgreSQL concurrency tests show one reorder or append wins at a revision and
-  first interaction serializes correctly with setup/order locking.
+  continuity, wrong mode, active-pair conflicts, duplicate order, ineligible append,
+  stale revision, archived writes, and cross-owner conversation references.
+- PostgreSQL concurrency tests show one active start per pair, permit a start after
+  archive, and let one eligible append win at a revision while first interaction
+  serializes with setup locking.
 - Migration tests preserve all Stage 5 Ongoing graphs, attempts, summaries, and
   provenance while creating no Chat object or cross-schema reference.
 
@@ -282,25 +296,27 @@ its existing repository and migration suite without UI changes.
 
 Status: Pending
 
-Add reviewed Storyline start, initial-scene definition, resume, deterministic
-identity/persona grouping, metadata editing, pre-interaction reordering, scene
+Add reviewed Storyline start, initial-scene definition, latest-scene resume,
+deterministic identity/persona grouping, metadata editing, guarded next-scene
 append, and permanent archive operations. Reuse the existing relationship default
 resolution and transactional profile-freezing rules through mode-neutral
 application helpers rather than duplicating Ongoing logic. Make confirmation
 idempotency include all Storyline start fields.
 
 Expose mode-specific start availability: an active Ongoing blocks only another
-Ongoing, while Storyline creation permits multiple active independent
-continuities. Archive remains idempotent, makes all owned scenes read-only, and
-never unfreezes either profile.
+Ongoing, while only an active Storyline blocks another Storyline for that pair.
+Offer resume-latest or append-next only when their guards allow it. Archive remains
+idempotent, makes all scenes and memory read-only, releases the pair for a fresh
+independent Storyline, and never unfreezes either profile.
 
 Verification:
 
 - Service and integration tests cover reviewed starts, stale profiles, duplicate
-  submissions, conflicting confirmation reuse, multiple active Storylines, scene
-  changes before interaction, append-only behavior afterward, and archives.
-- PostgreSQL races prove starts freeze profiles atomically and competing scene
-  mutations cannot violate order.
+  submissions, conflicting confirmation reuse, active-pair uniqueness, fresh start
+  after archive without history or memory transfer, latest resume,
+  empty/incomplete-scene append rejection, metadata changes, and archives.
+- PostgreSQL races prove starts freeze profiles atomically and competing next-scene
+  appends cannot create multiple empty scenes or violate order.
 - Ongoing start availability and lifecycle tests remain unchanged.
 
 Complete when Storylines can be managed entirely through application services
@@ -315,7 +331,7 @@ Storyline adapter that validates the scene, lifecycle, selected leaf, setup lock
 and latest/older-scene action policy before reserving work. Reuse the Stage 5 graph,
 attempt, retry, exact-future selection, provenance, and branch-addressable summary
 mechanisms. Keep provider calls outside transactions and make the first committed
-user input atomically lock scene setup and existing Storyline order.
+user input atomically lock scene setup. Only the latest scene accepts normal writes.
 
 Add a Storyline prompt and context eligibility/budgeting path with no memory input
 yet. It includes the scene setup and fixed Stage 6 style, uses only the scene's
@@ -340,8 +356,12 @@ Status: Pending
 
 Connect actual Storyline persistence to the Stage 5 mode-policy seam. Keep retry,
 alternative selection, and branching in place for the latest scene. When a chosen
-scene has later dependents, return a reviewed fork preview and atomically create a
-new Storyline at the exact expected source leaf and Storyline revision.
+scene has later dependents, return a reviewed fork preview. The user confirms an
+exact authored duplicate of at least one source profile, producing a distinct
+identity/persona pair with no Storyline; then atomically create the fork at the
+expected source leaf and Storyline revision. The fork uses a new user-authored
+name, retains the source starting relationship, and freezes newly duplicated
+profiles in that transaction.
 
 Copy only the contractually selected scene metadata and selected graph ancestry
 through the branch point, assigning new continuity-owned identifiers and retaining
@@ -355,11 +375,11 @@ every source record byte-for-byte unchanged.
 Verification:
 
 - Unit and integration tests distinguish latest-scene in-place actions from
-  older-scene forks and reject stale, archived, foreign, contradictory, or
-  incomplete sources before writes.
+  older-scene forks and reject stale, archived, foreign, contradictory, revised
+  duplicate profiles, occupied target pairs, or incomplete sources before writes.
 - Fork tests compare exact copied paths and remapped provenance, prove the original
-  selected leaves and futures remain unchanged, and resume both Storylines after
-  restart.
+  selected leaves and futures remain unchanged, and resume both Storylines under
+  their distinct pairs after restart.
 - PostgreSQL races permit at most one idempotent fork per request and prevent a
   source change from producing a mixed snapshot.
 
@@ -568,19 +588,21 @@ Complete when each Storyline response sees exactly the eligible memory that fits
 Status: Pending
 
 Add dedicated **Storylines** and **New Storyline** routes. Extend identity → persona
-navigation with named active and archived Storylines and ordered scenes while
-keeping Ongoing distinct. Provide the reviewed relationship/start flow, initial
-scene definition, resume/archive actions, and append/reorder/title/setup controls
-only while their backend rules permit them. Do not expose chat, fork, or memory
-controls yet.
+navigation with the pair's sole active Storyline and clearly separated archived
+Storylines while keeping Ongoing distinct. Provide the reviewed relationship/start
+flow when the pair has no active Storyline, initial-scene definition,
+resume/archive actions, and guarded **Next scene**, title, and setup controls.
+Expose no pre-creation, insertion, or reorder action. Do not expose chat, fork, or
+memory controls yet.
 
 Scope Streamlit state by complete ownership, invalidate stale reviews and forms,
 and prevent reruns from replaying starts or scene mutations.
 
 Verification:
 
-- Streamlit tests cover start review, duplicate submission, navigation, scene
-  ordering/locking, stale revisions, archives, continuity switching, and action
+- Streamlit tests cover start review, duplicate submission, active-pair conflicts,
+  replacement after archive, navigation, resume-last versus next-scene choices,
+  append eligibility, stale revisions, archives, continuity switching, and action
   replay.
 - Integration tests exercise the UI through real application services without
   repository or SQLAlchemy access from widgets.
@@ -594,8 +616,9 @@ Status: Pending
 Add selected-scene chat using the established conversation controls: streaming,
 recovery, retries, alternatives, and exact-future selection. Expose in-place
 branching for the latest scene and a reviewed, explicitly named fork preview for an
-older scene with dependents. Navigate to the returned fork without changing the
-source selection. Keep memory management out of this slice.
+older scene with dependents. The preview clearly creates an exact duplicate source
+profile and a distinct target pair. Navigate to the returned fork without changing
+the source selection. Keep memory management out of this slice.
 
 Disable writes for archived continuities and open attempts, reload stale selected
 leaves, and prevent reruns from replaying generation, retry, selection, or fork
@@ -647,13 +670,14 @@ verified:
   walkthrough, local/external data-flow explanation, and supported Characters
   memory-provider configuration. Remove the current limitation that Characters has
   no extracted long-term memory while stating that Ongoing still does not extract
-  it and Storyline memory never crosses continuities.
+  it and Storyline memory crosses continuities only through a reviewed fork with
+  remapped copied evidence.
 - Reconcile `DESIGN.md` with final Storyline, fork, temporal memory,
   contextual-delta extraction, conflict, lifecycle, and correction behavior;
   update its `Last updated` date and remove superseded statements.
 - Mark Stage 6 complete in root `PLAN.md`, keep Stage 7 as the next delivery stage,
   and update `work/ongoing/TODO.md` without turning either into a release log.
-- Keep the Stage 6 ADR concise and verify every link, command, path, environment
+- Keep the Stage 6 ADRs concise and verify every link, command, path, environment
   variable, default, model name, and claim against the repository.
 
 Run `git diff --check -- README.md DESIGN.md PLAN.md work/ongoing/TODO.md` and
@@ -666,8 +690,10 @@ delivery status remains in the plan files.
 
 Status: Pending
 
-Add a focused acceptance journey that creates multiple Storylines for the same
-profiles, orders and locks scenes, generates and summarizes selected branches,
+Add a focused acceptance journey that creates one Storyline for a pair, archives
+it, starts a fresh independent Storyline for that pair, and creates a simultaneous
+fork only after exact profile duplication. Append scenes one at a time, reject a
+second empty scene, generate and summarize selected branches,
 creates/reinforces/supersedes/conflicts through contextual extraction, manages
 memory, verifies past-scene as-of behavior, switches alternatives, forks an older
 scene, restarts, and resumes both original and fork. Assert exact extraction
@@ -680,8 +706,10 @@ queries, foreign keys, identifiers, prompts, and initialization paths. Record an
 Black timeout or gated smoke test honestly in the handoff.
 
 Complete when Storylines and memories are isolated, temporal and branch rules
-hold, corrections affect the next context, older-scene futures survive forks,
-Ongoing remains memory-free, Chat is unchanged, and all required checks pass.
+hold, each pair owns at most one active Storyline, archived state never enters its
+replacement, at most one latest scene is empty, corrections affect the next
+context, older-scene futures survive under distinct fork pairs, Ongoing remains
+memory-free, Chat is unchanged, and all checks pass.
 
 ## Deferred
 
@@ -693,9 +721,9 @@ Ongoing remains memory-free, Chat is unchanged, and all required checks pass.
   needed for immutable message provenance.
 - Stage 9 owns broad observability, export/deletion hardening, and extraction-readiness
   proof beyond the focused diagnostics required here.
-- Explicit memory transfer between continuities, importing Chat memory, automatic
-  Storyline naming/setup generation, rich graph visualization, branch naming, and
-  merging forks are outside Stage 6.
+- Standalone memory transfer between continuities outside a reviewed Storyline
+  fork, importing Chat memory, automatic Storyline naming/setup generation, rich
+  graph visualization, branch naming, and merging forks are outside Stage 6.
 - Embedding or learned relevance ranking, confidence/salience scoring, typed or
   graph memories, and a separate claim-extraction/consolidation pass are future
   strategy implementations behind the Stage 6 contracts, not baseline behavior.

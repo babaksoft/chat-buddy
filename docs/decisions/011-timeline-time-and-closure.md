@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
+- Last revised: 2026-10-24
 - Scope: Characters area; area boundary clarified by ADR 013
 
 ## Context
@@ -12,11 +13,13 @@ local timezone and remain meaningful after timezone changes or offline periods.
 
 ## Decision
 
-Store UTC timestamps and each conversation's resolved, immutable local date.
-Each Timeline stores an IANA timezone and permits at most one conversation per
-local date. The current local day is writable; after its local boundary passes it
-is closed and read-only, including when closure is detected after the application
-was offline. Timezone changes apply only to future boundaries.
+Store UTC timestamps and each represented day's resolved, immutable local date.
+Each Timeline stores an IANA timezone and permits at most one untitled day scene
+and conversation per local date. Create that day atomically with its first user
+input and attempt; do not persist placeholder days. The current local day is
+writable; after its local boundary passes it is closed and read-only, including
+when closure is detected after the application was offline. Timezone changes apply
+only to future boundaries.
 
 ## Consequences
 
