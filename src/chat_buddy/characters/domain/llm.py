@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PromptMessage(BaseModel):
-    """One ordered provider input, independent of persisted messages.
+    """One ordered provider input.
 
     Attributes:
         role:

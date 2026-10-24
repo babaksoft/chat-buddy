@@ -180,12 +180,15 @@ class SelectedPath(BaseModel):
             if self.selected_leaf_id is not None:
                 raise ValueError("An empty path cannot have a selected leaf.")
             return self
+
         if self.selected_leaf_id != self.messages[-1].id:
             raise ValueError("The selected leaf must be the final path node.")
         if self.messages[0].parent_id is not None or self.messages[0].role != "user":
             raise ValueError("A selected path must start with a root user node.")
+
         if len({message.id for message in self.messages}) != len(self.messages):
             raise ValueError("A selected path cannot contain a cycle.")
+
         for parent, child in zip(self.messages, self.messages[1:], strict=False):
             if child.scope != self.scope or child.parent_id != parent.id:
                 raise ValueError("Each path edge must use the supplied ownership.")
@@ -233,9 +236,11 @@ class ConversationGraph(BaseModel):
             raise ValueError("The selected leaf must exist in the graph.")
         if not self.nodes and self.selected_leaf_id is not None:
             raise ValueError("An empty graph cannot have a selected leaf.")
+
         order = tuple((node.created_at, str(node.id)) for node in self.nodes)
         if order != tuple(sorted(order)):
             raise ValueError("Graph nodes must use deterministic creation ordering.")
+
         for node in self.nodes:
             if node.scope != self.scope:
                 raise ValueError("Every graph node must use the supplied ownership.")
@@ -248,6 +253,7 @@ class ConversationGraph(BaseModel):
                 raise ValueError("Every parent must exist in the same scope.")
             if parent.role == node.role:
                 raise ValueError("Message roles must alternate on every graph edge.")
+
             seen = {node.id}
             ancestor = parent
             while ancestor.parent_id is not None:
@@ -271,12 +277,14 @@ class ConversationGraph(BaseModel):
 
         if self.selected_leaf_id is None:
             return SelectedPath(scope=self.scope, selected_leaf_id=None, messages=())
+
         by_id = {node.id: node for node in self.nodes}
         current = by_id[self.selected_leaf_id]
         reversed_path = [current]
         while current.parent_id is not None:
             current = by_id[current.parent_id]
             reversed_path.append(current)
+
         return SelectedPath(
             scope=self.scope,
             selected_leaf_id=self.selected_leaf_id,
@@ -377,11 +385,13 @@ class ConversationGraphView(BaseModel):
 
         if any(node.message.scope != self.scope for node in self.nodes):
             raise ValueError("Every graph-view node must use the supplied ownership.")
+
         order = tuple(
             (node.message.created_at, str(node.message.id)) for node in self.nodes
         )
         if order != tuple(sorted(order)):
             raise ValueError("Graph-view nodes must use deterministic ordering.")
+
         selected_leaves = tuple(node for node in self.nodes if node.selected_leaf)
         if self.selected_leaf_id is None:
             if selected_leaves:
@@ -435,6 +445,7 @@ class AlternativeGroup(BaseModel):
             for response in self.responses
         ):
             raise ValueError("Alternatives must be owned persona siblings.")
+
         order = tuple(
             (response.created_at, str(response.id)) for response in self.responses
         )

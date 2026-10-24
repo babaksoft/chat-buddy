@@ -459,6 +459,7 @@ class ConversationService:
             ):
                 summary_path_leaf_id = attempt.user_message_id
                 history = history.model_copy(update={"messages": history.messages[:-1]})
+
             prompt = self._prompt(
                 scope,
                 history,
@@ -507,14 +508,18 @@ class ConversationService:
         """
 
         history = self.history(scope)
-        if any(a.status in {"pending", "streaming"} for a in history.attempts):
+        if any(
+            attempt.status in {"pending", "streaming"} for attempt in history.attempts
+        ):
             raise AttemptConflictError("An attempt is already active")
+
         tail = history.messages[-1] if history.messages else None
         unmatched = tail is not None and tail.role == "user"
         if submitted is not None and unmatched:
             raise IncompleteTurnError("Continue the existing unmatched input")
         if submitted is None and not unmatched:
             raise IncompleteTurnError("No incomplete turn exists")
+
         if history.settings is None:
             generation = self._models.resolve_default("response")
             settings = ConversationSettings(
@@ -525,10 +530,12 @@ class ConversationService:
             generation = self._models.resolve(
                 settings.provider, settings.model, "response", settings.requested
             )
+
         self._prompt(
             scope, history, generation, submitted.content if submitted else None
         )
         expected_selected_leaf_id = tail.id if tail is not None else None
+
         return self._conversations.begin(
             scope,
             generation,
@@ -632,6 +639,7 @@ class ConversationService:
         )
         if continuity.lifecycle != "active":
             raise ArchivedContinuityError("Archived continuity is read-only")
+
         persona = self._personas.get(scope.persona_id)
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)

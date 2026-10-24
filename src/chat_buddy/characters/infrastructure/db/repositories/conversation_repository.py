@@ -68,242 +68,6 @@ class DbConversationRepository:
 
         self._factory = session_factory
 
-    def history(self, scope: ConversationScope) -> ConversationHistory:
-        """Read committed history and attempt provenance.
-
-        Args:
-            scope:
-                Complete required ownership.
-
-        Returns:
-            Detached domain snapshot.
-        """
-
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope)
-            return self._history(session, scope, row)
-
-    def selected_path(self, scope: ConversationScope) -> SelectedPath:
-        """Read only the selected root-to-leaf ancestry.
-
-        Args:
-            scope:
-                Complete required ownership.
-
-        Returns:
-            Detached selected path excluding every sibling.
-        """
-
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope)
-            return self._selected_path(session, scope, row)
-
-    def graph(self, scope: ConversationScope) -> ConversationGraph:
-        """Read every immutable node in deterministic creation order.
-
-        Args:
-            scope:
-                Complete required ownership.
-
-        Returns:
-            Detached complete graph inspection snapshot.
-        """
-
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope)
-            nodes = session.scalars(
-                select(MessageModel)
-                .where(
-                    MessageModel.conversation_id == scope.conversation_id,
-                    MessageModel.continuity_id == scope.continuity_id,
-                )
-                .order_by(MessageModel.created_at, MessageModel.id)
-            )
-            return ConversationGraph(
-                scope=scope,
-                selected_leaf_id=row.selected_leaf_id,
-                nodes=tuple(self._node(scope, node) for node in nodes),
-            )
-
-    def alternatives(
-        self, scope: ConversationScope, user_message_id: UUID
-    ) -> AlternativeGroup:
-        """Read completed persona siblings for one owned user node.
-
-        Args:
-            scope:
-                Complete required ownership.
-            user_message_id:
-                Exact shared user parent.
-
-        Returns:
-            Deterministically ordered completed alternatives.
-
-        Raises:
-            InvalidParentError:
-                If the parent is absent, foreign, or not a user node.
-        """
-
-        with self._factory() as session, session.begin():
-            self._owned(session, scope)
-            parent = session.scalar(
-                select(MessageModel).where(
-                    MessageModel.id == user_message_id,
-                    MessageModel.conversation_id == scope.conversation_id,
-                    MessageModel.continuity_id == scope.continuity_id,
-                )
-            )
-            if parent is None or parent.role != "user":
-                raise InvalidParentError(
-                    "Alternative parent must be an owned user node"
-                )
-            siblings = session.scalars(
-                select(MessageModel)
-                .where(
-                    MessageModel.conversation_id == scope.conversation_id,
-                    MessageModel.continuity_id == scope.continuity_id,
-                    MessageModel.parent_id == user_message_id,
-                    MessageModel.role == "persona",
-                )
-                .order_by(MessageModel.created_at, MessageModel.id)
-            )
-            return AlternativeGroup(
-                scope=scope,
-                user_message_id=user_message_id,
-                responses=tuple(self._node(scope, sibling) for sibling in siblings),
-            )
-
-    def select_leaf(
-        self,
-        scope: ConversationScope,
-        message_id: UUID,
-        expected_selected_leaf_id: UUID | None,
-    ) -> SelectedPath:
-        """Select an exact owned persona node under a compare-and-swap guard.
-
-        Args:
-            scope:
-                Complete required ownership.
-            message_id:
-                Exact persona node to select.
-            expected_selected_leaf_id:
-                Last selected leaf observed by the caller.
-
-        Returns:
-            Newly selected root-to-node ancestry.
-
-        Raises:
-            StaleSelectionError:
-                If the selected leaf changed since the caller read it.
-            InvalidParentError:
-                If the target is absent, foreign, or not a persona node.
-        """
-
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope, writable=True)
-            if row.selected_leaf_id != expected_selected_leaf_id:
-                raise StaleSelectionError("Selected conversation path changed")
-            target = session.scalar(
-                select(MessageModel).where(
-                    MessageModel.id == message_id,
-                    MessageModel.conversation_id == scope.conversation_id,
-                    MessageModel.continuity_id == scope.continuity_id,
-                )
-            )
-            if target is None or target.role != "persona":
-                raise InvalidParentError("Selected leaf must be an owned persona node")
-            row.selected_leaf_id = target.id
-            session.flush()
-            return self._selected_path(session, scope, row)
-
-    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
-        """Apply exact-future selection or branching under one ownership lock.
-
-        Args:
-            request:
-                Fully owned graph action with its compare-and-swap guard.
-
-        Returns:
-            Newly selected ancestry.
-
-        Raises:
-            AttemptConflictError:
-                If a generation attempt is active.
-            InvalidParentError:
-                If the target is foreign, ambiguous, or invalid for the action.
-            StaleSelectionError:
-                If the selected leaf changed after the caller observed it.
-        """
-
-        if request.action not in {
-            GraphAction.ALTERNATIVE_SELECTION,
-            GraphAction.BRANCH_FROM_HERE,
-        }:
-            raise ValueError("Only selection and branching are graph actions")
-        if request.target_message_id is None:
-            raise ValueError("A graph action requires an exact target")
-
-        scope = request.scope
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope, writable=True)
-            if row.selected_leaf_id != request.expected_selected_leaf_id:
-                raise StaleSelectionError("Selected conversation path changed")
-            active_attempt = session.scalar(
-                select(GenerationAttemptModel.id)
-                .where(
-                    GenerationAttemptModel.conversation_id == scope.conversation_id,
-                    GenerationAttemptModel.continuity_id == scope.continuity_id,
-                    GenerationAttemptModel.status.in_(["pending", "streaming"]),
-                )
-                .limit(1)
-            )
-            if active_attempt is not None:
-                raise AttemptConflictError("An attempt is already active")
-
-            target = session.scalar(
-                select(MessageModel).where(
-                    MessageModel.id == request.target_message_id,
-                    MessageModel.conversation_id == scope.conversation_id,
-                    MessageModel.continuity_id == scope.continuity_id,
-                    MessageModel.role == "persona",
-                )
-            )
-            if target is None:
-                raise InvalidParentError("Graph target must be an owned persona node")
-
-            path = self._selected_path(session, scope, row)
-            selected_ids = {message.id for message in path.messages}
-            if target.id == row.selected_leaf_id:
-                raise InvalidParentError("The current leaf is already selected")
-
-            if request.action == GraphAction.BRANCH_FROM_HERE:
-                if target.id not in selected_ids:
-                    raise InvalidParentError(
-                        "A branch point must be on the selected path"
-                    )
-            else:
-                if target.id in selected_ids:
-                    raise InvalidParentError(
-                        "Use branching for an older selected-path persona node"
-                    )
-                child_id = session.scalar(
-                    select(MessageModel.id)
-                    .where(
-                        MessageModel.conversation_id == scope.conversation_id,
-                        MessageModel.continuity_id == scope.continuity_id,
-                        MessageModel.parent_id == target.id,
-                    )
-                    .limit(1)
-                )
-                if child_id is not None:
-                    raise InvalidParentError(
-                        "Select the exact saved descendant leaf, not an ambiguous future"
-                    )
-
-            row.selected_leaf_id = target.id
-            session.flush()
-            return self._selected_path(session, scope, row)
-
     def configure(
         self, scope: ConversationScope, settings: ConversationSettings
     ) -> None:
@@ -356,16 +120,22 @@ class DbConversationRepository:
                 and row.generation_settings != settings.model_dump(mode="json")
             ):
                 raise AttemptConflictError("Generation defaults changed; prepare again")
-            history = self._history(session, scope, row)
-            if any(a.status in {"pending", "streaming"} for a in history.attempts):
-                raise AttemptConflictError("An attempt is already active")
-            tail = history.messages[-1] if history.messages else None
             if row.selected_leaf_id != expected_selected_leaf_id:
                 raise AttemptConflictError("History changed; prepare the prompt again")
+
+            history = self._history(session, scope, row)
+            if any(
+                attempt.status in {"pending", "streaming"}
+                for attempt in history.attempts
+            ):
+                raise AttemptConflictError("An attempt is already active")
+
+            tail = history.messages[-1] if history.messages else None
             now = datetime.now(UTC)
             if submitted is not None:
                 if tail is not None and tail.role == "user":
                     raise IncompleteTurnError("Continue the unmatched user message")
+
                 message = MessageModel(
                     conversation_id=scope.conversation_id,
                     continuity_id=scope.continuity_id,
@@ -377,17 +147,18 @@ class DbConversationRepository:
                 session.add(message)
                 session.flush()
                 row.selected_leaf_id = message.id
-                user_id, content = message.id, message.content
+                user_message_id, content = message.id, message.content
             else:
                 if tail is None or tail.role != "user":
                     raise IncompleteTurnError("There is no incomplete turn to continue")
-                user_id, content = tail.id, tail.content
+                user_message_id, content = tail.id, tail.content
+
             row.generation_settings = settings.model_dump(mode="json")
             attempt = GenerationAttemptModel(
                 conversation_id=scope.conversation_id,
                 continuity_id=scope.continuity_id,
-                user_message_id=user_id,
-                selection_guard_id=user_id,
+                user_message_id=user_message_id,
+                selection_guard_id=user_message_id,
                 submitted_input=content,
                 generation=generation.model_dump(mode="json"),
                 status="pending",
@@ -398,32 +169,6 @@ class DbConversationRepository:
             session.add(attempt)
             session.flush()
             return self._attempt(scope, attempt)
-
-    def retry_availability(
-        self, scope: ConversationScope, persona_message_id: UUID
-    ) -> RetryAvailability:
-        """Count completed siblings for the selected final response.
-
-        Args:
-            scope:
-                Complete required ownership.
-            persona_message_id:
-                Selected final persona response.
-
-        Returns:
-            Durable successful retry accounting.
-
-        Raises:
-            InvalidParentError:
-                If the target is not the selected owned persona leaf.
-        """
-
-        with self._factory() as session, session.begin():
-            row = self._owned(session, scope)
-            target = self._selected_persona_message(
-                session, scope, row, persona_message_id
-            )
-            return self._retry_availability(session, scope, target)
 
     def begin_retry(
         self,
@@ -603,85 +348,13 @@ class DbConversationRepository:
             path = self._selected_path(session, scope, row)
             return self._message(path.messages[-1], len(path.messages))
 
-    @staticmethod
-    def _selected_persona_message(
-        session: Session,
-        scope: ConversationScope,
-        conversation: ConversationModel,
-        persona_message_id: UUID,
-    ) -> MessageModel:
-        """Resolve an exact selected persona leaf within full ownership.
-
-        Args:
-            session:
-                Current transaction.
-            scope:
-                Complete required ownership.
-            conversation:
-                Owned conversation row.
-            persona_message_id:
-                Expected selected persona identifier.
-
-        Returns:
-            Selected persona row.
-
-        Raises:
-            InvalidParentError:
-                If the identifier is not the selected owned persona leaf.
-        """
-
-        target = session.scalar(
-            select(MessageModel).where(
-                MessageModel.id == persona_message_id,
-                MessageModel.conversation_id == scope.conversation_id,
-                MessageModel.continuity_id == scope.continuity_id,
-                MessageModel.role == "persona",
-            )
-        )
-        if target is None or conversation.selected_leaf_id != target.id:
-            raise InvalidParentError("Retry target must be the selected persona leaf")
-        return target
-
-    @staticmethod
-    def _retry_availability(
-        session: Session, scope: ConversationScope, target: MessageModel
-    ) -> RetryAvailability:
-        """Count successful responses sharing the target's user parent.
-
-        Args:
-            session:
-                Current transaction.
-            scope:
-                Complete required ownership.
-            target:
-                Selected owned persona response.
-
-        Returns:
-            Durable successful retry accounting.
-        """
-
-        if target.parent_id is None:
-            raise InvalidParentError("Persona response has no user parent")
-        count = session.scalar(
-            select(func.count(MessageModel.id)).where(
-                MessageModel.conversation_id == scope.conversation_id,
-                MessageModel.continuity_id == scope.continuity_id,
-                MessageModel.parent_id == target.parent_id,
-                MessageModel.role == "persona",
-            )
-        )
-        return RetryAvailability(
-            user_message_id=target.parent_id,
-            successful_response_count=count or 1,
-        )
-
     def stop(
         self,
         scope: ConversationScope,
         attempt_id: UUID,
         status: Literal["failed", "interrupted"],
     ) -> None:
-        """Terminate an open attempt without modifying committed history.
+        """Terminate an open attempt.
 
         Args:
             scope:
@@ -702,7 +375,7 @@ class DbConversationRepository:
     def reconcile(
         self, scope: ConversationScope, inactive_before: datetime
     ) -> ConversationHistory:
-        """Interrupt expired attempts while fencing their late output.
+        """Interrupt expired attempts.
 
         Args:
             scope:
@@ -729,6 +402,274 @@ class DbConversationRepository:
                 attempt.updated_at = attempt.finished_at = datetime.now(UTC)
             session.flush()
             return self._history(session, scope, row)
+
+    def history(self, scope: ConversationScope) -> ConversationHistory:
+        """Read committed history and attempt provenance.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached domain snapshot.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            return self._history(session, scope, row)
+
+    def selected_path(self, scope: ConversationScope) -> SelectedPath:
+        """Read only the selected root-to-leaf ancestry.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached selected path excluding every sibling.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            return self._selected_path(session, scope, row)
+
+    def graph(self, scope: ConversationScope) -> ConversationGraph:
+        """Read every immutable node in deterministic creation order.
+
+        Args:
+            scope:
+                Complete required ownership.
+
+        Returns:
+            Detached complete graph inspection snapshot.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            nodes = session.scalars(
+                select(MessageModel)
+                .where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+                .order_by(MessageModel.created_at, MessageModel.id)
+            )
+
+            return ConversationGraph(
+                scope=scope,
+                selected_leaf_id=row.selected_leaf_id,
+                nodes=tuple(self._node(scope, node) for node in nodes),
+            )
+
+    def alternatives(
+        self, scope: ConversationScope, user_message_id: UUID
+    ) -> AlternativeGroup:
+        """Read completed persona siblings for one owned user node.
+
+        Args:
+            scope:
+                Complete required ownership.
+            user_message_id:
+                Exact shared user parent.
+
+        Returns:
+            Deterministically ordered completed alternatives.
+
+        Raises:
+            InvalidParentError:
+                If the parent is absent, foreign, or not a user node.
+        """
+
+        with self._factory() as session, session.begin():
+            self._owned(session, scope)
+            parent = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == user_message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+            if parent is None or parent.role != "user":
+                raise InvalidParentError(
+                    "Alternative parent must be an owned user node"
+                )
+
+            siblings = session.scalars(
+                select(MessageModel)
+                .where(
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                    MessageModel.parent_id == user_message_id,
+                    MessageModel.role == "persona",
+                )
+                .order_by(MessageModel.created_at, MessageModel.id)
+            )
+
+            return AlternativeGroup(
+                scope=scope,
+                user_message_id=user_message_id,
+                responses=tuple(self._node(scope, sibling) for sibling in siblings),
+            )
+
+    def select_leaf(
+        self,
+        scope: ConversationScope,
+        message_id: UUID,
+        expected_selected_leaf_id: UUID | None,
+    ) -> SelectedPath:
+        """Select an exact owned persona node under a compare-and-swap guard.
+
+        Args:
+            scope:
+                Complete required ownership.
+            message_id:
+                Exact persona node to select.
+            expected_selected_leaf_id:
+                Last selected leaf observed by the caller.
+
+        Returns:
+            Newly selected root-to-node ancestry.
+
+        Raises:
+            StaleSelectionError:
+                If the selected leaf changed since the caller read it.
+            InvalidParentError:
+                If the target is absent, foreign, or not a persona node.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope, writable=True)
+            if row.selected_leaf_id != expected_selected_leaf_id:
+                raise StaleSelectionError("Selected conversation path changed")
+
+            target = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                )
+            )
+            if target is None or target.role != "persona":
+                raise InvalidParentError("Selected leaf must be an owned persona node")
+
+            row.selected_leaf_id = target.id
+            session.flush()
+            return self._selected_path(session, scope, row)
+
+    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
+        """Apply exact-future selection or branching under one ownership lock.
+
+        Args:
+            request:
+                Fully owned graph action with its compare-and-swap guard.
+
+        Returns:
+            Newly selected ancestry.
+
+        Raises:
+            AttemptConflictError:
+                If a generation attempt is active.
+            InvalidParentError:
+                If the target is foreign, ambiguous, or invalid for the action.
+            StaleSelectionError:
+                If the selected leaf changed after the caller observed it.
+        """
+
+        if request.action not in {
+            GraphAction.ALTERNATIVE_SELECTION,
+            GraphAction.BRANCH_FROM_HERE,
+        }:
+            raise ValueError("Only selection and branching are graph actions")
+        if request.target_message_id is None:
+            raise ValueError("A graph action requires an exact target")
+
+        scope = request.scope
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope, writable=True)
+            if row.selected_leaf_id != request.expected_selected_leaf_id:
+                raise StaleSelectionError("Selected conversation path changed")
+            active_attempt = session.scalar(
+                select(GenerationAttemptModel.id)
+                .where(
+                    GenerationAttemptModel.conversation_id == scope.conversation_id,
+                    GenerationAttemptModel.continuity_id == scope.continuity_id,
+                    GenerationAttemptModel.status.in_(["pending", "streaming"]),
+                )
+                .limit(1)
+            )
+            if active_attempt is not None:
+                raise AttemptConflictError("An attempt is already active")
+
+            target = session.scalar(
+                select(MessageModel).where(
+                    MessageModel.id == request.target_message_id,
+                    MessageModel.conversation_id == scope.conversation_id,
+                    MessageModel.continuity_id == scope.continuity_id,
+                    MessageModel.role == "persona",
+                )
+            )
+            if target is None:
+                raise InvalidParentError("Graph target must be an owned persona node")
+
+            path = self._selected_path(session, scope, row)
+            selected_ids = {message.id for message in path.messages}
+            if target.id == row.selected_leaf_id:
+                raise InvalidParentError("The current leaf is already selected")
+
+            if request.action == GraphAction.BRANCH_FROM_HERE:
+                if target.id not in selected_ids:
+                    raise InvalidParentError(
+                        "A branch point must be on the selected path"
+                    )
+            else:
+                if target.id in selected_ids:
+                    raise InvalidParentError(
+                        "Use branching for an older selected-path persona node"
+                    )
+                child_id = session.scalar(
+                    select(MessageModel.id)
+                    .where(
+                        MessageModel.conversation_id == scope.conversation_id,
+                        MessageModel.continuity_id == scope.continuity_id,
+                        MessageModel.parent_id == target.id,
+                    )
+                    .limit(1)
+                )
+                if child_id is not None:
+                    raise InvalidParentError(
+                        "Select the exact saved descendant leaf, not an ambiguous future"
+                    )
+
+            row.selected_leaf_id = target.id
+            session.flush()
+            return self._selected_path(session, scope, row)
+
+    def retry_availability(
+        self, scope: ConversationScope, persona_message_id: UUID
+    ) -> RetryAvailability:
+        """Count completed siblings for the selected final response.
+
+        Args:
+            scope:
+                Complete required ownership.
+            persona_message_id:
+                Selected final persona response.
+
+        Returns:
+            Durable successful retry accounting.
+
+        Raises:
+            InvalidParentError:
+                If the target is not the selected owned persona leaf.
+        """
+
+        with self._factory() as session, session.begin():
+            row = self._owned(session, scope)
+            target = self._selected_persona_message(
+                session, scope, row, persona_message_id
+            )
+
+            return self._retry_availability(session, scope, target)
 
     @staticmethod
     def _owned(
@@ -765,6 +706,7 @@ class DbConversationRepository:
         )
         if continuity is None:
             raise ConversationNotFoundError("Conversation ownership does not match")
+
         row = session.scalar(
             select(ConversationModel).where(
                 ConversationModel.id == scope.conversation_id,
@@ -775,8 +717,10 @@ class DbConversationRepository:
         )
         if row is None:
             raise ConversationNotFoundError("Conversation ownership does not match")
+
         if writable and continuity.lifecycle != "active":
             raise ArchivedContinuityError("Archived continuity is read-only")
+
         return row
 
     @staticmethod
@@ -857,6 +801,7 @@ class DbConversationRepository:
             )
             .order_by(GenerationAttemptModel.created_at, GenerationAttemptModel.id)
         )
+
         return ConversationHistory(
             scope=scope,
             settings=(
@@ -918,6 +863,7 @@ class DbConversationRepository:
 
         if row.selected_leaf_id is None:
             return SelectedPath(scope=scope, selected_leaf_id=None, messages=())
+
         rows = tuple(
             session.scalars(
                 select(MessageModel).where(
@@ -930,11 +876,13 @@ class DbConversationRepository:
         current = by_id.get(row.selected_leaf_id)
         if current is None:
             raise InvalidParentError("Selected leaf is absent from its conversation")
+
         reversed_path: list[MessageNode] = []
         seen: set[UUID] = set()
         while current is not None:
             if current.id in seen:
                 raise InvalidParentError("Conversation graph contains a cycle")
+
             seen.add(current.id)
             reversed_path.append(cls._node(scope, current))
             if current.parent_id is None:
@@ -950,6 +898,80 @@ class DbConversationRepository:
             )
         except ValueError as error:
             raise InvalidParentError(str(error)) from error
+
+    @staticmethod
+    def _selected_persona_message(
+        session: Session,
+        scope: ConversationScope,
+        conversation: ConversationModel,
+        persona_message_id: UUID,
+    ) -> MessageModel:
+        """Resolve an exact selected persona leaf within full ownership.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Complete required ownership.
+            conversation:
+                Owned conversation row.
+            persona_message_id:
+                Expected selected persona identifier.
+
+        Returns:
+            Selected persona row.
+
+        Raises:
+            InvalidParentError:
+                If the identifier is not the selected owned persona leaf.
+        """
+
+        target = session.scalar(
+            select(MessageModel).where(
+                MessageModel.id == persona_message_id,
+                MessageModel.conversation_id == scope.conversation_id,
+                MessageModel.continuity_id == scope.continuity_id,
+                MessageModel.role == "persona",
+            )
+        )
+        if target is None or conversation.selected_leaf_id != target.id:
+            raise InvalidParentError("Retry target must be the selected persona leaf")
+        return target
+
+    @staticmethod
+    def _retry_availability(
+        session: Session, scope: ConversationScope, target: MessageModel
+    ) -> RetryAvailability:
+        """Count successful responses sharing the target's user parent.
+
+        Args:
+            session:
+                Current transaction.
+            scope:
+                Complete required ownership.
+            target:
+                Selected owned persona response.
+
+        Returns:
+            Durable successful retry accounting.
+        """
+
+        if target.parent_id is None:
+            raise InvalidParentError("Persona response has no user parent")
+
+        count = session.scalar(
+            select(func.count(MessageModel.id)).where(
+                MessageModel.conversation_id == scope.conversation_id,
+                MessageModel.continuity_id == scope.continuity_id,
+                MessageModel.parent_id == target.parent_id,
+                MessageModel.role == "persona",
+            )
+        )
+
+        return RetryAvailability(
+            user_message_id=target.parent_id,
+            successful_response_count=count or 1,
+        )
 
     @staticmethod
     def _node(scope: ConversationScope, row: MessageModel) -> MessageNode:
