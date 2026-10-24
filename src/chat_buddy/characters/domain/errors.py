@@ -112,6 +112,42 @@ class SummaryConflictError(ValueError):
     """A summary replacement used stale lineage or an invalid checkpoint."""
 
 
+class MemoryNotFoundError(LookupError):
+    """No logical memory exists within the supplied Storyline ownership."""
+
+
+class InvalidMemoryDeltaTargetError(ValueError):
+    """An extraction delta cites an omitted, foreign, stale, or invented target."""
+
+
+class StaleMemoryRevisionError(ValueError):
+    """A memory lifecycle command used an outdated current revision."""
+
+
+class ProtectedMemoryCorrectionError(ValueError):
+    """Automatic extraction attempted to supersede user-authored content."""
+
+
+class MemorySubjectConflictError(ValueError):
+    """A current logical memory already owns the normalized subject."""
+
+
+class MemoryConflictNotFoundError(LookupError):
+    """No extraction conflict exists within the supplied Storyline ownership."""
+
+
+class StaleMemoryConflictError(ValueError):
+    """A conflict dismissal no longer matches the current memory revision."""
+
+
+class InvalidTemporalProvenanceError(ValueError):
+    """Memory occurrence, learning, or source provenance is inconsistent."""
+
+
+class ExtractionEffectConflictError(ValueError):
+    """An extraction effect is terminal, ineligible, or reserved inconsistently."""
+
+
 class InvalidParentError(ValueError):
     """A message parent is absent, foreign, cyclic, or has an invalid role."""
 

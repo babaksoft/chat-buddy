@@ -13,7 +13,6 @@ from chat_buddy.characters.domain import (
     ConversationGraphRepository,
     ConversationScope,
     EffectiveGeneration,
-    EvolutionStrategyId,
     GenerationConfiguration,
     GraphAction,
     GraphActionRequest,
@@ -23,6 +22,7 @@ from chat_buddy.characters.domain import (
     ResponseStyleSnapshot,
     RetryAvailability,
     SelectedPath,
+    StrategyIdentity,
 )
 
 
@@ -70,9 +70,7 @@ def _provenance() -> ResponseProvenance:
             version="1.0.0",
             instruction="Respond naturally while preserving authored boundaries.",
         ),
-        evolution_strategy=EvolutionStrategyId(
-            name="baseline.no_change", version="1.0.0"
-        ),
+        evolution_strategy=StrategyIdentity(name="baseline.no_change", version="1.0.0"),
         attempt_id=uuid4(),
     )
 

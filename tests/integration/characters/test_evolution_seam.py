@@ -10,8 +10,8 @@ from chat_buddy.characters.domain import (
     EvolutionEvidenceReference,
     EvolutionInputs,
     EvolutionProposal,
-    EvolutionStrategyId,
     RelationshipChangeProposal,
+    StrategyIdentity,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
@@ -28,7 +28,7 @@ class RecordingEvolutionStrategy:
     def __init__(self) -> None:
         """Initialize stable provenance and an invocation count."""
 
-        self.strategy_id = EvolutionStrategyId(name="test.integration", version="1.0.0")
+        self.strategy_id = StrategyIdentity(name="test.integration", version="1.0.0")
         self.calls = 0
 
     def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:

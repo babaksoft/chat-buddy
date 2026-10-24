@@ -9,33 +9,8 @@ from chat_buddy.characters.domain.continuity import ContinuityMode, StartingRela
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.identity import Identity
 from chat_buddy.characters.domain.persona import Persona
+from chat_buddy.characters.domain.strategy import StrategyIdentity
 from chat_buddy.characters.domain.summary import CompletedTurn
-
-
-class EvolutionStrategyId(BaseModel):
-    """Stable identity recorded on every strategy result.
-
-    Attributes:
-        name:
-            Stable machine-readable strategy name.
-        version:
-            Semantic version of the strategy behavior.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(
-        min_length=1,
-        max_length=128,
-        pattern=r"^[a-z][a-z0-9_.-]*$",
-        description="Stable machine-readable strategy name.",
-    )
-    version: str = Field(
-        min_length=1,
-        max_length=64,
-        pattern=r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$",
-        description="Semantic strategy behavior version.",
-    )
 
 
 class EvolutionEvidenceReference(BaseModel):
@@ -189,7 +164,7 @@ class EvolutionProposal(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    strategy: EvolutionStrategyId = Field(description="Generating strategy identity.")
+    strategy: StrategyIdentity = Field(description="Generating strategy identity.")
     scope: ConversationScope = Field(description="Evaluated ownership references.")
     persona_adaptations: tuple[PersonaAdaptationProposal, ...] = Field(
         default=(), description="Proposed persona adaptations."
@@ -203,7 +178,7 @@ class EvolutionStrategy(Protocol):
     """Replaceable proposal strategy."""
 
     @property
-    def strategy_id(self) -> EvolutionStrategyId:
+    def strategy_id(self) -> StrategyIdentity:
         """Return the stable name and behavior version.
 
         Returns:

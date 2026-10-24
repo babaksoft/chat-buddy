@@ -236,7 +236,7 @@ Storyline vocabulary without duplicating invariants.
 
 ### Slice 3 — Add executable contextual-memory contracts
 
-Status: Pending
+Status: Complete
 
 Add immutable logical-memory, revision, evidence, temporal-position,
 extraction-context, selection-result, delta-operation, extraction-effect, conflict,

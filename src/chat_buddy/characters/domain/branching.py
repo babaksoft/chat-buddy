@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chat_buddy.characters.domain.continuity import ContinuityMode
 from chat_buddy.characters.domain.conversation import ConversationScope
-from chat_buddy.characters.domain.evolution import EvolutionStrategyId
 from chat_buddy.characters.domain.llm import EffectiveGeneration
+from chat_buddy.characters.domain.strategy import StrategyIdentity
 
 
 class ResponseStyleSnapshot(BaseModel):
@@ -71,7 +71,7 @@ class ResponseProvenance(BaseModel):
     response_style: ResponseStyleSnapshot = Field(
         description="Effective response-presentation behavior."
     )
-    evolution_strategy: EvolutionStrategyId = Field(
+    evolution_strategy: StrategyIdentity = Field(
         description="Configured persona-evolution strategy."
     )
     attempt_id: UUID = Field(description="Completing generation attempt.")

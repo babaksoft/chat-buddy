@@ -13,7 +13,6 @@ from chat_buddy.characters.domain import (
     ContextCapacityError,
     ConversationGraphView,
     ConversationHistory,
-    EvolutionStrategyId,
     GenerationAttempt,
     GraphNodeView,
     Message,
@@ -22,6 +21,7 @@ from chat_buddy.characters.domain import (
     ResponseProvenance,
     ResponseStyleSnapshot,
     StaleSelectionError,
+    StrategyIdentity,
     SubmittedInput,
 )
 from chat_buddy.characters.ui import ongoing
@@ -83,9 +83,7 @@ def _graph_with_controls(service: Mock) -> tuple[MessageNode, MessageNode, Messa
                 response_style=ResponseStyleSnapshot(
                     name="ongoing", version="1.0.0", instruction="Respond naturally."
                 ),
-                evolution_strategy=EvolutionStrategyId(
-                    name="baseline", version="1.0.0"
-                ),
+                evolution_strategy=StrategyIdentity(name="baseline", version="1.0.0"),
                 attempt_id=uuid4(),
             ),
         )

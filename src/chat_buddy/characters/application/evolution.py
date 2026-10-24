@@ -5,17 +5,17 @@ from chat_buddy.characters.domain import (
     EvolutionInputs,
     EvolutionProposal,
     EvolutionStrategy,
-    EvolutionStrategyId,
+    StrategyIdentity,
 )
 
 
 class NoChangeEvolutionStrategy:
     """Baseline strategy that explicitly proposes no evolution."""
 
-    _STRATEGY_ID = EvolutionStrategyId(name="baseline.no_change", version="1.0.0")
+    _STRATEGY_ID = StrategyIdentity(name="baseline.no_change", version="1.0.0")
 
     @property
-    def strategy_id(self) -> EvolutionStrategyId:
+    def strategy_id(self) -> StrategyIdentity:
         """Return the stable baseline strategy identity.
 
         Returns:

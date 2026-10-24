@@ -26,6 +26,16 @@ from chat_buddy.characters.domain.conversation import (
 )
 from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.llm import EffectiveGeneration
+from chat_buddy.characters.domain.memory import (
+    ChangeMemoryStateCommand,
+    CorrectMemoryCommand,
+    DeleteMemoryCommand,
+    DismissMemoryConflictCommand,
+    ExtractionEffect,
+    MemoryConflict,
+    StorylineMemory,
+)
+from chat_buddy.characters.domain.memory_extraction import MemoryDelta
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
 from chat_buddy.characters.domain.storyline import (
     Scene,
@@ -584,6 +594,218 @@ class SceneRepository(Protocol):
         Raises:
             StaleSelectionError:
                 If conversation selection changed before the commit.
+        """
+
+        ...
+
+
+class StorylineMemoryRepository(Protocol):
+    """Manage Storyline-owned memory lineages and user lifecycle changes."""
+
+    def get(self, continuity_id: UUID, memory_id: UUID) -> StorylineMemory:
+        """Read a complete logical-memory lineage within its Storyline.
+
+        Args:
+            continuity_id:
+                Expected Storyline owner.
+            memory_id:
+                Logical-memory identifier.
+
+        Returns:
+            Complete immutable memory snapshot.
+
+        Raises:
+            MemoryNotFoundError:
+                If the memory is absent or belongs to another Storyline.
+        """
+
+        ...
+
+    def list(self, continuity_id: UUID) -> tuple[StorylineMemory, ...]:
+        """List every logical memory for inspection in deterministic order.
+
+        Args:
+            continuity_id:
+                Expected Storyline owner.
+
+        Returns:
+            Active and excluded logical memories.
+        """
+
+        ...
+
+    def list_eligible(
+        self,
+        continuity_id: UUID,
+        target_scene_position: int,
+        selected_persona_message_ids: frozenset[UUID],
+    ) -> tuple[StorylineMemory, ...]:
+        """Read active branch- and time-eligible memory at one scene.
+
+        Args:
+            continuity_id:
+                Expected Storyline owner.
+            target_scene_position:
+                Positive target scene ordinal.
+            selected_persona_message_ids:
+                Selected source checkpoints eligible for content.
+
+        Returns:
+            Deterministically ordered eligible logical memories.
+        """
+
+        ...
+
+    def correct(self, command: CorrectMemoryCommand) -> StorylineMemory:
+        """Atomically add a user-authored active correction revision.
+
+        Args:
+            command:
+                Guarded correction request.
+
+        Returns:
+            Updated complete lineage.
+
+        Raises:
+            StaleMemoryRevisionError:
+                If the expected revision is no longer current.
+            ProtectedMemoryCorrectionError:
+                If the current memory is excluded and must be reactivated first.
+            MemorySubjectConflictError:
+                If the normalized subject collides with another memory.
+        """
+
+        ...
+
+    def change_state(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+        """Atomically exclude or reactivate a memory at its current revision.
+
+        Args:
+            command:
+                Guarded lifecycle transition.
+
+        Returns:
+            Updated complete lineage.
+
+        Raises:
+            StaleMemoryRevisionError:
+                If the expected revision or requested transition is stale.
+        """
+
+        ...
+
+    def delete(self, command: DeleteMemoryCommand) -> None:
+        """Hard-delete a complete lineage, evidence, and associated conflicts.
+
+        Args:
+            command:
+                Guarded deletion request.
+
+        Raises:
+            MemoryNotFoundError:
+                If the lineage was already deleted or never existed.
+            StaleMemoryRevisionError:
+                If the expected revision is no longer current.
+        """
+
+        ...
+
+
+class MemoryExtractionRepository(Protocol):
+    """Reserve and atomically finish idempotent Storyline extraction effects."""
+
+    def reserve(
+        self, scope: ConversationScope, scene_id: UUID, source_persona_message_id: UUID
+    ) -> ExtractionEffect:
+        """Reserve or return the sole effect for a source persona message.
+
+        Args:
+            scope:
+                Complete source conversation ownership.
+            scene_id:
+                Source scene identifier.
+            source_persona_message_id:
+                Complete selected turn checkpoint.
+
+        Returns:
+            Existing or newly reserved effect.
+
+        Raises:
+            ExtractionEffectConflictError:
+                If the source is not active, selected, complete, or eligible.
+        """
+
+        ...
+
+    def get_effect(
+        self, scope: ConversationScope, source_persona_message_id: UUID
+    ) -> ExtractionEffect | None:
+        """Read the extraction effect for a source message when present.
+
+        Args:
+            scope:
+                Complete source conversation ownership.
+            source_persona_message_id:
+                Source persona checkpoint.
+
+        Returns:
+            Effect snapshot or None before reservation.
+        """
+
+        ...
+
+    def apply(self, effect_id: UUID, delta: MemoryDelta) -> ExtractionEffect:
+        """Atomically apply a validated delta and finish its reserved effect.
+
+        Args:
+            effect_id:
+                Reserved extraction effect.
+            delta:
+                Fully validated structured proposal.
+
+        Returns:
+            Terminal applied or no-change effect.
+
+        Raises:
+            ExtractionEffectConflictError:
+                If the effect is terminal or does not match the delta source.
+            InvalidMemoryDeltaTargetError:
+                If any target or operation is invalid at commit time.
+        """
+
+        ...
+
+    def list_conflicts(self, continuity_id: UUID) -> tuple[MemoryConflict, ...]:
+        """List extraction conflicts for one Storyline deterministically.
+
+        Args:
+            continuity_id:
+                Expected Storyline owner.
+
+        Returns:
+            Unresolved and dismissed conflict snapshots.
+        """
+
+        ...
+
+    def dismiss_conflict(self, command: DismissMemoryConflictCommand) -> MemoryConflict:
+        """Dismiss an unresolved conflict without changing its target memory.
+
+        Args:
+            command:
+                Guarded dismissal request.
+
+        Returns:
+            Dismissed conflict snapshot.
+
+        Raises:
+            MemoryConflictNotFoundError:
+                If the conflict is absent or foreign.
+            StaleMemoryConflictError:
+                If a targeted memory changed after the conflict was observed or a
+                targetless dismissal supplied a revision guard.
+            ExtractionEffectConflictError:
+                If the conflict was already dismissed.
         """
 
         ...

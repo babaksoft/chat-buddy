@@ -18,7 +18,6 @@ from chat_buddy.characters.domain import (
     ConversationScope,
     ConversationSettings,
     EffectiveGeneration,
-    EvolutionStrategyId,
     GenerationAttempt,
     GraphAction,
     GraphActionRequest,
@@ -33,6 +32,7 @@ from chat_buddy.characters.domain import (
     RetryLimitError,
     SelectedPath,
     StaleSelectionError,
+    StrategyIdentity,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.models import (
@@ -54,9 +54,7 @@ class DbConversationRepository:
             "preserve the authored identity and relationship boundaries."
         ),
     )
-    _EVOLUTION_STRATEGY = EvolutionStrategyId(
-        name="baseline.no_change", version="1.0.0"
-    )
+    _EVOLUTION_STRATEGY = StrategyIdentity(name="baseline.no_change", version="1.0.0")
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the conversation repository.

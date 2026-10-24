@@ -17,7 +17,6 @@ from chat_buddy.characters.domain import (
     EvolutionEvidenceReference,
     EvolutionInputs,
     EvolutionProposal,
-    EvolutionStrategyId,
     Identity,
     IdentityDetails,
     Message,
@@ -28,6 +27,7 @@ from chat_buddy.characters.domain import (
     RelationshipIntent,
     StartingOrigins,
     StartingRelationship,
+    StrategyIdentity,
 )
 
 
@@ -105,9 +105,7 @@ class TestEvolutionStrategy:
     def __init__(self) -> None:
         """Initialize stable test provenance and input capture."""
 
-        self.strategy_id = EvolutionStrategyId(
-            name="test.relationship", version="2.1.0"
-        )
+        self.strategy_id = StrategyIdentity(name="test.relationship", version="2.1.0")
         self.seen: EvolutionInputs | None = None
 
     def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:
@@ -155,7 +153,7 @@ def test_strategy_identity_inputs_and_outputs_are_frozen_and_versioned() -> None
 
     inputs = _inputs()
     result = EvolutionEvaluator(TestEvolutionStrategy()).evaluate(inputs)
-    assert result.strategy == EvolutionStrategyId(
+    assert result.strategy == StrategyIdentity(
         name="test.relationship", version="2.1.0"
     )
     assert result.scope == inputs.scope
@@ -167,7 +165,7 @@ def test_strategy_identity_inputs_and_outputs_are_frozen_and_versioned() -> None
     with pytest.raises(ValidationError):
         result.relationship_changes = ()
     with pytest.raises(ValidationError):
-        EvolutionStrategyId(name="Display Name", version="latest")
+        StrategyIdentity(name="Display Name", version="latest")
 
 
 def test_inputs_reject_foreign_or_non_chronological_evidence() -> None:
@@ -191,7 +189,7 @@ def test_baseline_is_stable_and_explicitly_proposes_no_changes() -> None:
     inputs = _inputs()
     strategy = NoChangeEvolutionStrategy()
     result = EvolutionEvaluator(strategy).evaluate(inputs)
-    assert strategy.strategy_id == EvolutionStrategyId(
+    assert strategy.strategy_id == StrategyIdentity(
         name="baseline.no_change", version="1.0.0"
     )
     assert result.persona_adaptations == ()
