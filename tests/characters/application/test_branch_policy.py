@@ -13,6 +13,8 @@ from chat_buddy.characters.domain import (
     BranchModeFacts,
     ContinuityMode,
     ConversationScope,
+    StorylineForkSource,
+    StorylineModeAction,
 )
 
 
@@ -174,3 +176,48 @@ def test_deferred_resolver_preserves_exact_references_and_fails_future_modes_clo
     assert facts.source_message_id == source_message_id
     assert decision.disposition == "fork_required"
     assert decision.reason == "missing_or_contradictory_mode_facts"
+
+
+@pytest.mark.parametrize(
+    ("latest_position", "disposition", "reason"),
+    [
+        (2, "in_place", "latest_storyline_scene"),
+        (3, "fork_required", "older_storyline_scene"),
+    ],
+)
+def test_real_storyline_positions_drive_mode_policy_without_repository_guesses(
+    latest_position: int, disposition: str, reason: str
+) -> None:
+    """Authorize latest scenes and require forks for older dependent scenes.
+
+    Args:
+        latest_position:
+            Persisted position of the actual latest scene.
+        disposition:
+            Expected mutation location.
+        reason:
+            Expected stable policy reason.
+    """
+
+    scope = _scope()
+    source_message_id = uuid4()
+    scene_id = uuid4()
+    action = StorylineModeAction(
+        source=StorylineForkSource(
+            scene_id=scene_id,
+            scope=scope,
+            scene_position=2,
+            expected_storyline_revision=5,
+            expected_selected_leaf_id=uuid4(),
+            source_message_id=source_message_id,
+        ),
+        latest_scene_id=scene_id if latest_position == 2 else uuid4(),
+        latest_scene_position=latest_position,
+    )
+
+    decision = decide_branch_mode(action)
+
+    assert decision.disposition == disposition
+    assert decision.reason == reason
+    assert decision.scope == scope
+    assert decision.source_message_id == source_message_id

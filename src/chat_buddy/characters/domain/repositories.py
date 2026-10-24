@@ -27,6 +27,15 @@ from chat_buddy.characters.domain.conversation import (
 from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.domain.storyline import (
+    Scene,
+    SceneAppendEligibility,
+    SceneDetails,
+    SceneSequence,
+    StartStoryline,
+    Storyline,
+    StorylineGroup,
+)
 from chat_buddy.characters.domain.summary import SummaryRevision
 
 
@@ -274,6 +283,307 @@ class ContinuityRepository(Protocol):
 
         Returns:
             The archived snapshot, including repeated archive requests.
+        """
+
+        ...
+
+
+class StorylineRepository(Protocol):
+    """Manage named Storyline ownership and lifecycle atomically."""
+
+    def start(
+        self, request: StartStoryline, relationship: StartingRelationship
+    ) -> tuple[Storyline, Scene]:
+        """Atomically freeze profiles and create a Storyline and initial scene.
+
+        Args:
+            request:
+                Complete reviewed confirmation.
+            relationship:
+                Resolved starting relationship and provenance.
+
+        Returns:
+            The new or idempotently existing Storyline and initial scene.
+
+        Raises:
+            ActiveStorylineError:
+                If the pair already owns an active Storyline.
+            ConfirmationConflictError:
+                If the confirmation identifier has different persisted inputs.
+        """
+
+        ...
+
+    def find_confirmation(
+        self, request: StartStoryline
+    ) -> tuple[Storyline, Scene] | None:
+        """Read an identical confirmation before active-slot preflight.
+
+        Args:
+            request:
+                Complete confirmed request.
+
+        Returns:
+            The original result, or None for a new confirmation.
+
+        Raises:
+            ConfirmationConflictError:
+                If persisted confirmation inputs differ.
+        """
+
+        ...
+
+    def find_active(self, identity_id: UUID, persona_id: UUID) -> Storyline | None:
+        """Find the pair's sole active Storyline.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+
+        Returns:
+            The active Storyline, or None when the slot is free.
+        """
+
+        ...
+
+    def get(self, identity_id: UUID, persona_id: UUID, storyline_id: UUID) -> Storyline:
+        """Read a Storyline under complete profile ownership.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            storyline_id:
+                Storyline continuity identifier.
+
+        Returns:
+            The owned active or archived snapshot.
+
+        Raises:
+            ContinuityNotFoundError:
+                If no Storyline exists in the supplied ownership scope.
+        """
+
+        ...
+
+    def list_for_pair(self, identity_id: UUID, persona_id: UUID) -> StorylineGroup:
+        """List the pair's active and archived Storylines deterministically.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+
+        Returns:
+            Validated group containing at most one active Storyline.
+        """
+
+        ...
+
+    def rename(
+        self,
+        identity_id: UUID,
+        persona_id: UUID,
+        storyline_id: UUID,
+        name: str,
+        expected_revision: int,
+    ) -> Storyline:
+        """Replace a Storyline name under lifecycle and revision guards.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            storyline_id:
+                Storyline continuity identifier.
+            name:
+                Validated replacement name.
+            expected_revision:
+                Last observed optimistic revision.
+
+        Returns:
+            The renamed Storyline snapshot.
+
+        Raises:
+            ArchivedContinuityError:
+                If the Storyline is archived.
+            StaleStorylineError:
+                If the Storyline revision changed.
+        """
+
+        ...
+
+    def archive(
+        self,
+        identity_id: UUID,
+        persona_id: UUID,
+        storyline_id: UUID,
+        expected_revision: int,
+    ) -> Storyline:
+        """Permanently archive a Storyline under an optimistic guard.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            storyline_id:
+                Storyline continuity identifier.
+            expected_revision:
+                Last observed optimistic revision.
+
+        Returns:
+            The archived snapshot, including an identical repeated request.
+
+        Raises:
+            StaleStorylineError:
+                If a non-idempotent write changed the revision.
+        """
+
+        ...
+
+
+class SceneRepository(Protocol):
+    """Manage ordered Storyline scenes without exposing persistence types."""
+
+    def get(self, scope: ConversationScope, scene_id: UUID) -> Scene:
+        """Read one scene under its complete conversation ownership.
+
+        Args:
+            scope:
+                Expected profile, Storyline, and conversation ownership.
+            scene_id:
+                Scene identifier.
+
+        Returns:
+            The owned scene snapshot.
+
+        Raises:
+            InvalidSceneOwnershipError:
+                If the scene and supplied ownership do not match.
+        """
+
+        ...
+
+    def list(self, storyline: Storyline) -> SceneSequence:
+        """List every scene in immutable chronological order.
+
+        Args:
+            storyline:
+                Expected owning Storyline snapshot.
+
+        Returns:
+            Validated consecutive scene sequence.
+        """
+
+        ...
+
+    def append_next(
+        self, details: SceneDetails, eligibility: SceneAppendEligibility
+    ) -> SceneSequence:
+        """Atomically append exactly one scene when guarded facts still hold.
+
+        Args:
+            details:
+                Authored next-scene metadata and fixed response style.
+            eligibility:
+                Last observed source, revision, leaf, and completion facts.
+
+        Returns:
+            The complete sequence including the newly appended scene.
+
+        Raises:
+            IncompleteLatestSceneError:
+                If completion or attempt facts do not allow an append.
+            StaleStorylineError:
+                If the Storyline revision changed.
+            StaleSelectionError:
+                If the selected leaf changed.
+        """
+
+        ...
+
+    def rename(
+        self,
+        scope: ConversationScope,
+        scene_id: UUID,
+        title: str,
+        expected_storyline_revision: int,
+    ) -> Scene:
+        """Replace presentation metadata under ownership and revision guards.
+
+        Args:
+            scope:
+                Complete expected scene ownership.
+            scene_id:
+                Scene to rename.
+            title:
+                Validated replacement title.
+            expected_storyline_revision:
+                Last observed Storyline revision.
+
+        Returns:
+            The renamed scene snapshot.
+        """
+
+        ...
+
+    def replace_setup(
+        self,
+        scope: ConversationScope,
+        scene_id: UUID,
+        setup: str,
+        expected_storyline_revision: int,
+    ) -> Scene:
+        """Replace setup before its first committed user message.
+
+        Args:
+            scope:
+                Complete expected scene ownership.
+            scene_id:
+                Scene whose setup is changing.
+            setup:
+                Validated replacement setup.
+            expected_storyline_revision:
+                Last observed Storyline revision.
+
+        Returns:
+            The updated unlocked scene snapshot.
+
+        Raises:
+            LockedSceneSetupError:
+                If the first user message already froze setup.
+        """
+
+        ...
+
+    def lock_setup(
+        self,
+        scope: ConversationScope,
+        scene_id: UUID,
+        expected_selected_leaf_id: UUID | None,
+    ) -> Scene:
+        """Atomically freeze setup with the scene's first user-message commit.
+
+        Args:
+            scope:
+                Complete expected scene ownership.
+            scene_id:
+                Scene accepting its first input.
+            expected_selected_leaf_id:
+                Last observed selected leaf, normally None for an empty scene.
+
+        Returns:
+            The setup-locked scene snapshot.
+
+        Raises:
+            StaleSelectionError:
+                If conversation selection changed before the commit.
         """
 
         ...

@@ -40,6 +40,30 @@ class ActiveContinuityError(ValueError):
     """An active Ongoing continuity already exists for the selected pair."""
 
 
+class ActiveStorylineError(ValueError):
+    """An active Storyline already occupies the selected profile pair."""
+
+
+class StaleStorylineError(ValueError):
+    """A Storyline write used an outdated optimistic revision."""
+
+
+class LockedSceneSetupError(ValueError):
+    """A scene setup is immutable after its first committed user message."""
+
+
+class IncompleteLatestSceneError(ValueError):
+    """The latest scene cannot be followed until its selected turn is complete."""
+
+
+class InvalidSceneOwnershipError(LookupError):
+    """A scene is absent or does not match the supplied complete ownership."""
+
+
+class StorylineForkConflictError(ValueError):
+    """A reviewed fork conflicts with source state or target pair ownership."""
+
+
 class ConfirmationConflictError(ValueError):
     """A confirmation identifier was reused for different submitted data."""
 

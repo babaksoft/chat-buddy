@@ -213,7 +213,7 @@ behavior in repositories, provider adapters, or UI.
 
 ### Slice 2 — Add executable Storyline and scene contracts
 
-Status: Pending
+Status: Complete
 
 Add immutable Storyline, scene, append-eligibility, fork-source, and mode-action
 values with complete validation and package exports. Extend the fail-closed mode

@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 6, Slice 2 — executable Storyline and scene contracts.
+Next delivery focus: Stage 6, Slice 3 — executable contextual-memory contracts.
 
 Deferred engineering:
 

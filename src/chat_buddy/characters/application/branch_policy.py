@@ -9,6 +9,7 @@ from chat_buddy.characters.domain import (
     BranchModeFactsResolver,
     ContinuityMode,
     ConversationScope,
+    StorylineModeAction,
 )
 
 
@@ -42,16 +43,30 @@ class DeferredBranchModeFactsResolver(BranchModeFactsResolver):
         )
 
 
-def decide_branch_mode(facts: BranchModeFacts) -> BranchDecision:
+def decide_branch_mode(
+    facts: BranchModeFacts | StorylineModeAction,
+) -> BranchDecision:
     """Authorize in-place branching or require a future mode fork.
 
     Args:
         facts:
-            Persistence-neutral mode state and exact source references.
+            Persistence-neutral mode state or validated Storyline scene facts.
 
     Returns:
         Fail-closed branching decision.
     """
+
+    if isinstance(facts, StorylineModeAction):
+        return BranchDecision(
+            disposition=("fork_required" if facts.has_later_scenes else "in_place"),
+            scope=facts.source.scope,
+            source_message_id=facts.source.source_message_id,
+            reason=(
+                "older_storyline_scene"
+                if facts.has_later_scenes
+                else "latest_storyline_scene"
+            ),
+        )
 
     disposition: Literal["in_place", "fork_required"] = "fork_required"
     reason: Literal[
