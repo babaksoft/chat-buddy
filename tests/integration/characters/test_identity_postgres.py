@@ -70,7 +70,9 @@ def test_fresh_upgrade_downgrade_and_reupgrade_preserve_populated_chat(
         "identities",
         "messages",
         "personas",
+        "scenes",
         "starting_relationships",
+        "storylines",
         "summary_revisions",
     ]
     assert inspector.get_foreign_keys("identities", schema="characters") == []

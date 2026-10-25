@@ -104,6 +104,8 @@ def test_complete_migration_chain_and_milestone_preserve_populated_chat(
     finally:
         event.remove(engine, "before_cursor_execute", verify_query_scope)
     assert queried_tables == set(inspector.get_table_names(schema="characters")) - {
-        "alembic_version"
+        "alembic_version",
+        "scenes",
+        "storylines",
     }
     assert _chat_snapshot(engine) == before

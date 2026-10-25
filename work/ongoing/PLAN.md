@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-24
+Last updated: 2026-10-25
 
 ## Outcome
 
@@ -262,7 +262,7 @@ independently behind stable domain contracts.
 
 ### Slice 4 — Persist named Storylines and ordered scenes
 
-Status: Pending
+Status: Complete
 
 Generalize continuity persistence so Ongoing retains its sole conversation while
 a Storyline owns multiple scene conversations. Add Storyline metadata, optimistic

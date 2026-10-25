@@ -3,7 +3,9 @@
 from chat_buddy.characters.infrastructure.db.models.continuity import (
     ContinuityModel,
     ConversationModel,
+    SceneModel,
     StartingRelationshipModel,
+    StorylineModel,
 )
 from chat_buddy.characters.infrastructure.db.models.identity import IdentityModel
 from chat_buddy.characters.infrastructure.db.models.message import (
@@ -20,6 +22,8 @@ __all__ = [
     "IdentityModel",
     "MessageModel",
     "PersonaModel",
+    "SceneModel",
     "StartingRelationshipModel",
+    "StorylineModel",
     "SummaryRevisionModel",
 ]

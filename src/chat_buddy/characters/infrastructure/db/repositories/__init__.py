@@ -12,6 +12,12 @@ from chat_buddy.characters.infrastructure.db.repositories.identity_repository im
 from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
     DbPersonaRepository,
 )
+from chat_buddy.characters.infrastructure.db.repositories.scene_repository import (
+    DbSceneRepository,
+)
+from chat_buddy.characters.infrastructure.db.repositories.storyline_repository import (
+    DbStorylineRepository,
+)
 from chat_buddy.characters.infrastructure.db.repositories.summary_repository import (
     DbSummaryRepository,
 )
@@ -21,5 +27,7 @@ __all__ = [
     "DbConversationRepository",
     "DbIdentityRepository",
     "DbPersonaRepository",
+    "DbSceneRepository",
+    "DbStorylineRepository",
     "DbSummaryRepository",
 ]

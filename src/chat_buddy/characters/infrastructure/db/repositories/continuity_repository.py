@@ -138,6 +138,7 @@ class DbContinuityRepository:
                             continuity_id=row.id,
                             identity_id=row.identity_id,
                             persona_id=row.persona_id,
+                            mode="ongoing",
                         ),
                         StartingRelationshipModel(
                             continuity_id=row.id,
@@ -239,7 +240,9 @@ class DbContinuityRepository:
 
         with self._session_factory() as session:
             rows = session.scalars(
-                select(ContinuityModel).order_by(
+                select(ContinuityModel)
+                .where(ContinuityModel.mode == "ongoing")
+                .order_by(
                     ContinuityModel.identity_id,
                     ContinuityModel.persona_id,
                     ContinuityModel.id,
@@ -310,6 +313,7 @@ class DbContinuityRepository:
             ContinuityModel.id == continuity_id,
             ContinuityModel.identity_id == identity_id,
             ContinuityModel.persona_id == persona_id,
+            ContinuityModel.mode == "ongoing",
         )
         row = session.scalar(query.with_for_update() if lock else query)
         if row is None:
