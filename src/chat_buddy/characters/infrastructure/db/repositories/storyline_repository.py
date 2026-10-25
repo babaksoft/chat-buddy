@@ -1,5 +1,6 @@
 """Transactional persistence for named Storylines and ordered scenes."""
 
+from itertools import groupby
 from uuid import UUID
 
 from sqlalchemy import select
@@ -228,6 +229,35 @@ class DbStorylineRepository:
         with self._factory() as session:
             row = self._owned(session, identity_id, persona_id, storyline_id)
             return self._snapshot(session, row)
+
+    def list(self) -> tuple[StorylineGroup, ...]:
+        """List Storylines grouped by profile pair and stable identifiers.
+
+        Returns:
+            Deterministically ordered identity/persona ownership groups.
+        """
+
+        with self._factory() as session:
+            rows = tuple(
+                session.scalars(
+                    select(StorylineModel).order_by(
+                        StorylineModel.identity_id,
+                        StorylineModel.persona_id,
+                        StorylineModel.continuity_id,
+                    )
+                )
+            )
+
+            return tuple(
+                StorylineGroup(
+                    identity_id=key[0],
+                    persona_id=key[1],
+                    storylines=tuple(self._snapshot(session, row) for row in group),
+                )
+                for key, group in groupby(
+                    rows, key=lambda row: (row.identity_id, row.persona_id)
+                )
+            )
 
     def list_for_pair(self, identity_id: UUID, persona_id: UUID) -> StorylineGroup:
         """List a pair's Storylines in stable identifier order.

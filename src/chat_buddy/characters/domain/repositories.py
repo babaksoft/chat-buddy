@@ -379,6 +379,15 @@ class StorylineRepository(Protocol):
 
         ...
 
+    def list(self) -> tuple[StorylineGroup, ...]:
+        """List all Storylines grouped by profile pair in deterministic order.
+
+        Returns:
+            Identity/persona groups ordered by their identifiers.
+        """
+
+        ...
+
     def list_for_pair(self, identity_id: UUID, persona_id: UUID) -> StorylineGroup:
         """List the pair's active and archived Storylines deterministically.
 

@@ -262,18 +262,18 @@ class ContinuityGroup(BaseModel):
 
 
 class StartAvailability(BaseModel):
-    """Whether an identity/persona pair may start a new Ongoing.
+    """Whether an identity/persona pair may start a mode-specific continuity.
 
     Attributes:
         can_start:
-            Whether the pair currently permits a new Ongoing.
+            Whether the pair currently permits a new continuity of that mode.
         reason:
             Concise explanation when starting is unavailable.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    can_start: bool = Field(description="Whether a new Ongoing may be started.")
+    can_start: bool = Field(description="Whether a new continuity may be started.")
     reason: str | None = Field(
         default=None,
         description="Explanation when a new Ongoing cannot be started.",

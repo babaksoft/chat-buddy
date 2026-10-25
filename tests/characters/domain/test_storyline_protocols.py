@@ -15,6 +15,7 @@ def test_storyline_repository_protocol_covers_lifecycle_boundary() -> None:
         "find_confirmation",
         "find_active",
         "get",
+        "list",
         "list_for_pair",
         "rename",
         "archive",

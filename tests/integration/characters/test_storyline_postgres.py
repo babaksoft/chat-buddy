@@ -11,6 +11,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from chat_buddy.characters.application import StorylineService
 from chat_buddy.characters.domain import (
     ActiveStorylineError,
     LockedSceneSetupError,
@@ -19,7 +20,11 @@ from chat_buddy.characters.domain import (
     SceneSequence,
     StaleStorylineError,
 )
-from chat_buddy.characters.infrastructure.db.repositories import DbSceneRepository
+from chat_buddy.characters.infrastructure.db.repositories import (
+    DbConversationRepository,
+    DbSceneRepository,
+    DbStorylineRepository,
+)
 from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
@@ -114,10 +119,15 @@ def test_concurrent_storyline_start_and_append_have_one_winner(
     command.upgrade(_configuration(engine), "head")
     factory = sessionmaker(bind=engine, autoflush=False)
     repository, scenes, request = _repositories_and_request(factory)
+    service = StorylineService(repository, scenes, DbConversationRepository(factory))
     other = request.model_copy(update={"request_id": uuid4()})
     starts = _race(
-        lambda: repository.start(request, _relationship()),
-        lambda: repository.start(other, _relationship()),
+        lambda: service.start(request),
+        lambda: StorylineService(
+            DbStorylineRepository(factory),
+            DbSceneRepository(factory),
+            DbConversationRepository(factory),
+        ).start(other),
     )
     winners = [outcome for outcome in starts if isinstance(outcome, tuple)]
     assert len(winners) == 1
@@ -152,8 +162,12 @@ def test_concurrent_storyline_start_and_append_have_one_winner(
         has_open_attempt=False,
     )
     appends = _race(
-        lambda: scenes.append_next(_next_scene(), eligibility),
-        lambda: DbSceneRepository(factory).append_next(_next_scene(), eligibility),
+        lambda: service.append_next(_next_scene(), eligibility),
+        lambda: StorylineService(
+            DbStorylineRepository(factory),
+            DbSceneRepository(factory),
+            DbConversationRepository(factory),
+        ).append_next(_next_scene(), eligibility),
     )
     assert sum(isinstance(outcome, SceneSequence) for outcome in appends) == 1
     assert sum(isinstance(outcome, StaleStorylineError) for outcome in appends) == 1

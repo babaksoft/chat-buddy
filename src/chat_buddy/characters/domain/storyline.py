@@ -314,23 +314,6 @@ class SceneAppendEligibility(BaseModel):
     )
     has_open_attempt: bool = Field(description="Whether an attempt remains open.")
 
-    @model_validator(mode="after")
-    def validate_attempt_shape(self) -> Self:
-        """Require an open attempt to target an unmatched selected input.
-
-        Returns:
-            The validated immutable eligibility facts.
-
-        Raises:
-            ValueError:
-                If an open attempt exists without unmatched selected input.
-        """
-
-        if self.has_open_attempt and not self.has_unmatched_input:
-            raise ValueError("An open attempt requires unmatched selected input")
-
-        return self
-
     @property
     def can_append(self) -> bool:
         """Derive append authorization from the observed facts.

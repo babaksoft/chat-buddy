@@ -294,7 +294,7 @@ its existing repository and migration suite without UI changes.
 
 ### Slice 5 — Add the Storyline lifecycle service
 
-Status: Pending
+Status: Complete
 
 Add reviewed Storyline start, initial-scene definition, latest-scene resume,
 deterministic identity/persona grouping, metadata editing, guarded next-scene

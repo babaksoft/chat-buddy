@@ -3,6 +3,9 @@
 from itertools import groupby
 from uuid import UUID
 
+from chat_buddy.characters.application.starting_relationship import (
+    resolve_starting_relationship,
+)
 from chat_buddy.characters.domain import (
     ActiveContinuityError,
     Continuity,
@@ -11,8 +14,6 @@ from chat_buddy.characters.domain import (
     ContinuityRepository,
     StartAvailability,
     StartContinuity,
-    StartingOrigins,
-    StartingRelationship,
     UnsupportedContinuityModeError,
 )
 
@@ -73,28 +74,9 @@ class ContinuityService:
                 "Archive the active Ongoing before starting a replacement"
             )
 
-        selection = request.relationship
-        defaults: dict[str, object] = {
-            "social": "stranger",
-            "romantic": "none",
-            "dynamic": "neutral",
-            "trust": "unknown",
-            "affection": "neutral",
-            "boundaries": (),
-        }
-        origins = {}
-        for field, default in defaults.items():
-            value = getattr(selection, field)
-            defaults[field] = default if value is None else value
-            origins[field] = "default" if value is None else "user_selected"
-        state = StartingRelationship.model_validate(
-            {
-                "intent": selection.intent,
-                **defaults,
-                "origins": StartingOrigins.model_validate(origins),
-            }
+        return self._repository.start(
+            request, resolve_starting_relationship(request.relationship)
         )
-        return self._repository.start(request, state)
 
     def resume(
         self, identity_id: UUID, persona_id: UUID, continuity_id: UUID

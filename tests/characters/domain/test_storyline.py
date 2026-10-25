@@ -295,6 +295,7 @@ def test_scene_sequence_requires_owned_consecutive_append_order() -> None:
             False,
             "unmatched_input",
         ),
+        ({"has_open_attempt": True}, False, "open_attempt"),
     ],
 )
 def test_next_scene_eligibility_is_derived_from_complete_idle_latest_scene(
@@ -326,24 +327,6 @@ def test_next_scene_eligibility_is_derived_from_complete_idle_latest_scene(
     eligibility = SceneAppendEligibility.model_validate({**values, **changes})
     assert eligibility.can_append is can_append
     assert eligibility.block_reason == reason
-
-
-def test_open_attempt_requires_unmatched_selected_input() -> None:
-    """Reject contradictory append facts before a repository sees them."""
-
-    with pytest.raises(ValidationError, match="open attempt"):
-        SceneAppendEligibility(
-            storyline_id=uuid4(),
-            scene_id=uuid4(),
-            expected_storyline_revision=1,
-            expected_selected_leaf_id=uuid4(),
-            scene_position=1,
-            storyline_lifecycle=ContinuityLifecycle.ACTIVE,
-            is_latest_scene=True,
-            has_complete_selected_exchange=True,
-            has_unmatched_input=False,
-            has_open_attempt=True,
-        )
 
 
 @pytest.mark.parametrize(

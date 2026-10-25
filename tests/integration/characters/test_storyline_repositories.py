@@ -12,12 +12,16 @@ from chat_buddy.characters.domain import (
     ActiveStorylineError,
     ArchivedContinuityError,
     ContinuityLifecycle,
+    EffectiveGeneration,
+    GenerationConfiguration,
     IdentityDetails,
     IncompleteLatestSceneError,
     InvalidSceneOwnershipError,
+    ModelDescriptor,
     PersonaCore,
     RelationshipIntent,
     RelationshipSelection,
+    ResponseProvenance,
     ResponseStyleSnapshot,
     SceneAppendEligibility,
     SceneDetails,
@@ -25,6 +29,7 @@ from chat_buddy.characters.domain import (
     StartingOrigins,
     StartingRelationship,
     StartStoryline,
+    StrategyIdentity,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ConversationModel,
@@ -384,7 +389,25 @@ def _complete_exchange(
             role="persona",
             content="At midnight.",
             parent_id=user.id,
-            response_provenance={"fixture": True},
+            response_provenance=ResponseProvenance(
+                generation=EffectiveGeneration(
+                    model=ModelDescriptor(
+                        provider="fake",
+                        model="storyline-test",
+                        context_tokens=1024,
+                        output_tokens=128,
+                        capabilities=frozenset({"response"}),
+                    ),
+                    configuration=GenerationConfiguration(max_output_tokens=128),
+                    capability="response",
+                    input_tokens=896,
+                ),
+                response_style=_style(),
+                evolution_strategy=StrategyIdentity(
+                    name="baseline.no_change", version="1.0.0"
+                ),
+                attempt_id=uuid4(),
+            ).model_dump(mode="json"),
             created_at=now,
         )
         session.add(persona)
