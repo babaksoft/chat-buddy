@@ -40,6 +40,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     ConversationModel,
     GenerationAttemptModel,
     MessageModel,
+    SceneModel,
 )
 
 
@@ -80,6 +81,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            self._writable_storyline_scene(session, scope, row)
             row.generation_settings = settings.model_dump(mode="json")
 
     def begin(
@@ -113,6 +115,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            scene = self._writable_storyline_scene(session, scope, row)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -150,6 +153,18 @@ class DbConversationRepository:
                 if tail is None or tail.role != "user":
                     raise IncompleteTurnError("There is no incomplete turn to continue")
                 user_message_id, content = tail.id, tail.content
+
+            if scene is not None:
+                if tail is None and submitted is not None:
+                    if scene.setup_locked:
+                        raise AttemptConflictError(
+                            "Empty scene setup was already locked"
+                        )
+                    scene.setup_locked = True
+                elif not scene.setup_locked:
+                    raise AttemptConflictError(
+                        "Committed scene history requires a locked setup"
+                    )
 
             row.generation_settings = settings.model_dump(mode="json")
             attempt = GenerationAttemptModel(
@@ -200,6 +215,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            self._writable_storyline_scene(session, scope, row)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -330,7 +346,7 @@ class DbConversationRepository:
                 parent_id=attempt.user_message_id,
                 response_provenance=ResponseProvenance(
                     generation=EffectiveGeneration.model_validate(attempt.generation),
-                    response_style=self._RESPONSE_STYLE,
+                    response_style=self._response_style(session, scope, row),
                     evolution_strategy=self._EVOLUTION_STRATEGY,
                     attempt_id=attempt.id,
                 ).model_dump(mode="json"),
@@ -345,6 +361,91 @@ class DbConversationRepository:
             session.flush()
             path = self._selected_path(session, scope, row)
             return self._message(path.messages[-1], len(path.messages))
+
+    @classmethod
+    def _writable_storyline_scene(
+        cls,
+        session: Session,
+        scope: ConversationScope,
+        conversation: ConversationModel,
+    ) -> SceneModel | None:
+        """Lock and require the target to remain the latest Storyline scene.
+
+        Args:
+            session:
+                Current reservation transaction.
+            scope:
+                Complete conversation ownership.
+            conversation:
+                Locked owned conversation.
+
+        Returns:
+            Locked Storyline scene, or None for Ongoing.
+
+        Raises:
+            AttemptConflictError:
+                If scene ownership changed or a later scene now exists.
+        """
+
+        if conversation.mode != "storyline":
+            return None
+        scene = session.scalar(
+            select(SceneModel)
+            .where(
+                SceneModel.conversation_id == scope.conversation_id,
+                SceneModel.continuity_id == scope.continuity_id,
+                SceneModel.identity_id == scope.identity_id,
+                SceneModel.persona_id == scope.persona_id,
+            )
+            .with_for_update()
+        )
+        latest_position = session.scalar(
+            select(func.max(SceneModel.position)).where(
+                SceneModel.continuity_id == scope.continuity_id
+            )
+        )
+        if scene is None or latest_position is None:
+            raise AttemptConflictError("Storyline scene ownership changed")
+        if scene.position != latest_position:
+            raise AttemptConflictError(
+                "A later Storyline scene exists; prepare a fork instead"
+            )
+        return scene
+
+    @classmethod
+    def _response_style(
+        cls,
+        session: Session,
+        scope: ConversationScope,
+        conversation: ConversationModel,
+    ) -> ResponseStyleSnapshot:
+        """Resolve immutable response-style provenance from the owning mode.
+
+        Args:
+            session:
+                Current completion transaction.
+            scope:
+                Complete conversation ownership.
+            conversation:
+                Owned conversation row.
+
+        Returns:
+            Ongoing default or the exact fixed scene response style.
+        """
+
+        if conversation.mode != "storyline":
+            return cls._RESPONSE_STYLE
+        scene = session.scalar(
+            select(SceneModel).where(
+                SceneModel.conversation_id == scope.conversation_id,
+                SceneModel.continuity_id == scope.continuity_id,
+                SceneModel.identity_id == scope.identity_id,
+                SceneModel.persona_id == scope.persona_id,
+            )
+        )
+        if scene is None:
+            raise AttemptConflictError("Storyline scene ownership changed")
+        return ResponseStyleSnapshot.model_validate(scene.response_style)
 
     def stop(
         self,
@@ -537,6 +638,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            self._writable_storyline_scene(session, scope, row)
             if row.selected_leaf_id != expected_selected_leaf_id:
                 raise StaleSelectionError("Selected conversation path changed")
 
@@ -584,6 +686,7 @@ class DbConversationRepository:
         scope = request.scope
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            self._writable_storyline_scene(session, scope, row)
             if row.selected_leaf_id != request.expected_selected_leaf_id:
                 raise StaleSelectionError("Selected conversation path changed")
             active_attempt = session.scalar(

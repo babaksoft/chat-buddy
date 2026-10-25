@@ -1,10 +1,15 @@
 """Immutable message input and conversation selection validation."""
 
+from uuid import uuid4
+
 import pytest
 from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
+    ContinuityMode,
+    ConversationScope,
     ConversationSettings,
+    ConversationTarget,
     SubmittedInput,
 )
 
@@ -38,3 +43,27 @@ def test_requested_selection_enforces_purpose_specific_limits() -> None:
         ConversationSettings(provider="X" * 65, model="model")
     with pytest.raises(ValidationError):
         ConversationSettings(provider="fake", model="X" * 257)
+
+
+def test_mode_owned_target_requires_exact_scene_shape() -> None:
+    """Require Storyline scene ownership while keeping Ongoing scene-free."""
+
+    scope = ConversationScope(
+        identity_id=uuid4(),
+        persona_id=uuid4(),
+        continuity_id=uuid4(),
+        conversation_id=uuid4(),
+    )
+    ongoing = ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING)
+    storyline = ConversationTarget(
+        scope=scope, mode=ContinuityMode.STORYLINE, scene_id=uuid4()
+    )
+
+    assert ongoing.scene_id is None
+    assert storyline.scene_id is not None
+    with pytest.raises(ValidationError):
+        ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING, scene_id=uuid4())
+    with pytest.raises(ValidationError):
+        ConversationTarget(scope=scope, mode=ContinuityMode.STORYLINE)
+    with pytest.raises(ValidationError):
+        ConversationTarget(scope=scope, mode=ContinuityMode.TIMELINE)

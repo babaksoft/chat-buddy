@@ -324,7 +324,7 @@ without direct UI or service-level SQLAlchemy access.
 
 ### Slice 6 — Converse and summarize inside scenes
 
-Status: Pending
+Status: Complete
 
 Make conversation orchestration accept a mode-owned conversation target and add a
 Storyline adapter that validates the scene, lifecycle, selected leaf, setup lock,

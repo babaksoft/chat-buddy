@@ -1,4 +1,4 @@
-"""Ongoing eligibility and deterministic response token budgeting."""
+"""Mode-owned eligibility and deterministic response token budgeting."""
 
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -12,12 +12,15 @@ from chat_buddy.characters.domain import (
     Message,
     Persona,
     PromptMessage,
+    Scene,
+    Storyline,
     SummaryRevision,
     TokenCounter,
 )
 from chat_buddy.characters.prompts import (
     PROMPT_OVERHEAD_TOKENS,
     assemble_ongoing_prompt,
+    assemble_storyline_prompt,
 )
 
 
@@ -194,6 +197,125 @@ class OngoingContextBudgeter:
             persona,
             identity,
             continuity,
+            messages,
+            context.current_input,
+            context.summary.content if context.summary is not None else None,
+        )
+
+
+class StorylineContextBudgeter:
+    """Select one scene's newest complete-turn suffix within its response budget."""
+
+    def assemble(
+        self,
+        persona: Persona,
+        identity: Identity,
+        storyline: Storyline,
+        scene: Scene,
+        context: EligibleContext,
+        generation: EffectiveGeneration,
+        counter: TokenCounter,
+    ) -> ContextSelection:
+        """Reserve Storyline blocks and greedily add whole turns newest first.
+
+        Args:
+            persona:
+                Frozen authored persona.
+            identity:
+                Frozen authored identity.
+            storyline:
+                Owned starting relationship.
+            scene:
+                Exact scene setup and response style.
+            context:
+                Eligible scene summary, turns, and current input.
+            generation:
+                Effective response capacity after output reservation.
+            counter:
+                Provider-specific deterministic estimator.
+
+        Returns:
+            Bounded prompt and explicit compression prefix.
+
+        Raises:
+            ContextCapacityError:
+                If mandatory Storyline context cannot fit.
+        """
+
+        turns = context.uncovered_turns
+        mandatory_count = min(1, len(turns))
+        selected = turns[-mandatory_count:] if mandatory_count else ()
+        prompt = self._render(persona, identity, storyline, scene, context, selected)
+        tokens = counter.count(prompt)
+        if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
+            raise ContextCapacityError(
+                "Mandatory Storyline context exceeds this model's capacity."
+            )
+
+        omitted = turns[:-mandatory_count] if mandatory_count else ()
+        for turn in reversed(omitted):
+            candidate_turns = (turn,) + selected
+            candidate = self._render(
+                persona,
+                identity,
+                storyline,
+                scene,
+                context,
+                candidate_turns,
+            )
+            candidate_tokens = counter.count(candidate)
+            if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
+                break
+            selected = candidate_turns
+            prompt = candidate
+            tokens = candidate_tokens
+        omitted_count = len(turns) - len(selected)
+
+        return ContextSelection(
+            prompt=prompt,
+            included_turns=selected,
+            omitted_turns=turns[:omitted_count],
+            tokens=tokens,
+        )
+
+    @staticmethod
+    def _render(
+        persona: Persona,
+        identity: Identity,
+        storyline: Storyline,
+        scene: Scene,
+        context: EligibleContext,
+        turns: tuple[CompletedTurn, ...],
+    ) -> tuple[PromptMessage, ...]:
+        """Format one candidate from exact Storyline scene inputs.
+
+        Args:
+            persona:
+                Frozen authored persona.
+            identity:
+                Frozen authored identity.
+            storyline:
+                Owned Storyline snapshot.
+            scene:
+                Exact scene snapshot.
+            context:
+                Summary and current input.
+            turns:
+                Selected chronological complete turns.
+
+        Returns:
+            Provider-ready prompt messages.
+        """
+
+        messages: tuple[Message, ...] = tuple(
+            message for turn in turns for message in (turn.user, turn.persona)
+        )
+
+        return assemble_storyline_prompt(
+            persona,
+            identity,
+            storyline,
+            scene,
             messages,
             context.current_input,
             context.summary.content if context.summary is not None else None,

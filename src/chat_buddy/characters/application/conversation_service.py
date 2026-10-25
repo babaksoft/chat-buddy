@@ -1,4 +1,4 @@
-"""Durable bounded Ongoing generation with isolated incomplete-turn recovery."""
+"""Durable bounded Characters generation with isolated turn recovery."""
 
 from collections.abc import Generator, Iterator
 from datetime import UTC, datetime, timedelta
@@ -12,9 +12,13 @@ from chat_buddy.characters.application.branch_policy import (
 from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
+    StorylineContextBudgeter,
 )
 from chat_buddy.characters.application.rolling_summary_service import (
     RollingSummaryService,
+)
+from chat_buddy.characters.application.storyline_conversation import (
+    StorylineConversationAdapter,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
@@ -30,6 +34,7 @@ from chat_buddy.characters.domain import (
     ConversationRepository,
     ConversationScope,
     ConversationSettings,
+    ConversationTarget,
     EffectiveGeneration,
     ForkRequiredError,
     GenerationAttempt,
@@ -43,7 +48,9 @@ from chat_buddy.characters.domain import (
     PersonaRepository,
     PromptMessage,
     RetryAvailability,
+    Scene,
     SelectedPath,
+    Storyline,
     SubmittedInput,
     SummaryRepository,
 )
@@ -52,7 +59,7 @@ from chat_buddy.characters.domain import (
 class _ConversationPersistence(
     ConversationRepository, ConversationGraphRepository, Protocol
 ):
-    """Combined persistence capabilities required by Ongoing orchestration."""
+    """Combined persistence capabilities required by conversation orchestration."""
 
 
 class ConversationService:
@@ -67,6 +74,7 @@ class ConversationService:
         summaries: SummaryRepository,
         models: ModelRegistry,
         branch_mode_facts: BranchModeFactsResolver | None = None,
+        storyline_adapter: StorylineConversationAdapter | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -85,6 +93,8 @@ class ConversationService:
                 Replaceable provider/model capabilities.
             branch_mode_facts:
                 Optional future-mode fact adapter; unavailable facts fail closed.
+            storyline_adapter:
+                Optional exact Storyline scene ownership and policy adapter.
         """
 
         self._conversations = conversations
@@ -92,9 +102,13 @@ class ConversationService:
         self._identities = identities
         self._personas = personas
         self._models = models
-        self._branch_mode_facts = branch_mode_facts or DeferredBranchModeFactsResolver()
+        self._storyline_adapter = storyline_adapter
+        self._branch_mode_facts = (
+            branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
+        )
         self._eligibility = OngoingContextEligibility()
         self._budgeter = OngoingContextBudgeter()
+        self._storyline_budgeter = StorylineContextBudgeter()
         self._summaries = RollingSummaryService(summaries, models)
 
     def response_models(self) -> tuple[ModelDescriptor, ...]:
@@ -122,36 +136,57 @@ class ConversationService:
             provider=generation.model.provider, model=generation.model.model
         )
 
-    def history(self, scope: ConversationScope) -> ConversationHistory:
+    def history(
+        self, target: ConversationScope | ConversationTarget
+    ) -> ConversationHistory:
         """Inspect committed history and incomplete output separately.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             Detached durable history, including archives.
         """
 
-        return self._conversations.history(scope)
+        scope = self._scope(target)
+        history = self._conversations.history(scope)
+        if isinstance(target, ConversationTarget):
+            self._validate_target(target, history, writable=False)
+        return history
 
-    def inspect_graph(self, scope: ConversationScope) -> ConversationGraphView:
+    def inspect_graph(
+        self, target: ConversationScope | ConversationTarget
+    ) -> ConversationGraphView:
         """Return a detached deterministic view of every saved future.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             Graph nodes with alternatives, retry counts, selection, and current
             branch availability.
         """
 
+        scope = self._scope(target)
         graph = self._conversations.graph(scope)
-        history = self._conversations.history(scope)
-        continuity = self._continuities.get(
-            scope.identity_id, scope.persona_id, scope.continuity_id
-        )
+        history = self.history(target)
+        if (
+            isinstance(target, ConversationTarget)
+            and target.mode == ContinuityMode.STORYLINE
+        ):
+            storyline, _ = self._validate_target(target, history, writable=False)
+            if storyline is None:
+                raise ValueError("Storyline target resolution failed")
+            lifecycle = storyline.lifecycle
+            mode = ContinuityMode.STORYLINE
+        else:
+            continuity = self._continuities.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
+            lifecycle = continuity.lifecycle
+            mode = continuity.mode
         selected_ids = {message.id for message in graph.selected_path().messages}
         alternatives_by_parent: dict[UUID, tuple[UUID, ...]] = {}
         for node in graph.nodes:
@@ -159,7 +194,7 @@ class ConversationService:
                 continue
             alternatives_by_parent.setdefault(node.parent_id, ())
             alternatives_by_parent[node.parent_id] += (node.id,)
-        blocked = continuity.lifecycle != "active" or any(
+        blocked = lifecycle != "active" or any(
             attempt.status in {"pending", "streaming"} for attempt in history.attempts
         )
         views = []
@@ -172,7 +207,7 @@ class ConversationService:
             selected_leaf = node.id == graph.selected_leaf_id
             mode_allows_branch = (
                 node.role == "persona"
-                and self._branch_decision(scope, node.id, continuity.mode).disposition
+                and self._branch_decision(scope, node.id, mode).disposition
                 == "in_place"
             )
             views.append(
@@ -199,15 +234,15 @@ class ConversationService:
 
     def select_alternative(
         self,
-        scope: ConversationScope,
+        target: ConversationScope | ConversationTarget,
         message_id: UUID,
         expected_selected_leaf_id: UUID,
     ) -> SelectedPath:
         """Select an exact off-path persona alternative or saved future leaf.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             message_id:
                 Exact alternative or saved descendant leaf.
             expected_selected_leaf_id:
@@ -217,7 +252,9 @@ class ConversationService:
             Newly selected root-to-leaf ancestry.
         """
 
-        self._authorize_mode_action(scope, message_id)
+        scope = self._scope(target)
+        self._validate_write_target(target, self._conversations.history(scope))
+        self._authorize_mode_action(target, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
@@ -229,15 +266,15 @@ class ConversationService:
 
     def select_saved_future(
         self,
-        scope: ConversationScope,
+        target: ConversationScope | ConversationTarget,
         message_id: UUID,
         expected_selected_leaf_id: UUID,
     ) -> SelectedPath:
         """Restore one exact saved future leaf without guessing descendants.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             message_id:
                 Exact saved descendant leaf.
             expected_selected_leaf_id:
@@ -247,19 +284,19 @@ class ConversationService:
             Newly selected root-to-leaf ancestry.
         """
 
-        return self.select_alternative(scope, message_id, expected_selected_leaf_id)
+        return self.select_alternative(target, message_id, expected_selected_leaf_id)
 
     def branch_from_here(
         self,
-        scope: ConversationScope,
+        target: ConversationScope | ConversationTarget,
         message_id: UUID,
         expected_selected_leaf_id: UUID,
     ) -> SelectedPath:
         """Select an older persona node on the current path for the next send.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             message_id:
                 Exact older selected-path persona node.
             expected_selected_leaf_id:
@@ -269,7 +306,9 @@ class ConversationService:
             Truncated selected ancestry without deleting its prior future.
         """
 
-        self._authorize_mode_action(scope, message_id)
+        scope = self._scope(target)
+        self._validate_write_target(target, self._conversations.history(scope))
+        self._authorize_mode_action(target, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
@@ -279,29 +318,37 @@ class ConversationService:
             )
         )
 
-    def resume(self, scope: ConversationScope) -> ConversationHistory:
+    def resume(
+        self, target: ConversationScope | ConversationTarget
+    ) -> ConversationHistory:
         """Reconcile attempts without progress for five minutes, then reload.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             Saved history with expired attempts interrupted.
         """
 
-        return self._conversations.reconcile(
+        scope = self._scope(target)
+        history = self._conversations.reconcile(
             scope, datetime.now(UTC) - timedelta(minutes=5)
         )
+        if isinstance(target, ConversationTarget):
+            self._validate_target(target, history, writable=False)
+        return history
 
     def configure(
-        self, scope: ConversationScope, settings: ConversationSettings
+        self,
+        target: ConversationScope | ConversationTarget,
+        settings: ConversationSettings,
     ) -> None:
         """Validate and persist defaults affecting only future attempts.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             settings:
                 Requested provider, model, and overrides.
         """
@@ -309,16 +356,20 @@ class ConversationService:
         self._models.resolve(
             settings.provider, settings.model, "response", settings.requested
         )
+        scope = self._scope(target)
+        self._validate_write_target(target, self._conversations.history(scope))
         self._conversations.configure(scope, settings)
 
     def send(
-        self, scope: ConversationScope, submitted: SubmittedInput
+        self,
+        target: ConversationScope | ConversationTarget,
+        submitted: SubmittedInput,
     ) -> GenerationAttempt:
         """Validate capacity before atomically committing input and a pending attempt.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             submitted:
                 Validated new input.
 
@@ -326,27 +377,31 @@ class ConversationService:
             Durable pending attempt to pass to stream.
         """
 
-        return self._prepare(scope, submitted)
+        return self._prepare(target, submitted)
 
-    def continue_incomplete_turn(self, scope: ConversationScope) -> GenerationAttempt:
+    def continue_incomplete_turn(
+        self, target: ConversationScope | ConversationTarget
+    ) -> GenerationAttempt:
         """Reserve another attempt for the existing unmatched input.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             New attempt preserving all prior attempt provenance.
         """
 
-        return self._prepare(scope, None)
+        return self._prepare(target, None)
 
-    def retry_availability(self, scope: ConversationScope) -> RetryAvailability:
+    def retry_availability(
+        self, target: ConversationScope | ConversationTarget
+    ) -> RetryAvailability:
         """Return successful retry accounting for the selected final response.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             Durable retry accounting for the selected turn.
@@ -356,24 +411,29 @@ class ConversationService:
                 If no completed persona response is selected.
         """
 
-        history = self.history(scope)
+        scope = self._scope(target)
+        history = self.history(target)
         tail = history.messages[-1] if history.messages else None
         if tail is None or tail.role != "persona":
             raise IncompleteTurnError("No completed response is available to retry")
         return self._conversations.retry_availability(scope, tail.id)
 
-    def retry_completed_response(self, scope: ConversationScope) -> GenerationAttempt:
+    def retry_completed_response(
+        self, target: ConversationScope | ConversationTarget
+    ) -> GenerationAttempt:
         """Reserve a new attempt for the selected final persona response.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
 
         Returns:
             Durable pending retry attempt.
         """
 
-        history = self.history(scope)
+        scope = self._scope(target)
+        history = self.history(target)
+        self._validate_write_target(target, history)
         if any(
             attempt.status in {"pending", "streaming"} for attempt in history.attempts
         ):
@@ -383,7 +443,7 @@ class ConversationService:
         if tail is None or tail.role != "persona":
             raise IncompleteTurnError("No completed response is available to retry")
 
-        self._authorize_mode_action(scope, tail.id)
+        self._authorize_mode_action(target, tail.id)
 
         if history.settings is None:
             generation = self._models.resolve_default("response")
@@ -397,7 +457,7 @@ class ConversationService:
             )
         retry_history = history.model_copy(update={"messages": history.messages[:-1]})
         self._prompt(
-            scope,
+            target,
             retry_history,
             generation,
             None,
@@ -406,13 +466,15 @@ class ConversationService:
         return self._conversations.begin_retry(scope, generation, settings, tail.id)
 
     def branch_decision(
-        self, scope: ConversationScope, source_message_id: UUID
+        self,
+        target: ConversationScope | ConversationTarget,
+        source_message_id: UUID,
     ) -> BranchDecision:
         """Resolve the mode disposition with exact source references.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             source_message_id:
                 Exact persona response governing the action.
 
@@ -420,14 +482,19 @@ class ConversationService:
             In-place or fork-required policy decision.
         """
 
-        self._conversations.history(scope)
-        continuity = self._continuities.get(
-            scope.identity_id, scope.persona_id, scope.continuity_id
+        scope = self._scope(target)
+        self.history(target)
+        mode = (
+            target.mode
+            if isinstance(target, ConversationTarget)
+            else self._continuities.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            ).mode
         )
-        return self._branch_decision(scope, source_message_id, continuity.mode)
+        return self._branch_decision(scope, source_message_id, mode)
 
     def stream(
-        self, scope: ConversationScope, attempt_id: UUID
+        self, target: ConversationScope | ConversationTarget, attempt_id: UUID
     ) -> Generator[str, None, None]:
         """Stream durable chunks, then atomically commit the completed response.
 
@@ -435,8 +502,8 @@ class ConversationService:
         and crashes are reconciled after their heartbeat expires.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             attempt_id:
                 Pending attempt returned by send or continuation.
 
@@ -445,11 +512,13 @@ class ConversationService:
         """
 
         # A losing duplicate consumer must never stop the winning stream.
+        scope = self._scope(target)
+        self._validate_write_target(target, self._conversations.history(scope))
         attempt = self._conversations.claim(scope, attempt_id)
         output: Iterator[str] | None = None
         completed = False
         try:
-            history = self.history(scope)
+            history = self.history(target)
             summary_path_leaf_id: UUID | None = None
             if (
                 history.messages
@@ -461,7 +530,7 @@ class ConversationService:
                 history = history.model_copy(update={"messages": history.messages[:-1]})
 
             prompt = self._prompt(
-                scope,
+                target,
                 history,
                 attempt.generation,
                 None,
@@ -487,13 +556,15 @@ class ConversationService:
                     self._conversations.stop(scope, attempt_id, "interrupted")
 
     def _prepare(
-        self, scope: ConversationScope, submitted: SubmittedInput | None
+        self,
+        target: ConversationScope | ConversationTarget,
+        submitted: SubmittedInput | None,
     ) -> GenerationAttempt:
         """Preflight an isolated prompt and fence any concurrent history change.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             submitted:
                 New input or incomplete-turn continuation.
 
@@ -507,7 +578,9 @@ class ConversationService:
                 If the requested action does not match the saved tail.
         """
 
-        history = self.history(scope)
+        scope = self._scope(target)
+        history = self.history(target)
+        self._validate_write_target(target, history)
         if any(
             attempt.status in {"pending", "streaming"} for attempt in history.attempts
         ):
@@ -532,7 +605,7 @@ class ConversationService:
             )
 
         self._prompt(
-            scope, history, generation, submitted.content if submitted else None
+            target, history, generation, submitted.content if submitted else None
         )
         expected_selected_leaf_id = tail.id if tail is not None else None
 
@@ -579,13 +652,15 @@ class ConversationService:
         return decide_branch_mode(facts)
 
     def _authorize_mode_action(
-        self, scope: ConversationScope, source_message_id: UUID
+        self,
+        target: ConversationScope | ConversationTarget,
+        source_message_id: UUID,
     ) -> BranchDecision:
         """Require an in-place policy result before graph mutation.
 
         Args:
-            scope:
-                Complete required ownership.
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
             source_message_id:
                 Exact persona response governing the action.
 
@@ -597,14 +672,14 @@ class ConversationService:
                 If facts are missing, contradictory, or require a future fork.
         """
 
-        decision = self.branch_decision(scope, source_message_id)
+        decision = self.branch_decision(target, source_message_id)
         if decision.disposition == "fork_required":
             raise ForkRequiredError(decision)
         return decision
 
     def _prompt(
         self,
-        scope: ConversationScope,
+        target: ConversationScope | ConversationTarget,
         history: ConversationHistory,
         generation: EffectiveGeneration,
         current_input: str | None,
@@ -613,8 +688,8 @@ class ConversationService:
         """Assemble required blocks and reject full-history overflow deterministically.
 
         Args:
-            scope:
-                Verified complete ownership.
+            target:
+                Verified legacy Ongoing scope or mode-owned target.
             history:
                 Scoped committed messages, never partial attempt output.
             generation:
@@ -634,21 +709,54 @@ class ConversationService:
                 If all required context cannot fit.
         """
 
-        continuity = self._continuities.get(
-            scope.identity_id, scope.persona_id, scope.continuity_id
-        )
-        if continuity.lifecycle != "active":
-            raise ArchivedContinuityError("Archived continuity is read-only")
-
+        scope = self._scope(target)
         persona = self._personas.get(scope.persona_id)
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
         current = self._summaries.current(scope, summary_path_leaf_id)
+        storyline: Storyline | None = None
+        scene: Scene | None = None
+        continuity = None
+        if isinstance(target, ConversationTarget):
+            if target.mode == ContinuityMode.STORYLINE:
+                storyline, scene = self._validate_target(target, history, writable=True)
+                if storyline is None or scene is None:
+                    raise ValueError("Storyline target resolution failed")
+            else:
+                continuity = self._continuities.get(
+                    scope.identity_id, scope.persona_id, scope.continuity_id
+                )
+                if target.mode != continuity.mode:
+                    raise ValueError(
+                        "Conversation target mode does not match ownership"
+                    )
+        else:
+            continuity = self._continuities.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
+            if continuity.mode != ContinuityMode.ONGOING:
+                raise ValueError("Storyline conversations require a mode-owned target")
+        if continuity is not None and continuity.lifecycle != "active":
+            raise ArchivedContinuityError("Archived continuity is read-only")
+
         for _ in range(len(history.messages) // 2 + 1):
             eligible = self._eligibility.select(history, current, current_input)
-            selection = self._budgeter.assemble(
-                persona, identity, continuity, eligible, generation, counter
-            )
+            if storyline is not None and scene is not None:
+                selection = self._storyline_budgeter.assemble(
+                    persona,
+                    identity,
+                    storyline,
+                    scene,
+                    eligible,
+                    generation,
+                    counter,
+                )
+            else:
+                if continuity is None:
+                    raise ValueError("Ongoing target resolution failed")
+                selection = self._budgeter.assemble(
+                    persona, identity, continuity, eligible, generation, counter
+                )
             if not selection.omitted_turns:
                 return selection.prompt
             current = self._summaries.advance(
@@ -660,3 +768,73 @@ class ConversationService:
         raise ContextCapacityError(
             "Conversation summary did not make bounded progress."
         )
+
+    @staticmethod
+    def _scope(target: ConversationScope | ConversationTarget) -> ConversationScope:
+        """Normalize a legacy Ongoing scope or explicit mode-owned target.
+
+        Args:
+            target:
+                Conversation operation target.
+
+        Returns:
+            Complete persistence ownership scope.
+        """
+
+        return target.scope if isinstance(target, ConversationTarget) else target
+
+    def _validate_target(
+        self,
+        target: ConversationTarget,
+        history: ConversationHistory,
+        writable: bool,
+    ) -> tuple[Storyline | None, Scene | None]:
+        """Validate explicit mode ownership and optionally write policy.
+
+        Args:
+            target:
+                Explicit mode-owned conversation target.
+            history:
+                Selected committed history.
+            writable:
+                Whether active latest-scene policy is required.
+
+        Returns:
+            Storyline and scene snapshots for Storyline targets, otherwise Nones.
+
+        Raises:
+            ValueError:
+                If no Storyline adapter is configured for a Storyline target.
+        """
+
+        if target.mode == ContinuityMode.ONGOING:
+            continuity = self._continuities.get(
+                target.scope.identity_id,
+                target.scope.persona_id,
+                target.scope.continuity_id,
+            )
+            if continuity.mode != ContinuityMode.ONGOING:
+                raise ValueError("Conversation target mode does not match ownership")
+            return None, None
+        if self._storyline_adapter is None:
+            raise ValueError("Storyline conversation support is not configured")
+        if writable:
+            return self._storyline_adapter.require_writable(target, history)
+        return self._storyline_adapter.inspect(target, history)
+
+    def _validate_write_target(
+        self,
+        target: ConversationScope | ConversationTarget,
+        history: ConversationHistory,
+    ) -> None:
+        """Apply mode-specific write authorization before reserving work.
+
+        Args:
+            target:
+                Legacy Ongoing scope or explicit mode-owned target.
+            history:
+                Current selected history.
+        """
+
+        if isinstance(target, ConversationTarget):
+            self._validate_target(target, history, writable=True)

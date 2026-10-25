@@ -7,6 +7,7 @@ from chat_buddy.characters.application.branch_policy import (
 from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
+    StorylineContextBudgeter,
 )
 from chat_buddy.characters.application.continuity_service import (
     ContinuityService,
@@ -30,6 +31,9 @@ from chat_buddy.characters.application.rolling_summary_service import (
 from chat_buddy.characters.application.starting_relationship import (
     resolve_starting_relationship,
 )
+from chat_buddy.characters.application.storyline_conversation import (
+    StorylineConversationAdapter,
+)
 from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
@@ -44,6 +48,8 @@ __all__ = [
     "PersonaService",
     "RollingSummaryService",
     "StartAvailability",
+    "StorylineContextBudgeter",
+    "StorylineConversationAdapter",
     "StorylineService",
     "decide_branch_mode",
     "resolve_starting_relationship",

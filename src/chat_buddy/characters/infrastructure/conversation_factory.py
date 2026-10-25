@@ -2,7 +2,10 @@
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import ConversationService
+from chat_buddy.characters.application import (
+    ConversationService,
+    StorylineConversationAdapter,
+)
 from chat_buddy.characters.infrastructure.llm import create_model_registry
 
 
@@ -25,12 +28,16 @@ def create_conversation_service(
         DbConversationRepository,
         DbIdentityRepository,
         DbPersonaRepository,
+        DbSceneRepository,
+        DbStorylineRepository,
         DbSummaryRepository,
     )
 
     if session_factory is None:
         session_factory = CharactersSessionLocal
 
+    storylines = DbStorylineRepository(session_factory)
+    scenes = DbSceneRepository(session_factory)
     return ConversationService(
         DbConversationRepository(session_factory),
         DbContinuityRepository(session_factory),
@@ -38,4 +45,5 @@ def create_conversation_service(
         DbPersonaRepository(session_factory),
         DbSummaryRepository(session_factory),
         create_model_registry(),
+        storyline_adapter=StorylineConversationAdapter(storylines, scenes),
     )

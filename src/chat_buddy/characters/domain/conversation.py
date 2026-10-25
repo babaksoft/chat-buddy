@@ -1,11 +1,12 @@
 """Immutable sole-path messages, ownership, defaults, and attempt provenance."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from chat_buddy.characters.domain.continuity import ContinuityMode
 from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
     GenerationConfiguration,
@@ -32,6 +33,47 @@ class ConversationScope(BaseModel):
     persona_id: UUID = Field(description="Expected persona owner.")
     continuity_id: UUID = Field(description="Expected continuity owner.")
     conversation_id: UUID = Field(description="Sole conversation identifier.")
+
+
+class ConversationTarget(BaseModel):
+    """Mode-owned target for one Characters conversation.
+
+    Attributes:
+        scope:
+            Complete profile, continuity, and conversation ownership.
+        mode:
+            Mode whose policy and prompt assembly govern the conversation.
+        scene_id:
+            Required Storyline scene owner and absent for Ongoing.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: ConversationScope = Field(description="Complete conversation ownership.")
+    mode: ContinuityMode = Field(description="Governing continuity mode.")
+    scene_id: UUID | None = Field(
+        default=None, description="Owning Storyline scene when applicable."
+    )
+
+    @model_validator(mode="after")
+    def validate_mode_owner(self) -> Self:
+        """Require exactly the owner needed by each supported mode.
+
+        Returns:
+            The validated immutable target.
+
+        Raises:
+            ValueError:
+                If Ongoing has a scene or Storyline has none.
+        """
+
+        if self.mode == ContinuityMode.ONGOING and self.scene_id is not None:
+            raise ValueError("Ongoing conversations do not belong to scenes")
+        if self.mode == ContinuityMode.STORYLINE and self.scene_id is None:
+            raise ValueError("Storyline conversations require a scene owner")
+        if self.mode == ContinuityMode.TIMELINE:
+            raise ValueError("Timeline conversation targets are not available")
+        return self
 
 
 class SubmittedInput(BaseModel):

@@ -3,7 +3,7 @@
 from datetime import UTC
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -19,6 +19,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     ContinuityModel,
     ConversationModel,
     MessageModel,
+    SceneModel,
     SummaryRevisionModel,
 )
 
@@ -214,8 +215,8 @@ class DbSummaryRepository:
         if lock:
             statement = statement.with_for_update()
         continuity = session.scalar(statement)
-        conversation_id = session.scalar(
-            select(ConversationModel.id).where(
+        conversation = session.scalar(
+            select(ConversationModel).where(
                 ConversationModel.id == scope.conversation_id,
                 ConversationModel.continuity_id == scope.continuity_id,
                 ConversationModel.identity_id == scope.identity_id,
@@ -223,10 +224,28 @@ class DbSummaryRepository:
             )
         )
 
-        if continuity is None or conversation_id is None:
+        if continuity is None or conversation is None:
             raise ConversationNotFoundError("Summary ownership does not match.")
         if writable and continuity.lifecycle != "active":
             raise ArchivedContinuityError("Archived continuity is read-only.")
+        if writable and conversation.mode == "storyline":
+            scene_position = session.scalar(
+                select(SceneModel.position)
+                .where(
+                    SceneModel.conversation_id == scope.conversation_id,
+                    SceneModel.continuity_id == scope.continuity_id,
+                )
+                .with_for_update()
+            )
+            latest_position = session.scalar(
+                select(func.max(SceneModel.position)).where(
+                    SceneModel.continuity_id == scope.continuity_id
+                )
+            )
+            if scene_position is None or scene_position != latest_position:
+                raise SummaryConflictError(
+                    "A later Storyline scene prevents summary writes."
+                )
 
     @staticmethod
     def _validate_lineage(
