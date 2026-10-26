@@ -448,7 +448,7 @@ services but remain absent from extraction and response prompts.
 
 ### Slice 10 — Build contextual extraction snapshots
 
-Status: Pending
+Status: Complete
 
 Implement the shared pure branch/temporal eligibility service and the baseline
 extraction context-selector strategy. For one still-selected complete turn, build

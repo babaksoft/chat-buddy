@@ -22,6 +22,11 @@ from chat_buddy.characters.application.evolution import (
 from chat_buddy.characters.application.identity_service import (
     IdentityService,
 )
+from chat_buddy.characters.application.memory_context import (
+    BaselineMemoryContextSelector,
+    StorylineExtractionContextService,
+    StorylineMemoryEligibility,
+)
 from chat_buddy.characters.application.memory_service import StorylineMemoryService
 from chat_buddy.characters.application.persona_service import (
     PersonaService,
@@ -41,6 +46,7 @@ from chat_buddy.characters.application.storyline_fork_service import (
 from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
+    "BaselineMemoryContextSelector",
     "ContinuityService",
     "ConversationService",
     "DeferredBranchModeFactsResolver",
@@ -54,7 +60,9 @@ __all__ = [
     "StartAvailability",
     "StorylineContextBudgeter",
     "StorylineConversationAdapter",
+    "StorylineExtractionContextService",
     "StorylineForkService",
+    "StorylineMemoryEligibility",
     "StorylineMemoryService",
     "StorylineService",
     "decide_branch_mode",
