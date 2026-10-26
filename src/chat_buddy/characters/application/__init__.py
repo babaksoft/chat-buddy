@@ -22,6 +22,7 @@ from chat_buddy.characters.application.evolution import (
 from chat_buddy.characters.application.identity_service import (
     IdentityService,
 )
+from chat_buddy.characters.application.memory_service import StorylineMemoryService
 from chat_buddy.characters.application.persona_service import (
     PersonaService,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "StorylineContextBudgeter",
     "StorylineConversationAdapter",
     "StorylineForkService",
+    "StorylineMemoryService",
     "StorylineService",
     "decide_branch_mode",
     "resolve_starting_relationship",

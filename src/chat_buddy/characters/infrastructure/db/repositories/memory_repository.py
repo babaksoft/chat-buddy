@@ -8,7 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    ChangeMemoryStateCommand,
     ConversationScope,
+    CorrectMemoryCommand,
     CreateMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
@@ -141,6 +143,117 @@ class DbStorylineMemoryRepository:
             and memory.current.source.learned.position <= target_scene_position
         )
 
+    def correct(self, command: CorrectMemoryCommand) -> StorylineMemory:
+        """Add a guarded user-authored correction to an active lineage.
+
+        Args:
+            command:
+                Guarded correction request.
+
+        Returns:
+            Updated complete memory lineage.
+
+        Raises:
+            MemoryNotFoundError:
+                If the memory is absent or foreign.
+            StaleMemoryRevisionError:
+                If the observed revision is no longer current.
+            ProtectedMemoryCorrectionError:
+                If the memory is currently excluded.
+            MemorySubjectConflictError:
+                If another memory owns the corrected subject.
+        """
+
+        try:
+            with self._factory() as session, session.begin():
+                row, current = self._locked_current(session, command)
+                if current.state == MemoryRevisionState.EXCLUDED:
+                    raise ProtectedMemoryCorrectionError(
+                        "Reactivate an excluded memory before correcting it"
+                    )
+
+                self._append_revision(
+                    session,
+                    row,
+                    current,
+                    subject=command.subject,
+                    content=command.content,
+                    state=MemoryRevisionState.ACTIVE,
+                    authorship=MemoryAuthorship.USER,
+                    kind=MemoryRevisionKind.USER_CORRECTION,
+                )
+                row.subject_key = command.subject.casefold()
+                session.flush()
+
+                return self._snapshot(session, row)
+        except IntegrityError as error:
+            if "subject" in str(error).lower():
+                raise MemorySubjectConflictError(
+                    "Another memory already owns the corrected subject"
+                ) from error
+
+            raise StaleMemoryRevisionError(
+                "Memory changed while the correction was committed"
+            ) from error
+
+    def change_state(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+        """Add a guarded exclusion or reactivation revision.
+
+        Args:
+            command:
+                Guarded lifecycle transition.
+
+        Returns:
+            Updated complete memory lineage.
+
+        Raises:
+            MemoryNotFoundError:
+                If the memory is absent or foreign.
+            StaleMemoryRevisionError:
+                If the observed revision or requested transition is stale.
+        """
+
+        try:
+            with self._factory() as session, session.begin():
+                row, current = self._locked_current(session, command)
+                excluding = command.operation == "exclude"
+                expected_state = (
+                    MemoryRevisionState.ACTIVE
+                    if excluding
+                    else MemoryRevisionState.EXCLUDED
+                )
+                if current.state != expected_state:
+                    raise StaleMemoryRevisionError(
+                        f"Memory cannot be changed with {command.operation!r} "
+                        f"from {current.state!r}"
+                    )
+
+                self._append_revision(
+                    session,
+                    row,
+                    current,
+                    subject=current.subject,
+                    content=current.content,
+                    state=(
+                        MemoryRevisionState.EXCLUDED
+                        if excluding
+                        else MemoryRevisionState.ACTIVE
+                    ),
+                    authorship=MemoryAuthorship(current.authorship),
+                    kind=(
+                        MemoryRevisionKind.EXCLUSION
+                        if excluding
+                        else MemoryRevisionKind.REACTIVATION
+                    ),
+                )
+                session.flush()
+
+                return self._snapshot(session, row)
+        except IntegrityError as error:
+            raise StaleMemoryRevisionError(
+                "Memory changed while the lifecycle transition was committed"
+            ) from error
+
     def delete(self, command: DeleteMemoryCommand) -> None:
         """Hard-delete one guarded lineage and its dependent conflict evidence.
 
@@ -193,6 +306,106 @@ class DbStorylineMemoryRepository:
             row.current_revision_id = None
             session.flush()
             session.delete(row)
+
+    @staticmethod
+    def _locked_current(
+        session: Session,
+        command: CorrectMemoryCommand | ChangeMemoryStateCommand,
+    ) -> tuple[StorylineMemoryModel, MemoryRevisionModel]:
+        """Lock and validate the current revision named by a command.
+
+        Args:
+            session:
+                Current transaction.
+            command:
+                Guarded management request.
+
+        Returns:
+            Locked logical memory and current revision.
+
+        Raises:
+            MemoryNotFoundError:
+                If the memory is absent or foreign.
+            StaleMemoryRevisionError:
+                If the current revision changed.
+        """
+
+        row = session.scalar(
+            select(StorylineMemoryModel)
+            .where(
+                StorylineMemoryModel.id == command.memory_id,
+                StorylineMemoryModel.continuity_id == command.continuity_id,
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise MemoryNotFoundError(str(command.memory_id))
+        if row.current_revision_id != command.expected_revision_id:
+            raise StaleMemoryRevisionError(
+                "Memory changed after the operation was reviewed"
+            )
+
+        current = session.get(MemoryRevisionModel, row.current_revision_id)
+        if current is None or current.state == MemoryRevisionState.SUPERSEDED:
+            raise StaleMemoryRevisionError("Memory has no matching current revision")
+
+        return row, current
+
+    @staticmethod
+    def _append_revision(
+        session: Session,
+        row: StorylineMemoryModel,
+        current: MemoryRevisionModel,
+        *,
+        subject: str,
+        content: str,
+        state: MemoryRevisionState,
+        authorship: MemoryAuthorship,
+        kind: MemoryRevisionKind,
+    ) -> None:
+        """Supersede the current row and append one immutable revision.
+
+        Args:
+            session:
+                Current transaction.
+            row:
+                Locked logical memory.
+            current:
+                Locked current revision.
+            subject:
+                Subject retained or supplied by the operation.
+            content:
+                Content retained or supplied by the operation.
+            state:
+                New current lifecycle state.
+            authorship:
+                New current content authority.
+            kind:
+                Revision operation kind.
+        """
+
+        current.state = MemoryRevisionState.SUPERSEDED.value
+        session.flush()
+
+        revision_id = uuid4()
+        session.add(
+            MemoryRevisionModel(
+                id=revision_id,
+                memory_id=row.id,
+                continuity_id=row.continuity_id,
+                revision=current.revision + 1,
+                predecessor_id=current.id,
+                subject=subject,
+                content=content,
+                state=state.value,
+                authorship=authorship.value,
+                kind=kind.value,
+                source_evidence_id=current.source_evidence_id,
+                created_at=datetime.now(UTC),
+            )
+        )
+        session.flush()
+        row.current_revision_id = revision_id
 
     @staticmethod
     def _owned(
@@ -517,6 +730,33 @@ class DbMemoryExtractionRepository:
         """
 
         with self._factory() as session, session.begin():
+            observed = session.scalar(
+                select(MemoryConflictModel).where(
+                    MemoryConflictModel.id == command.conflict_id,
+                    MemoryConflictModel.continuity_id == command.continuity_id,
+                )
+            )
+            if observed is None:
+                raise MemoryConflictNotFoundError(str(command.conflict_id))
+            if command.expected_revision_id != observed.observed_revision_id:
+                raise StaleMemoryConflictError(
+                    "Dismissal does not match the conflict's observed revision"
+                )
+
+            if observed.memory_id is not None:
+                current = session.scalar(
+                    select(StorylineMemoryModel.current_revision_id)
+                    .where(
+                        StorylineMemoryModel.id == observed.memory_id,
+                        StorylineMemoryModel.continuity_id == command.continuity_id,
+                    )
+                    .with_for_update()
+                )
+                if current != observed.observed_revision_id:
+                    raise StaleMemoryConflictError(
+                        "Target memory changed after the conflict was recorded"
+                    )
+
             row = session.scalar(
                 select(MemoryConflictModel)
                 .where(
@@ -528,19 +768,7 @@ class DbMemoryExtractionRepository:
             if row is None:
                 raise MemoryConflictNotFoundError(str(command.conflict_id))
 
-            snapshot = self._conflict_snapshot(session, row)
-            snapshot.validate_dismissal(command)
-            if row.memory_id is not None:
-                current = session.scalar(
-                    select(StorylineMemoryModel.current_revision_id).where(
-                        StorylineMemoryModel.id == row.memory_id
-                    )
-                )
-                if current != row.observed_revision_id:
-                    raise StaleMemoryConflictError(
-                        "Target memory changed after the conflict was recorded"
-                    )
-
+            self._conflict_snapshot(session, row).validate_dismissal(command)
             row.state = MemoryConflictState.DISMISSED.value
             row.dismissed_at = datetime.now(UTC)
             session.flush()

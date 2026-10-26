@@ -7,8 +7,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from chat_buddy.characters.application import StorylineMemoryService
 from chat_buddy.characters.domain import (
+    ChangeMemoryStateCommand,
     ConversationScope,
+    CorrectMemoryCommand,
     CreateMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
@@ -17,14 +20,18 @@ from chat_buddy.characters.domain import (
     ExtractionProvenance,
     GenerationConfiguration,
     InvalidMemoryDeltaTargetError,
+    MemoryAuthorship,
     MemoryConflictState,
     MemoryDelta,
     MemoryEvidence,
     MemoryNotFoundError,
+    MemoryRevisionKind,
     NoMemoryChangeCommand,
+    ProtectedMemoryCorrectionError,
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
     ScenePosition,
+    StaleMemoryConflictError,
     StaleMemoryRevisionError,
     StrategyIdentity,
     SupersedeMemoryCommand,
@@ -384,6 +391,33 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
     )
     assert dismissed.state == MemoryConflictState.DISMISSED
     assert dismissed.dismissed_at is not None
+    with pytest.raises(ExtractionEffectConflictError):
+        extraction.dismiss_conflict(
+            DismissMemoryConflictCommand(
+                continuity_id=storyline.id,
+                conflict_id=conflict.id,
+                expected_revision_id=superseded.current.id,
+            )
+        )
+
+    corrected = memories.correct(
+        CorrectMemoryCommand(
+            continuity_id=storyline.id,
+            memory_id=superseded.id,
+            expected_revision_id=superseded.current.id,
+            subject="departure time",
+            content="The confirmed departure is one in the morning.",
+        )
+    )
+    assert corrected.current.id != superseded.current.id
+    with pytest.raises(StaleMemoryConflictError):
+        extraction.dismiss_conflict(
+            DismissMemoryConflictCommand(
+                continuity_id=storyline.id,
+                conflict_id=conflict.id,
+                expected_revision_id=superseded.current.id,
+            )
+        )
 
     _, fourth_persona_id = _append_exchange(factory, scene.scope)
     fourth_effect = extraction.reserve(scene.scope, scene.id, fourth_persona_id)
@@ -400,6 +434,192 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
     )
     assert no_change.state == ExtractionEffectState.NO_CHANGE
     assert no_change.provenance == provenance
+
+
+def test_management_workflows_preserve_provenance_and_enforce_guards(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Manage a lineage without extraction and reject stale or foreign actions.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    storylines, _, request = _repositories_and_request(factory)
+    storyline, scene = storylines.start(request, _relationship())
+    extraction = DbMemoryExtractionRepository(factory)
+    memories = DbStorylineMemoryRepository(factory)
+    service = StorylineMemoryService(memories, extraction)
+    provenance = _provenance()
+
+    persona_id = _complete_exchange(factory, scene.scope.conversation_id, storyline.id)
+    evidence = _evidence(
+        scene.scope,
+        scene.id,
+        _parent_id(factory, persona_id),
+        persona_id,
+        2,
+        provenance,
+    )
+    effect = extraction.reserve(scene.scope, scene.id, persona_id)
+    extraction.apply(
+        effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                CreateMemoryCommand(
+                    subject="favorite drink",
+                    content="The favorite drink is tea.",
+                    occurrence=evidence.occurrence,
+                    evidence=evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    initial = service.list_memories(storyline.id)[0]
+    assert service.inspect_memory(storyline.id, initial.id) == initial
+    with pytest.raises(MemoryNotFoundError):
+        service.inspect_memory(uuid4(), initial.id)
+    with pytest.raises(MemoryNotFoundError):
+        service.correct(
+            CorrectMemoryCommand(
+                continuity_id=uuid4(),
+                memory_id=initial.id,
+                expected_revision_id=initial.current.id,
+                subject="favorite drink",
+                content="A foreign edit.",
+            )
+        )
+
+    corrected = service.correct(
+        CorrectMemoryCommand(
+            continuity_id=storyline.id,
+            memory_id=initial.id,
+            expected_revision_id=initial.current.id,
+            subject="favorite drink",
+            content="The favorite drink is coffee.",
+        )
+    )
+    assert corrected.current.authorship == MemoryAuthorship.USER
+    assert corrected.current.kind == MemoryRevisionKind.USER_CORRECTION
+    assert corrected.current.source == initial.current.source
+    with pytest.raises(StaleMemoryRevisionError):
+        service.correct(
+            CorrectMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=initial.id,
+                expected_revision_id=initial.current.id,
+                subject="favorite drink",
+                content="A stale edit.",
+            )
+        )
+
+    excluded = service.exclude(
+        ChangeMemoryStateCommand(
+            operation="exclude",
+            continuity_id=storyline.id,
+            memory_id=initial.id,
+            expected_revision_id=corrected.current.id,
+        )
+    )
+    assert excluded.current.kind == MemoryRevisionKind.EXCLUSION
+    assert excluded.current.source == initial.current.source
+    with pytest.raises(ProtectedMemoryCorrectionError):
+        service.correct(
+            CorrectMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=initial.id,
+                expected_revision_id=excluded.current.id,
+                subject="favorite drink",
+                content="Cannot bypass exclusion.",
+            )
+        )
+
+    reactivated = service.reactivate(
+        ChangeMemoryStateCommand(
+            operation="reactivate",
+            continuity_id=storyline.id,
+            memory_id=initial.id,
+            expected_revision_id=excluded.current.id,
+        )
+    )
+    assert reactivated.current.kind == MemoryRevisionKind.REACTIVATION
+    assert reactivated.current.authorship == MemoryAuthorship.USER
+    assert reactivated.current.source == initial.current.source
+
+    conflict_user_id, conflict_persona_id = _append_exchange(factory, scene.scope)
+    conflict_evidence = _evidence(
+        scene.scope,
+        scene.id,
+        conflict_user_id,
+        conflict_persona_id,
+        4,
+        provenance,
+    )
+    conflict_effect = extraction.reserve(scene.scope, scene.id, conflict_persona_id)
+    extraction.apply(
+        conflict_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=conflict_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                RecordMemoryConflictCommand(
+                    target_memory_id=initial.id,
+                    expected_revision_id=reactivated.current.id,
+                    subject="favorite drink",
+                    content="The favorite drink might still be tea.",
+                    occurrence=conflict_evidence.occurrence,
+                    evidence=conflict_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    (conflict,) = service.list_conflicts(storyline.id)
+
+    changed = service.correct(
+        CorrectMemoryCommand(
+            continuity_id=storyline.id,
+            memory_id=initial.id,
+            expected_revision_id=reactivated.current.id,
+            subject="favorite drink",
+            content="The favorite drink is espresso.",
+        )
+    )
+    with pytest.raises(StaleMemoryConflictError):
+        service.dismiss_conflict(
+            DismissMemoryConflictCommand(
+                continuity_id=storyline.id,
+                conflict_id=conflict.id,
+                expected_revision_id=reactivated.current.id,
+            )
+        )
+
+    service.delete(
+        DeleteMemoryCommand(
+            continuity_id=storyline.id,
+            memory_id=initial.id,
+            expected_revision_id=changed.current.id,
+        )
+    )
+    assert service.list_memories(storyline.id) == ()
+    assert service.list_conflicts(storyline.id) == ()
+    with pytest.raises(MemoryNotFoundError):
+        service.delete(
+            DeleteMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=initial.id,
+                expected_revision_id=changed.current.id,
+            )
+        )
 
 
 def _append_exchange(

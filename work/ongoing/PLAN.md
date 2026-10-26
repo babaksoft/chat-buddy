@@ -422,7 +422,7 @@ exposing memory to prompts or users.
 
 ### Slice 9 — Add memory and conflict management workflows
 
-Status: Pending
+Status: Complete
 
 Add application services to list and inspect continuity-owned memory, correct an
 active revision, exclude, reactivate, hard-delete, inspect conflicts, and dismiss a

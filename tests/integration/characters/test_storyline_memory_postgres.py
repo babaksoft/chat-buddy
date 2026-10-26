@@ -12,10 +12,20 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from chat_buddy.characters.domain import (
+    ChangeMemoryStateCommand,
+    CorrectMemoryCommand,
     CreateMemoryCommand,
+    DeleteMemoryCommand,
+    DismissMemoryConflictCommand,
     ExtractionEffect,
     InvalidMemoryDeltaTargetError,
+    MemoryConflict,
     MemoryDelta,
+    MemoryNotFoundError,
+    RecordMemoryConflictCommand,
+    StaleMemoryConflictError,
+    StaleMemoryRevisionError,
+    StorylineMemory,
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
@@ -229,6 +239,212 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
     assert (
         len(DbStorylineMemoryRepository(factory).get(storyline.id, memory.id).revisions)
         == 2
+    )
+
+
+def test_management_changes_and_conflict_dismissal_serialize_under_race(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Serialize guarded lifecycle, deletion, and conflict-management writes.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    storylines, _, request = _repositories_and_request(factory)
+    storyline, scene = storylines.start(request, _relationship())
+    extraction = DbMemoryExtractionRepository(factory)
+    memories = DbStorylineMemoryRepository(factory)
+    provenance = _provenance()
+
+    first_persona_id = _complete_exchange(
+        factory, scene.scope.conversation_id, storyline.id
+    )
+    first_evidence = _evidence(
+        scene.scope,
+        scene.id,
+        _parent_id(factory, first_persona_id),
+        first_persona_id,
+        2,
+        provenance,
+    )
+    first_effect = extraction.reserve(scene.scope, scene.id, first_persona_id)
+    extraction.apply(
+        first_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=first_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                CreateMemoryCommand(
+                    subject="departure time",
+                    content="The train leaves at midnight.",
+                    occurrence=first_evidence.occurrence,
+                    evidence=first_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    initial = memories.list(storyline.id)[0]
+
+    first_race = _race(
+        lambda: DbStorylineMemoryRepository(factory).correct(
+            CorrectMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=initial.id,
+                expected_revision_id=initial.current.id,
+                subject="departure time",
+                content="The train leaves at one.",
+            )
+        ),
+        lambda: DbStorylineMemoryRepository(factory).change_state(
+            ChangeMemoryStateCommand(
+                operation="exclude",
+                continuity_id=storyline.id,
+                memory_id=initial.id,
+                expected_revision_id=initial.current.id,
+            )
+        ),
+    )
+    assert sum(isinstance(item, StorylineMemory) for item in first_race) == 1
+    assert sum(isinstance(item, StaleMemoryRevisionError) for item in first_race) == 1
+
+    current = memories.get(storyline.id, initial.id)
+    if current.current.state == "excluded":
+        current = memories.change_state(
+            ChangeMemoryStateCommand(
+                operation="reactivate",
+                continuity_id=storyline.id,
+                memory_id=current.id,
+                expected_revision_id=current.current.id,
+            )
+        )
+    excluded = memories.change_state(
+        ChangeMemoryStateCommand(
+            operation="exclude",
+            continuity_id=storyline.id,
+            memory_id=current.id,
+            expected_revision_id=current.current.id,
+        )
+    )
+    second_race = _race(
+        lambda: DbStorylineMemoryRepository(factory).change_state(
+            ChangeMemoryStateCommand(
+                operation="reactivate",
+                continuity_id=storyline.id,
+                memory_id=excluded.id,
+                expected_revision_id=excluded.current.id,
+            )
+        ),
+        lambda: DbStorylineMemoryRepository(factory).delete(
+            DeleteMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=excluded.id,
+                expected_revision_id=excluded.current.id,
+            )
+        ),
+    )
+    successful_second_writes = sum(
+        isinstance(item, StorylineMemory) or item is None for item in second_race
+    )
+    assert successful_second_writes == 1
+    assert any(
+        isinstance(item, (MemoryNotFoundError, StaleMemoryRevisionError))
+        for item in second_race
+    )
+
+    second_user_id, second_persona_id = _append_exchange(factory, scene.scope)
+    second_evidence = _evidence(
+        scene.scope,
+        scene.id,
+        second_user_id,
+        second_persona_id,
+        4,
+        provenance,
+    )
+    second_effect = extraction.reserve(scene.scope, scene.id, second_persona_id)
+    extraction.apply(
+        second_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=second_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                CreateMemoryCommand(
+                    subject="platform",
+                    content="The train leaves from platform four.",
+                    occurrence=second_evidence.occurrence,
+                    evidence=second_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    target = next(
+        memory
+        for memory in memories.list(storyline.id)
+        if memory.current.subject == "platform"
+    )
+    third_user_id, third_persona_id = _append_exchange(factory, scene.scope)
+    third_evidence = _evidence(
+        scene.scope,
+        scene.id,
+        third_user_id,
+        third_persona_id,
+        6,
+        provenance,
+    )
+    third_effect = extraction.reserve(scene.scope, scene.id, third_persona_id)
+    extraction.apply(
+        third_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=third_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                RecordMemoryConflictCommand(
+                    target_memory_id=target.id,
+                    expected_revision_id=target.current.id,
+                    subject="platform",
+                    content="The departure platform might be five.",
+                    occurrence=third_evidence.occurrence,
+                    evidence=third_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    conflict = extraction.list_conflicts(storyline.id)[0]
+    third_race = _race(
+        lambda: DbMemoryExtractionRepository(factory).dismiss_conflict(
+            DismissMemoryConflictCommand(
+                continuity_id=storyline.id,
+                conflict_id=conflict.id,
+                expected_revision_id=target.current.id,
+            )
+        ),
+        lambda: DbStorylineMemoryRepository(factory).correct(
+            CorrectMemoryCommand(
+                continuity_id=storyline.id,
+                memory_id=target.id,
+                expected_revision_id=target.current.id,
+                subject="platform",
+                content="The train leaves from platform six.",
+            )
+        ),
+    )
+    assert any(isinstance(item, StorylineMemory) for item in third_race)
+    assert any(
+        isinstance(item, (MemoryConflict, StaleMemoryConflictError))
+        for item in third_race
     )
 
 
