@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 6, Slice 3 — executable contextual-memory contracts.
+Next delivery focus: Stage 6, Slice 9 — memory and conflict management workflows.
 
 Deferred engineering:
 

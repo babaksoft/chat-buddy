@@ -8,6 +8,13 @@ from chat_buddy.characters.infrastructure.db.models.continuity import (
     StorylineModel,
 )
 from chat_buddy.characters.infrastructure.db.models.identity import IdentityModel
+from chat_buddy.characters.infrastructure.db.models.memory import (
+    MemoryConflictModel,
+    MemoryEvidenceModel,
+    MemoryExtractionEffectModel,
+    MemoryRevisionModel,
+    StorylineMemoryModel,
+)
 from chat_buddy.characters.infrastructure.db.models.message import (
     GenerationAttemptModel,
     MessageModel,
@@ -20,10 +27,15 @@ __all__ = [
     "ConversationModel",
     "GenerationAttemptModel",
     "IdentityModel",
+    "MemoryConflictModel",
+    "MemoryEvidenceModel",
+    "MemoryExtractionEffectModel",
+    "MemoryRevisionModel",
     "MessageModel",
     "PersonaModel",
     "SceneModel",
     "StartingRelationshipModel",
+    "StorylineMemoryModel",
     "StorylineModel",
     "SummaryRevisionModel",
 ]

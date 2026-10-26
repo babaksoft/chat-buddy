@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 ## Outcome
 
@@ -390,7 +390,7 @@ changes preserve both futures without shared ownership.
 
 ### Slice 8 — Persist memory lineages and extraction records
 
-Status: Pending
+Status: Complete
 
 Add SQLAlchemy models and a Characters migration for logical memories, immutable
 revisions, supporting evidence, extraction effects, and unresolved conflicts.

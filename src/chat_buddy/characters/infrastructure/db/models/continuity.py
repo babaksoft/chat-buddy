@@ -236,6 +236,21 @@ class SceneModel(CharactersBase):
     __tablename__ = "scenes"
     __table_args__ = (
         UniqueConstraint(
+            "id",
+            "continuity_id",
+            "identity_id",
+            "persona_id",
+            name="uq_scene_ownership",
+        ),
+        UniqueConstraint(
+            "id",
+            "continuity_id",
+            "identity_id",
+            "persona_id",
+            "conversation_id",
+            name="uq_scene_complete_ownership",
+        ),
+        UniqueConstraint(
             "continuity_id", "position", name="uq_scene_storyline_position"
         ),
         UniqueConstraint("conversation_id", name="uq_scene_conversation"),

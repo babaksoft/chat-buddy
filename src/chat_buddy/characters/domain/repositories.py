@@ -32,6 +32,7 @@ from chat_buddy.characters.domain.memory import (
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
     ExtractionEffect,
+    ExtractionProvenance,
     MemoryConflict,
     StorylineMemory,
 )
@@ -805,7 +806,12 @@ class MemoryExtractionRepository(Protocol):
 
         ...
 
-    def apply(self, effect_id: UUID, delta: MemoryDelta) -> ExtractionEffect:
+    def apply(
+        self,
+        effect_id: UUID,
+        delta: MemoryDelta,
+        provenance: ExtractionProvenance,
+    ) -> ExtractionEffect:
         """Atomically apply a validated delta and finish its reserved effect.
 
         Args:
@@ -813,6 +819,9 @@ class MemoryExtractionRepository(Protocol):
                 Reserved extraction effect.
             delta:
                 Fully validated structured proposal.
+            provenance:
+                Complete selection, prompt, and provider configuration used to
+                produce the delta, including for a no-change result.
 
         Returns:
             Terminal applied or no-change effect.
