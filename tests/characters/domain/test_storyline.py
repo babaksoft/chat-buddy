@@ -9,6 +9,10 @@ from pydantic import ValidationError
 from chat_buddy.characters.domain import (
     ContinuityLifecycle,
     ConversationScope,
+    Identity,
+    IdentityDetails,
+    Persona,
+    PersonaCore,
     RelationshipIntent,
     RelationshipSelection,
     ResponseStyleSnapshot,
@@ -20,9 +24,10 @@ from chat_buddy.characters.domain import (
     StartingRelationship,
     StartStoryline,
     Storyline,
-    StorylineForkSource,
+    StorylineBranchLocation,
+    StorylineBranchSource,
+    StorylineForkPreview,
     StorylineGroup,
-    StorylineModeAction,
 )
 
 
@@ -130,8 +135,8 @@ def _scene(storyline: Storyline, position: int, *, locked: bool = True) -> Scene
     )
 
 
-def _fork_source(position: int = 1) -> StorylineForkSource:
-    """Create an exact guarded fork source.
+def _branch_source(position: int = 1) -> StorylineBranchSource:
+    """Create an exact guarded branch source.
 
     Args:
         position:
@@ -141,7 +146,7 @@ def _fork_source(position: int = 1) -> StorylineForkSource:
         Valid source point.
     """
 
-    return StorylineForkSource(
+    return StorylineBranchSource(
         scene_id=uuid4(),
         scope=ConversationScope(
             identity_id=uuid4(),
@@ -152,7 +157,7 @@ def _fork_source(position: int = 1) -> StorylineForkSource:
         scene_position=position,
         expected_storyline_revision=3,
         expected_selected_leaf_id=uuid4(),
-        source_message_id=uuid4(),
+        branch_point_message_id=uuid4(),
     )
 
 
@@ -344,8 +349,8 @@ def test_next_scene_eligibility_is_derived_from_complete_idle_latest_scene(
         },
     ],
 )
-def test_storyline_mode_action_rejects_impossible_fork_inputs(
-    change: Callable[[StorylineForkSource], dict[str, object]],
+def test_storyline_branch_location_rejects_impossible_inputs(
+    change: Callable[[StorylineBranchSource], dict[str, object]],
 ) -> None:
     """Validate exact source/latest relationships before branch policy.
 
@@ -354,26 +359,26 @@ def test_storyline_mode_action_rejects_impossible_fork_inputs(
             Invalid latest-scene values.
     """
 
-    source = _fork_source(position=2)
+    source = _branch_source(position=2)
     values: dict[str, object] = {
         "source": source,
         "latest_scene_id": source.scene_id,
         "latest_scene_position": source.scene_position,
     }
     with pytest.raises(ValidationError):
-        StorylineModeAction.model_validate({**values, **change(source)})
+        StorylineBranchLocation.model_validate({**values, **change(source)})
 
 
-def test_fork_source_and_mode_action_are_exact_and_immutable() -> None:
+def test_branch_source_and_location_are_exact_and_immutable() -> None:
     """Derive latest versus older status while retaining every source guard."""
 
-    source = _fork_source(position=2)
-    latest = StorylineModeAction(
+    source = _branch_source(position=2)
+    latest = StorylineBranchLocation(
         source=source,
         latest_scene_id=source.scene_id,
         latest_scene_position=2,
     )
-    older = StorylineModeAction(
+    older = StorylineBranchLocation(
         source=source,
         latest_scene_id=uuid4(),
         latest_scene_position=3,
@@ -383,3 +388,47 @@ def test_fork_source_and_mode_action_are_exact_and_immutable() -> None:
     assert older.has_later_scenes is True
     with pytest.raises(ValidationError):
         source.expected_storyline_revision = 4
+
+
+def test_fork_preview_requires_one_exact_profile_duplicate() -> None:
+    """Reject the source pair and authored profile changes."""
+
+    source = _branch_source()
+    identity = Identity(
+        id=source.scope.identity_id,
+        details=IdentityDetails(name="Traveler"),
+        is_frozen=True,
+    )
+    persona = Persona(
+        id=source.scope.persona_id,
+        core=PersonaCore(name="Guide", definition="A patient guide."),
+        is_frozen=True,
+    )
+    duplicate = Identity(id=uuid4(), details=identity.details)
+    values = {
+        "request_id": uuid4(),
+        "name": "A different road",
+        "source": source,
+        "source_identity": identity,
+        "source_persona": persona,
+        "target_identity": duplicate,
+        "target_persona": persona,
+    }
+
+    preview = StorylineForkPreview.model_validate(values)
+    assert preview.target_identity.id != preview.source_identity.id
+
+    invalid = (
+        {
+            "target_identity": identity,
+            "target_persona": persona,
+        },
+        {
+            "target_identity": duplicate.model_copy(
+                update={"details": IdentityDetails(name="Rewritten")}
+            )
+        },
+    )
+    for changes in invalid:
+        with pytest.raises(ValidationError):
+            StorylineForkPreview.model_validate({**values, **changes})

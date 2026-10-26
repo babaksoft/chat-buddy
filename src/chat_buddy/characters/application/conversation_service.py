@@ -180,13 +180,11 @@ class ConversationService:
             if storyline is None:
                 raise ValueError("Storyline target resolution failed")
             lifecycle = storyline.lifecycle
-            mode = ContinuityMode.STORYLINE
         else:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
             )
             lifecycle = continuity.lifecycle
-            mode = continuity.mode
         selected_ids = {message.id for message in graph.selected_path().messages}
         alternatives_by_parent: dict[UUID, tuple[UUID, ...]] = {}
         for node in graph.nodes:
@@ -205,11 +203,6 @@ class ConversationService:
                 else ()
             )
             selected_leaf = node.id == graph.selected_leaf_id
-            mode_allows_branch = (
-                node.role == "persona"
-                and self._branch_decision(scope, node.id, mode).disposition
-                == "in_place"
-            )
             views.append(
                 GraphNodeView(
                     message=node,
@@ -217,13 +210,7 @@ class ConversationService:
                     retry_count=max(len(alternatives) - 1, 0),
                     selected=node.id in selected_ids,
                     selected_leaf=selected_leaf,
-                    branchable=(
-                        not blocked
-                        and node.role == "persona"
-                        and node.id in selected_ids
-                        and not selected_leaf
-                        and mode_allows_branch
-                    ),
+                    branchable=(not blocked and node.role == "persona"),
                 )
             )
         return ConversationGraphView(
@@ -254,7 +241,6 @@ class ConversationService:
 
         scope = self._scope(target)
         self._validate_write_target(target, self._conversations.history(scope))
-        self._authorize_mode_action(target, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
@@ -292,22 +278,26 @@ class ConversationService:
         message_id: UUID,
         expected_selected_leaf_id: UUID,
     ) -> SelectedPath:
-        """Select an older persona node on the current path for the next send.
+        """Select any owned persona node as the next-send branch point.
 
         Args:
             target:
                 Legacy Ongoing scope or explicit mode-owned target.
             message_id:
-                Exact older selected-path persona node.
+                Exact owned persona branch point.
             expected_selected_leaf_id:
                 Last selected leaf observed by the caller.
 
         Returns:
-            Truncated selected ancestry without deleting its prior future.
+            Selected branch-point ancestry without deleting any saved future.
         """
 
         scope = self._scope(target)
-        self._validate_write_target(target, self._conversations.history(scope))
+        history = self._conversations.history(scope)
+        if isinstance(target, ConversationTarget):
+            storyline, _ = self._validate_target(target, history, writable=False)
+            if storyline is not None and storyline.lifecycle != "active":
+                raise ArchivedContinuityError("Archived Storylines are read-only")
         self._authorize_mode_action(target, message_id)
         return self._conversations.apply_action(
             GraphActionRequest(
@@ -442,8 +432,6 @@ class ConversationService:
         tail = history.messages[-1] if history.messages else None
         if tail is None or tail.role != "persona":
             raise IncompleteTurnError("No completed response is available to retry")
-
-        self._authorize_mode_action(target, tail.id)
 
         if history.settings is None:
             generation = self._models.resolve_default("response")

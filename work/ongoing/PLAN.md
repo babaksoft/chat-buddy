@@ -48,8 +48,9 @@ adaptation, and editable response-style controls remain deferred.
   identifier. Ongoing availability and archived Storylines do not block a start,
   but an existing active Storyline for the pair does.
 - The latest scene uses Stage 5 retry, alternative-selection, and in-place branch
-  behavior. Acting from an older scene that has a later dependent scene requires
-  an explicit Storyline fork. The reviewed fork exactly duplicates at least one
+  behavior. Branching from any persona message in an older scene that has a later
+  dependent scene requires an explicit Storyline fork; retry and selection do not.
+  The reviewed fork exactly duplicates at least one
   source profile to form a distinct pair with no Storyline, then copies the
   selected histories and scene metadata through the chosen source point into a
   new continuity with new owned identifiers. It leaves the source untouched and
@@ -352,25 +353,26 @@ with isolated context and summaries.
 
 ### Slice 7 — Structurally fork Storylines from older scenes
 
-Status: Pending
+Status: Complete
 
-Connect actual Storyline persistence to the Stage 5 mode-policy seam. Keep retry,
-alternative selection, and branching in place for the latest scene. When a chosen
-scene has later dependents, return a reviewed fork preview. The user confirms an
+Connect actual Storyline persistence to the Stage 5 branch-policy seam. Keep retry,
+alternative selection, and branching in place for the latest scene. When Branch
+from here names any persona message in a scene with later dependents, return a
+reviewed fork preview. Retry and alternative selection never fork. The user confirms an
 exact authored duplicate of at least one source profile, producing a distinct
 identity/persona pair with no Storyline; then atomically create the fork at the
 expected source leaf and Storyline revision. The fork uses a new user-authored
 name, retains the source starting relationship, and freezes newly duplicated
 profiles in that transaction.
 
-Copy only the contractually selected scene metadata and selected graph ancestry
-through the branch point, assigning new continuity-owned identifiers and retaining
+Copy earlier selected scene histories and the chosen scene's exact ancestry through
+the persona branch point, assigning new continuity-owned identifiers and retaining
 explicit source-to-copy provenance. Remap attempts, persona-message provenance,
 and compatible summary checkpoints only where the accepted contract requires them.
 Do not copy later scenes, unselected siblings, or open attempts. Persist a complete
 identifier mapping that Slice 11 can use when memory is introduced. After the fork
-commits, apply the requested selection/branch only in the new Storyline; leave
-every source record byte-for-byte unchanged.
+commits, make the copied branch point the selected leaf only in the new Storyline;
+leave every source record byte-for-byte unchanged.
 
 Verification:
 
@@ -614,11 +616,12 @@ Complete when users can create, organize, resume, and archive Storylines safely.
 Status: Pending
 
 Add selected-scene chat using the established conversation controls: streaming,
-recovery, retries, alternatives, and exact-future selection. Expose in-place
-branching for the latest scene and a reviewed, explicitly named fork preview for an
-older scene with dependents. The preview clearly creates an exact duplicate source
-profile and a distinct target pair. Navigate to the returned fork without changing
-the source selection. Keep memory management out of this slice.
+recovery, retries, alternatives, and exact-future selection. Expose Branch from
+here for every persona message: branch in place in the latest scene and show a
+reviewed, explicitly named fork preview for an older scene with dependents. Do not
+offer retry or selection as fork operations. The preview clearly creates an exact
+duplicate source profile and a distinct target pair. Navigate to the returned fork
+without changing the source selection. Keep memory management out of this slice.
 
 Disable writes for archived continuities and open attempts, reload stale selected
 leaves, and prevent reruns from replaying generation, retry, selection, or fork

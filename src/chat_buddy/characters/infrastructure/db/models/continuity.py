@@ -226,7 +226,7 @@ class StorylineModel(CharactersBase):
         Integer, default=1, doc="Optimistic Storyline mutation revision."
     )
     fork_provenance: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, doc="Optional source-to-copy mapping for a reviewed future fork."
+        JSON, doc="Optional source-to-copy mapping for a reviewed fork."
     )
 
 

@@ -11,8 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from chat_buddy.characters.application import StorylineService
 from chat_buddy.characters.domain import (
     AttemptConflictError,
-    ForkRequiredError,
     GenerationAttempt,
+    HistoricalSceneReadOnlyError,
     IncompleteLatestSceneError,
     SceneSequence,
     SubmittedInput,
@@ -78,7 +78,7 @@ def test_send_racing_next_scene_append_has_one_writable_scene(
                 DbStorylineRepository(factory),
                 DbSceneRepository(factory),
             ).send(target, SubmittedInput(content="Stay in this scene"))
-        except (AttemptConflictError, ForkRequiredError) as error:
+        except (AttemptConflictError, HistoricalSceneReadOnlyError) as error:
             return error
 
     def append() -> object:

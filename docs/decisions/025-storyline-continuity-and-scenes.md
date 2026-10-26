@@ -2,8 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-24
+- Last revised: 2026-10-26
 - Scope: Characters, Stage 6
 - Refines: ADRs 006, 009, and 024
+- Refined by: ADR 033
 - Consistent with: ADR 013
 
 ## Context
@@ -41,19 +43,21 @@ editable presentation metadata and never enters prompts. Stage 6 provides no
 scene, conversation, or message deletion; archive is the non-destructive
 Storyline lifecycle action.
 
-The latest scene uses ADR 009's retry, selection, and in-place branch rules. An
-action from an older scene with later scenes still requires a Storyline fork. A
+The latest scene uses ADR 009's retry, selection, and in-place branch rules.
+Branching from any persona message in an older scene with later scenes requires a
+Storyline fork; retry and saved-future selection never create one. A
 fork must use a distinct identity/persona pair that has no Storyline. To preserve
 the copied history's meaning, the reviewed fork creates that pair by duplicating
 at least one source profile without authored changes and freezes newly duplicated
 profiles when the fork commits. Revised profiles may start a new Storyline but
 cannot receive copied history.
 
-The fork copies selected scene histories and metadata only through the chosen
-source point, retains the source starting relationship under a user-authored new
-Storyline name, gives every owned record a new identifier, records source mappings,
-and changes only the fork. It copies no later scene, unselected alternative, open
-attempt, or unresolved conflict. Memory copying follows ADR 031.
+The fork copies earlier selected scene histories and metadata, then copies the
+chosen scene's exact ancestry through the persona branch point. It retains the
+source starting relationship under a user-authored new Storyline name, gives every
+owned record a new identifier, records source mappings, and changes only the fork.
+It copies no later scene, node outside those ancestries, open attempt, or unresolved
+conflict. Memory copying follows ADR 031.
 
 This makes Storyline structurally similar to Timeline: both grow forward through
 one ordered continuity. Storyline boundaries are user-authored named scenes that

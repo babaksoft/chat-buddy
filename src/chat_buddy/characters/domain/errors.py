@@ -76,6 +76,10 @@ class ArchivedContinuityError(ValueError):
     """An archived continuity cannot accept writes."""
 
 
+class HistoricalSceneReadOnlyError(ValueError):
+    """A nonlatest Storyline scene cannot accept ordinary conversation writes."""
+
+
 class ModelResolutionError(ValueError):
     """The provider/model selection is not configured."""
 
@@ -161,10 +165,10 @@ class RetryLimitError(ValueError):
 
 
 class ForkRequiredError(ValueError):
-    """The requested mode action requires a future continuity fork workflow."""
+    """The requested branch requires a future continuity fork workflow."""
 
     def __init__(self, decision: BranchDecision) -> None:
-        """Retain the fail-closed decision for the future mode adapter.
+        """Retain the fail-closed decision for the continuity fork workflow.
 
         Args:
             decision:

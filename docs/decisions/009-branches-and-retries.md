@@ -2,8 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-09-09
-- Last revised: 2026-10-24
+- Last revised: 2026-10-26
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
+- Refined by: ADR 033
 
 ## Context
 
@@ -28,7 +29,8 @@ Selection and branch mutations compare the caller's expected selected leaf befor
 committing. Retrying applies only to the selected path's last completed persona
 response. Only successful persona siblings consume the allowance; failed and
 interrupted attempts remain evidence outside committed history. Selecting an
-alternative or saved future always names its exact node.
+alternative or saved future always names its exact node. Branch from here names
+any exact owned persona message, including one outside the selected ancestry.
 
 Summaries are immutable branch-addressable lineages. Each revision identifies its
 predecessor and persona-message checkpoint. The current summary is the deepest
@@ -37,15 +39,17 @@ row. Persona messages copy the effective response generation and budget, fixed
 response-style snapshot, configured evolution-strategy identity, and completing
 attempt identifier.
 
-Mode policy is fail closed. Ongoing and a latest Storyline scene branch in place,
-as does an open Timeline day. An older Storyline scene with dependent later scenes
-and a closed Timeline day return a fork-required decision. Missing or contradictory
-mode facts also require a fork; persistence for those forks belongs to the stages
-that introduce Storylines and Timelines.
+Branch mode policy is fail closed. Ongoing and a latest Storyline scene branch in
+place, as does an open Timeline day. Branching from an older Storyline scene with
+dependent later scenes or a closed Timeline day returns a fork-required decision.
+Retry and saved-future selection require a writable scene and never create a fork.
+Missing or contradictory branch facts also require a fork; persistence for those
+forks belongs to the stages that introduce Storylines and Timelines.
 
 A Storyline fork follows ADR 025. Because it leaves the active source Storyline
 unchanged and creates another active future, it uses a distinct pair created
-through exact authored profile duplication before copying selected history.
+through exact authored profile duplication before copying history through the
+chosen persona branch point.
 
 ## Consequences
 
@@ -53,7 +57,7 @@ through exact authored profile duplication before copying selected history.
 - Services must preserve the selected path when assembling context or deriving
   downstream state.
 - Mode-specific branching rules apply: Ongoing branches in place; the latest
-  Storyline scene branches in place while an older changed scene forks its
+  Storyline scene branches in place while branching from an older scene forks its
   Storyline; an open Timeline day branches in place while a closed day requires
   a Timeline fork.
 

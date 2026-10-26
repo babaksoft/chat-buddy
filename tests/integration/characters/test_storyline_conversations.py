@@ -16,6 +16,7 @@ from chat_buddy.characters.domain import (
     ConversationScope,
     ConversationTarget,
     ForkRequiredError,
+    HistoricalSceneReadOnlyError,
     InvalidSceneOwnershipError,
     ModelDescriptor,
     ProviderInvocationError,
@@ -122,6 +123,9 @@ def test_storyline_summaries_and_short_term_context_stay_inside_the_scene(
     third = app.send(first_target, SubmittedInput(content="First-scene three"))
     list(app.stream(first_target, third.id))
     assert DbSummaryRepository(factory).get_current(first_scene.scope) is not None
+    first_history = app.history(first_target)
+    branch_point_id = first_history.messages[1].id
+    selected_leaf_id = first_history.messages[-1].id
 
     eligibility = lifecycle.append_eligibility(
         storyline.identity_id, storyline.persona_id, storyline.id
@@ -140,8 +144,19 @@ def test_storyline_summaries_and_short_term_context_stay_inside_the_scene(
     assert "Durable summary" not in prompt_text
     assert DbSummaryRepository(factory).get_current(second_scene.scope) is None
 
-    with pytest.raises(ForkRequiredError):
+    with pytest.raises(HistoricalSceneReadOnlyError):
         app.send(first_target, SubmittedInput(content="Rewrite the past"))
+    with pytest.raises(HistoricalSceneReadOnlyError):
+        app.retry_completed_response(first_target)
+    with pytest.raises(HistoricalSceneReadOnlyError):
+        app.select_alternative(
+            first_target,
+            branch_point_id,
+            selected_leaf_id,
+        )
+    with pytest.raises(ForkRequiredError) as raised:
+        app.branch_from_here(first_target, branch_point_id, selected_leaf_id)
+    assert raised.value.decision.source_message_id == branch_point_id
 
 
 def test_storyline_conversation_rejects_archive_and_foreign_scene_ownership(

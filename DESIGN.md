@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-24
+Last updated: 2026-10-26
 
 ## Purpose and scope
 
@@ -266,7 +266,7 @@ for context and downstream derivation.
 - Selected-path reads are separate from graph inspection. Selection and append
   compare the caller's expected leaf so stale actions cannot replace the active
   path.
-- Branching preserves the existing future.
+- Branching from any exact owned persona message preserves every existing future.
 - Retrying a completed persona response creates a sibling response to the same
   user message; failed or interrupted attempts create no node and consume no retry.
 - A persona turn permits at most three retry alternatives in addition to its
@@ -275,13 +275,15 @@ for context and downstream derivation.
 - Only selected messages can contribute to summaries, memory, relationship state,
   or persona adaptation.
 - Ongoing branches in place.
-- Changing a Storyline scene with dependent later scenes forks the Storyline.
+- Branching from a Storyline scene with dependent later scenes forks the Storyline;
+  retry and saved-future selection require a writable scene and never fork.
 - Because a Storyline fork preserves the active source while creating another
   active future, it creates a distinct pair by exactly duplicating at least one
-  source profile. It copies only ordered scene metadata and selected conversation
-  paths through the chosen point, assigns new continuity-owned identifiers, remaps
-  compatible summary and completed-attempt provenance, excludes later scenes and
-  alternatives, and changes only the fork.
+  source profile. It copies ordered metadata and selected histories for earlier
+  scenes, then the chosen scene's ancestry through the exact persona branch point.
+  It assigns new continuity-owned identifiers, remaps compatible summary and
+  completed-attempt provenance, excludes later scenes and nodes outside the copied
+  ancestries, and changes only the fork.
 - A closed Timeline day cannot retry or branch in place; an alternate past requires
   a Timeline fork.
 

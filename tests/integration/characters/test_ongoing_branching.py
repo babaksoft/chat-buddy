@@ -1,6 +1,5 @@
 """Ongoing branch actions and exact saved-future selection."""
 
-from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
@@ -143,6 +142,7 @@ def test_graph_view_exposes_alternatives_retries_and_selected_state(
     responses = tuple(node for node in graph.nodes if node.message.role == "persona")
     assert all(node.alternative_ids == (original_id, selected_id) for node in responses)
     assert all(node.retry_count == 1 for node in responses)
+    assert all(node.branchable for node in responses)
     assert next(
         node for node in responses if node.message.id == selected_id
     ).selected_leaf
@@ -187,17 +187,54 @@ def test_actions_reject_invalid_targets_stale_state_and_active_attempts(
     with pytest.raises(StaleSelectionError):
         app.branch_from_here(scope, alternative_id, uuid4())
     with pytest.raises(InvalidParentError):
-        app.branch_from_here(scope, original_id, leaf_id)
-    with pytest.raises(InvalidParentError):
-        app.branch_from_here(scope, leaf_id, leaf_id)
-    with pytest.raises(InvalidParentError):
         app.select_saved_future(scope, alternative_id, leaf_id)
     with pytest.raises(InvalidParentError):
         app.select_saved_future(scope, uuid4(), leaf_id)
+    with pytest.raises(InvalidParentError):
+        app.branch_from_here(scope, uuid4(), leaf_id)
 
     forged = scope.model_copy(update={"identity_id": uuid4()})
     with pytest.raises(ConversationNotFoundError):
         app.branch_from_here(forged, alternative_id, leaf_id)
+
+
+def test_branch_from_any_persona_node_selects_its_exact_ancestry(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Allow an off-path branch point even when it has a saved descendant.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters sessions.
+    """
+
+    scope = start(characters_session_factory)
+    gateway = FakeResponse()
+    app = service(characters_session_factory, gateway)
+    initial = app.send(scope, SubmittedInput(content="Question"))
+    list(app.stream(scope, initial.id))
+    original_id = app.history(scope).messages[-1].id
+    gateway.chunks = ("Alternative",)
+    retry = app.retry_completed_response(scope)
+    list(app.stream(scope, retry.id))
+    alternative_id = app.history(scope).messages[-1].id
+    continuation = app.send(scope, SubmittedInput(content="Existing future"))
+    list(app.stream(scope, continuation.id))
+    saved_future_id = app.history(scope).messages[-1].id
+
+    app.select_alternative(scope, original_id, saved_future_id)
+    branched = app.branch_from_here(scope, alternative_id, original_id)
+
+    assert branched.selected_leaf_id == alternative_id
+    assert [message.content for message in branched.messages] == [
+        "Question",
+        "Alternative",
+    ]
+    assert {node.message.id for node in app.inspect_graph(scope).nodes} >= {
+        original_id,
+        alternative_id,
+        saved_future_id,
+    }
 
 
 def test_archived_conversation_rejects_selection_and_branching(
@@ -232,10 +269,10 @@ def test_archived_conversation_rejects_selection_and_branching(
         app.branch_from_here(scope, selected_id, selected_id)
 
 
-def test_contradictory_mode_facts_fail_before_every_graph_mutation(
+def test_contradictory_mode_facts_fail_before_branch_mutation(
     characters_session_factory: sessionmaker[Session],
 ) -> None:
-    """Reject retry, selection, and branching before durable state changes.
+    """Reject branching before durable state changes.
 
     Args:
         characters_session_factory:
@@ -247,7 +284,6 @@ def test_contradictory_mode_facts_fail_before_every_graph_mutation(
     setup = service(characters_session_factory, gateway)
     first = setup.send(scope, SubmittedInput(content="First"))
     list(setup.stream(scope, first.id))
-    original_id = setup.history(scope).messages[-1].id
     gateway.chunks = ("Alternative",)
     retry = setup.retry_completed_response(scope)
     list(setup.stream(scope, retry.id))
@@ -265,24 +301,12 @@ def test_contradictory_mode_facts_fail_before_every_graph_mutation(
     original_graph = app.inspect_graph(scope)
     original_history = app.history(scope)
 
-    actions: tuple[tuple[Callable[[], object], UUID], ...] = (
-        (lambda: app.retry_completed_response(scope), selected_leaf_id),
-        (
-            lambda: app.select_alternative(scope, original_id, selected_leaf_id),
-            original_id,
-        ),
-        (
-            lambda: app.branch_from_here(scope, branch_point_id, selected_leaf_id),
-            branch_point_id,
-        ),
-    )
-    for action, source_message_id in actions:
-        with pytest.raises(ForkRequiredError) as raised:
-            action()
-        assert raised.value.decision.scope == scope
-        assert raised.value.decision.source_message_id == source_message_id
-        assert raised.value.decision.reason == "missing_or_contradictory_mode_facts"
+    with pytest.raises(ForkRequiredError) as raised:
+        app.branch_from_here(scope, branch_point_id, selected_leaf_id)
+    assert raised.value.decision.scope == scope
+    assert raised.value.decision.source_message_id == branch_point_id
+    assert raised.value.decision.reason == "missing_or_contradictory_mode_facts"
 
-    assert facts.sources[-3:] == [selected_leaf_id, original_id, branch_point_id]
+    assert facts.sources[-1:] == [branch_point_id]
     assert app.history(scope) == original_history
     assert app.inspect_graph(scope) == original_graph

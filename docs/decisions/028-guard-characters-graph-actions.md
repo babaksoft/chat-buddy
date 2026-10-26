@@ -2,8 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-24
+- Last revised: 2026-10-26
 - Scope: Characters, Stage 5
 - Refines: ADRs 009 and 024
+- Refined by: ADR 033
 
 ## Context
 
@@ -18,8 +20,8 @@ Keep initial generation, incomplete-turn continuation, completed-response retry,
 alternative selection, and branch-from-here as distinct operations. Every action
 uses the complete identity, persona, continuity, and conversation scope. Writes
 require an active continuity, no other open attempt, and the selected leaf observed
-by the caller. Mode authorization runs before mutation and fails closed as defined
-by ADR 009.
+by the caller. Branch mode authorization runs before branch mutation and fails
+closed as defined by ADRs 009 and 033. Other actions require a writable scene.
 
 Incomplete continuation applies only to an existing unmatched user node. It starts
 a new attempt for that input, preserves earlier failed or interrupted attempts,
@@ -34,11 +36,11 @@ message, preserve selection, and consume no retry allowance.
 
 Alternative selection names an exact owned off-path persona leaf. A saved future
 with descendants must be selected by its exact leaf; the application does not
-guess among descendants. Branch-from-here names an older persona node on the
-selected ancestry, selects that node, and lets the next send create a new user
-child. Selecting the current leaf, branching from an off-path node, or using a
-foreign, ambiguous, or stale target is rejected. Neither operation deletes prior
-nodes, attempts, summaries, or provenance.
+guess among descendants. Branch-from-here names any exact owned persona node,
+selects its ancestry, and lets the next send create a new user child. The branch
+point may be selected, off-path, or have saved descendants. Foreign or stale
+targets are rejected. Neither operation deletes prior nodes, attempts, summaries,
+or provenance.
 
 Provider calls remain outside transactions. Attempt reservation records the
 effective generation snapshot and selected-leaf guard. Completion rechecks

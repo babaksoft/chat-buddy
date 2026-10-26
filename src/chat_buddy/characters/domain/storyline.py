@@ -14,6 +14,8 @@ from chat_buddy.characters.domain.continuity import (
     StartingRelationship,
 )
 from chat_buddy.characters.domain.conversation import ConversationScope
+from chat_buddy.characters.domain.identity import Identity
+from chat_buddy.characters.domain.persona import Persona
 
 
 class SceneDetails(BaseModel):
@@ -345,8 +347,8 @@ class SceneAppendEligibility(BaseModel):
         return None
 
 
-class StorylineForkSource(BaseModel):
-    """Exact guarded source point for a future reviewed Storyline fork.
+class StorylineBranchSource(BaseModel):
+    """Exact guarded persona point for a mode-aware Storyline branch.
 
     Attributes:
         scene_id:
@@ -359,8 +361,8 @@ class StorylineForkSource(BaseModel):
             Last observed source Storyline revision.
         expected_selected_leaf_id:
             Last observed selected leaf guarding the copy.
-        source_message_id:
-            Exact persona response governing the requested action.
+        branch_point_message_id:
+            Exact persona response where the alternate future begins.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -374,17 +376,17 @@ class StorylineForkSource(BaseModel):
     expected_selected_leaf_id: UUID = Field(
         description="Selected leaf guarding the source copy."
     )
-    source_message_id: UUID = Field(
-        description="Exact persona response governing the action."
+    branch_point_message_id: UUID = Field(
+        description="Exact persona response where the alternate future begins."
     )
 
 
-class StorylineModeAction(BaseModel):
-    """Real source/latest scene facts used by fail-closed mode policy.
+class StorylineBranchLocation(BaseModel):
+    """Real source/latest scene facts used by fail-closed branch policy.
 
     Attributes:
         source:
-            Exact guarded action source.
+            Exact guarded branch source.
         latest_scene_id:
             Persisted latest scene identifier.
         latest_scene_position:
@@ -393,7 +395,7 @@ class StorylineModeAction(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    source: StorylineForkSource = Field(description="Exact guarded action source.")
+    source: StorylineBranchSource = Field(description="Exact guarded branch source.")
     latest_scene_id: UUID = Field(description="Persisted latest scene identifier.")
     latest_scene_position: int = Field(
         ge=1, description="Persisted latest scene position."
@@ -404,7 +406,7 @@ class StorylineModeAction(BaseModel):
         """Reject impossible source/latest scene relationships.
 
         Returns:
-            The validated immutable action facts.
+            The validated immutable branch facts.
 
         Raises:
             ValueError:
@@ -434,3 +436,159 @@ class StorylineModeAction(BaseModel):
         """
 
         return self.source.scene_position < self.latest_scene_position
+
+
+ForkRecordKind = Literal[
+    "identity",
+    "persona",
+    "continuity",
+    "scene",
+    "conversation",
+    "message",
+    "attempt",
+    "summary",
+]
+
+
+class StorylineForkMapping(BaseModel):
+    """One explicit source-to-copy identifier mapping.
+
+    Attributes:
+        kind:
+            Kind of independently owned record that was copied or retained.
+        source_id:
+            Identifier in the source Storyline ownership.
+        target_id:
+            Identifier used by the independent fork.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ForkRecordKind = Field(description="Mapped record kind.")
+    source_id: UUID = Field(description="Source record identifier.")
+    target_id: UUID = Field(description="Independent target identifier.")
+
+
+class StorylineForkPreview(BaseModel):
+    """Reviewed immutable input for one idempotent structural fork.
+
+    Attributes:
+        request_id:
+            Unique confirmation identifier.
+        name:
+            User-authored name for the independent Storyline.
+        source:
+            Guarded source scene, branch point, selection, and Storyline revision.
+        source_identity:
+            Source identity snapshot whose authored fields define exact copying.
+        source_persona:
+            Source persona snapshot whose authored fields define exact copying.
+        target_identity:
+            Reviewed identity retained or exactly duplicated from the source.
+        target_persona:
+            Reviewed persona retained or exactly duplicated from the source.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    request_id: UUID = Field(description="Fork confirmation identifier.")
+    name: str = Field(
+        min_length=1, max_length=128, description="Authored fork Storyline name."
+    )
+    source: StorylineBranchSource = Field(description="Guarded source point.")
+    source_identity: Identity = Field(description="Reviewed source identity.")
+    source_persona: Persona = Field(description="Reviewed source persona.")
+    target_identity: Identity = Field(description="Reviewed target identity.")
+    target_persona: Persona = Field(description="Reviewed target persona.")
+
+    @model_validator(mode="after")
+    def validate_profiles(self) -> Self:
+        """Require an exact duplicate and a distinct profile pair.
+
+        Returns:
+            The validated immutable preview.
+
+        Raises:
+            ValueError:
+                If the reviewed profile pair is invalid.
+        """
+
+        if (
+            self.source_identity.id == self.target_identity.id
+            and self.source_persona.id == self.target_persona.id
+        ):
+            raise ValueError("A Storyline fork requires a distinct profile pair")
+
+        if self.source_identity.details != self.target_identity.details:
+            raise ValueError("A fork identity duplicate must be authored exactly")
+        if self.source_persona.core != self.target_persona.core:
+            raise ValueError("A fork persona duplicate must be authored exactly")
+
+        if (
+            self.source_identity.id != self.target_identity.id
+            and self.target_identity.is_default
+        ):
+            raise ValueError("A duplicated identity cannot occupy the default slot")
+
+        return self
+
+
+class StorylineForkResult(BaseModel):
+    """Detached result of an atomic structural Storyline fork.
+
+    Attributes:
+        storyline:
+            Newly owned active Storyline.
+        scenes:
+            Copied scene sequence through the selected source point.
+        mappings:
+            Complete source-to-target identifiers for copied structure.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    storyline: Storyline = Field(description="Independent fork Storyline.")
+    scenes: tuple[Scene, ...] = Field(min_length=1, description="Copied scenes.")
+    mappings: tuple[StorylineForkMapping, ...] = Field(
+        min_length=1, description="Complete structural identifier mappings."
+    )
+
+    @model_validator(mode="after")
+    def validate_ownership_and_mappings(self) -> Self:
+        """Keep copied scenes and mappings unique under target ownership.
+
+        Returns:
+            The validated fork result.
+
+        Raises:
+            ValueError:
+                If scene ownership, order, or identifier mappings conflict.
+        """
+
+        expected = (
+            self.storyline.identity_id,
+            self.storyline.persona_id,
+            self.storyline.id,
+        )
+        if any(
+            (
+                scene.scope.identity_id,
+                scene.scope.persona_id,
+                scene.scope.continuity_id,
+            )
+            != expected
+            for scene in self.scenes
+        ):
+            raise ValueError("Every copied scene must belong to the fork")
+
+        if tuple(scene.position for scene in self.scenes) != tuple(
+            range(1, len(self.scenes) + 1)
+        ):
+            raise ValueError("Fork scenes must retain consecutive source order")
+
+        keys = {(mapping.kind, mapping.source_id) for mapping in self.mappings}
+        targets = {(mapping.kind, mapping.target_id) for mapping in self.mappings}
+        if len(keys) != len(self.mappings) or len(targets) != len(self.mappings):
+            raise ValueError("Fork identifier mappings must be one-to-one per kind")
+
+        return self

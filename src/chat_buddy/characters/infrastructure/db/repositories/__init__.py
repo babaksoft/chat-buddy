@@ -15,6 +15,9 @@ from chat_buddy.characters.infrastructure.db.repositories.persona_repository imp
 from chat_buddy.characters.infrastructure.db.repositories.scene_repository import (
     DbSceneRepository,
 )
+from chat_buddy.characters.infrastructure.db.repositories.storyline_fork_repository import (
+    DbStorylineForkRepository,
+)
 from chat_buddy.characters.infrastructure.db.repositories.storyline_repository import (
     DbStorylineRepository,
 )
@@ -28,6 +31,7 @@ __all__ = [
     "DbIdentityRepository",
     "DbPersonaRepository",
     "DbSceneRepository",
+    "DbStorylineForkRepository",
     "DbStorylineRepository",
     "DbSummaryRepository",
 ]

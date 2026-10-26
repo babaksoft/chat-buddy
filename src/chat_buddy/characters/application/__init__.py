@@ -34,6 +34,9 @@ from chat_buddy.characters.application.starting_relationship import (
 from chat_buddy.characters.application.storyline_conversation import (
     StorylineConversationAdapter,
 )
+from chat_buddy.characters.application.storyline_fork_service import (
+    StorylineForkService,
+)
 from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
@@ -50,6 +53,7 @@ __all__ = [
     "StartAvailability",
     "StorylineContextBudgeter",
     "StorylineConversationAdapter",
+    "StorylineForkService",
     "StorylineService",
     "decide_branch_mode",
     "resolve_starting_relationship",

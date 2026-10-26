@@ -2,7 +2,6 @@
 
 from uuid import UUID
 
-from chat_buddy.characters.application.branch_policy import decide_branch_mode
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     BranchModeFacts,
@@ -10,13 +9,11 @@ from chat_buddy.characters.domain import (
     ConversationHistory,
     ConversationScope,
     ConversationTarget,
-    ForkRequiredError,
+    HistoricalSceneReadOnlyError,
     LockedSceneSetupError,
     Scene,
     SceneRepository,
     Storyline,
-    StorylineForkSource,
-    StorylineModeAction,
     StorylineRepository,
 )
 
@@ -91,7 +88,7 @@ class StorylineConversationAdapter:
         Raises:
             ArchivedContinuityError:
                 If the Storyline is archived.
-            ForkRequiredError:
+            HistoricalSceneReadOnlyError:
                 If the target has a later dependent scene.
         """
 
@@ -101,32 +98,8 @@ class StorylineConversationAdapter:
             raise ArchivedContinuityError("Archived Storylines are read-only")
 
         if scene.id != latest.id:
-            source = next(
-                (
-                    message
-                    for message in reversed(history.messages)
-                    if message.role == "persona"
-                ),
-                None,
-            )
-            if source is None:
-                raise ValueError("An older Storyline scene must have a complete turn")
-
-            raise ForkRequiredError(
-                decide_branch_mode(
-                    StorylineModeAction(
-                        source=StorylineForkSource(
-                            scene_id=scene.id,
-                            scope=target.scope,
-                            scene_position=scene.position,
-                            expected_storyline_revision=storyline.revision,
-                            expected_selected_leaf_id=source.id,
-                            source_message_id=source.id,
-                        ),
-                        latest_scene_id=latest.id,
-                        latest_scene_position=latest.position,
-                    )
-                )
+            raise HistoricalSceneReadOnlyError(
+                "Only Branch from here can create a future from an older scene"
             )
 
         return storyline, scene
@@ -143,7 +116,7 @@ class StorylineConversationAdapter:
             scope:
                 Exact source conversation scope.
             source_message_id:
-                Persona response governing the graph action.
+                Persona response governing the branch.
             mode:
                 Persisted continuity mode.
 

@@ -614,6 +614,45 @@ def test_branch_requires_confirmation_and_uses_exact_observed_state(
     )
 
 
+def test_off_path_response_can_be_selected_as_branch_point(
+    conversation_ui: tuple[AppTest, Mock],
+) -> None:
+    """Expose Branch from here directly on an off-path persona response.
+
+    Args:
+        conversation_ui:
+            App and application double.
+    """
+
+    app, service = conversation_ui
+    _, alternative, selected_leaf = _graph_with_controls(service)
+    graph = service.inspect_graph.return_value
+    service.inspect_graph.return_value = graph.model_copy(
+        update={
+            "nodes": tuple(
+                (
+                    node.model_copy(update={"branchable": True})
+                    if node.message.id == alternative.id
+                    else node
+                )
+                for node in graph.nodes
+            )
+        }
+    )
+
+    app.run()
+    app.checkbox[0].set_value(True).run()
+    next(
+        button for button in app.button if button.label == "Branch from here"
+    ).click().run()
+
+    service.branch_from_here.assert_called_once_with(
+        alternative.scope,
+        alternative.id,
+        selected_leaf.id,
+    )
+
+
 @pytest.mark.parametrize("blocked_by", ["archive", "attempt"])
 def test_graph_writes_are_disabled_for_archives_and_open_attempts(
     conversation_ui: tuple[AppTest, Mock], blocked_by: str

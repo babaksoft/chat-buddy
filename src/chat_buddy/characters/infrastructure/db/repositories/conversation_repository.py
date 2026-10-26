@@ -657,7 +657,7 @@ class DbConversationRepository:
             return self._selected_path(session, scope, row)
 
     def apply_action(self, request: GraphActionRequest) -> SelectedPath:
-        """Apply exact-future selection or branching under one ownership lock.
+        """Apply exact-future selection or branch-point choice under one lock.
 
         Args:
             request:
@@ -714,18 +714,12 @@ class DbConversationRepository:
 
             path = self._selected_path(session, scope, row)
             selected_ids = {message.id for message in path.messages}
-            if target.id == row.selected_leaf_id:
-                raise InvalidParentError("The current leaf is already selected")
-
-            if request.action == GraphAction.BRANCH_FROM_HERE:
-                if target.id not in selected_ids:
-                    raise InvalidParentError(
-                        "A branch point must be on the selected path"
-                    )
-            else:
+            if request.action == GraphAction.ALTERNATIVE_SELECTION:
+                if target.id == row.selected_leaf_id:
+                    raise InvalidParentError("The current leaf is already selected")
                 if target.id in selected_ids:
                     raise InvalidParentError(
-                        "Use branching for an older selected-path persona node"
+                        "Use branching to start from a selected-path persona node"
                     )
                 child_id = session.scalar(
                     select(MessageModel.id)

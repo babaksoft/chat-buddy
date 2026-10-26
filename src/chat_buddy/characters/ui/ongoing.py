@@ -242,6 +242,13 @@ def _alternatives(
                 key=f"{key}_select_{alternative_id}",
             ):
                 _select(service, graph, alternative.message.id)
+            _branch_action(
+                service,
+                graph,
+                alternative,
+                key,
+                writes_disabled,
+            )
     return alternative_ids
 
 
@@ -276,6 +283,31 @@ def _response_actions(
         attempt = service.retry_completed_response(graph.scope)
         _stream_attempt(service, graph.scope, attempt)
         st.rerun()
+    _branch_action(service, graph, view, key, writes_disabled)
+
+
+def _branch_action(
+    service: ConversationService,
+    graph: ConversationGraphView,
+    view: GraphNodeView,
+    key: str,
+    writes_disabled: bool,
+) -> None:
+    """Render one confirmed branch action for any persona response.
+
+    Args:
+        service:
+            Conversation application service.
+        graph:
+            Complete graph view carrying the compare-and-swap guard.
+        view:
+            Exact persona branch point.
+        key:
+            Full-scope widget namespace.
+        writes_disabled:
+            Whether graph writes are currently blocked.
+    """
+
     if not view.branchable or writes_disabled:
         return
     confirmed = st.checkbox(
@@ -343,6 +375,7 @@ def _saved_futures(
                 key=f"{key}_future_{future.message.id}",
             ):
                 _select(service, graph, future.message.id)
+            _branch_action(service, graph, future, key, writes_disabled)
 
 
 def _select(

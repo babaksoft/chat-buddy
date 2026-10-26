@@ -44,6 +44,8 @@ from chat_buddy.characters.domain.storyline import (
     SceneSequence,
     StartStoryline,
     Storyline,
+    StorylineForkPreview,
+    StorylineForkResult,
     StorylineGroup,
 )
 from chat_buddy.characters.domain.summary import SummaryRevision
@@ -462,6 +464,46 @@ class StorylineRepository(Protocol):
         Raises:
             StaleStorylineError:
                 If a non-idempotent write changed the revision.
+        """
+
+        ...
+
+
+class StorylineForkRepository(Protocol):
+    """Atomically copy reviewed Storyline structure into distinct ownership."""
+
+    def find_confirmation(
+        self, preview: StorylineForkPreview
+    ) -> StorylineForkResult | None:
+        """Read an identical fork confirmation before preflight checks.
+
+        Args:
+            preview:
+                Complete reviewed fork input.
+
+        Returns:
+            The original fork result, or None for a new confirmation.
+
+        Raises:
+            ConfirmationConflictError:
+                If the request identifier was reused with changed inputs.
+        """
+
+        ...
+
+    def fork(self, preview: StorylineForkPreview) -> StorylineForkResult:
+        """Create an independent structural fork under all reviewed guards.
+
+        Args:
+            preview:
+                Complete reviewed source, branch point, and target profiles.
+
+        Returns:
+            New or idempotently existing structural fork.
+
+        Raises:
+            StorylineForkConflictError:
+                If source state or target ownership changed before commit.
         """
 
         ...

@@ -13,8 +13,8 @@ from chat_buddy.characters.domain import (
     BranchModeFacts,
     ContinuityMode,
     ConversationScope,
-    StorylineForkSource,
-    StorylineModeAction,
+    StorylineBranchLocation,
+    StorylineBranchSource,
 )
 
 
@@ -202,14 +202,14 @@ def test_real_storyline_positions_drive_mode_policy_without_repository_guesses(
     scope = _scope()
     source_message_id = uuid4()
     scene_id = uuid4()
-    action = StorylineModeAction(
-        source=StorylineForkSource(
+    action = StorylineBranchLocation(
+        source=StorylineBranchSource(
             scene_id=scene_id,
             scope=scope,
             scene_position=2,
             expected_storyline_revision=5,
             expected_selected_leaf_id=uuid4(),
-            source_message_id=source_message_id,
+            branch_point_message_id=source_message_id,
         ),
         latest_scene_id=scene_id if latest_position == 2 else uuid4(),
         latest_scene_position=latest_position,

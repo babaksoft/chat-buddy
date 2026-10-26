@@ -337,10 +337,8 @@ class GraphNodeView(BaseModel):
 
         if self.selected_leaf and not self.selected:
             raise ValueError("The selected leaf must belong to the selected path.")
-        if self.branchable and (
-            self.message.role != "persona" or not self.selected or self.selected_leaf
-        ):
-            raise ValueError("Only older selected-path persona nodes are branchable.")
+        if self.branchable and self.message.role != "persona":
+            raise ValueError("Only persona nodes are branchable.")
         if self.message.role == "user":
             if self.alternative_ids or self.retry_count:
                 raise ValueError("User nodes do not carry persona alternatives.")
@@ -582,7 +580,7 @@ class BranchModeFacts(BaseModel):
 
 
 class BranchModeFactsResolver(Protocol):
-    """Supply persistence-neutral facts for one mode-sensitive graph action."""
+    """Supply persistence-neutral facts for one mode-sensitive branch."""
 
     def resolve(
         self,
