@@ -447,6 +447,9 @@ ForkRecordKind = Literal[
     "message",
     "attempt",
     "summary",
+    "memory",
+    "memory_revision",
+    "memory_evidence",
 ]
 
 
@@ -542,7 +545,7 @@ class StorylineForkResult(BaseModel):
         scenes:
             Copied scene sequence through the selected source point.
         mappings:
-            Complete source-to-target identifiers for copied structure.
+            Complete source-to-target identifiers for copied owned records.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -550,7 +553,7 @@ class StorylineForkResult(BaseModel):
     storyline: Storyline = Field(description="Independent fork Storyline.")
     scenes: tuple[Scene, ...] = Field(min_length=1, description="Copied scenes.")
     mappings: tuple[StorylineForkMapping, ...] = Field(
-        min_length=1, description="Complete structural identifier mappings."
+        min_length=1, description="Complete copied-record identifier mappings."
     )
 
     @model_validator(mode="after")

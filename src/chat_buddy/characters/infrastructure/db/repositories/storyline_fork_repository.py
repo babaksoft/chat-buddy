@@ -22,10 +22,13 @@ from chat_buddy.characters.infrastructure.db.models import (
     ConversationModel,
     GenerationAttemptModel,
     IdentityModel,
+    MemoryEvidenceModel,
+    MemoryRevisionModel,
     MessageModel,
     PersonaModel,
     SceneModel,
     StartingRelationshipModel,
+    StorylineMemoryModel,
     StorylineModel,
     SummaryRevisionModel,
 )
@@ -266,6 +269,15 @@ class DbStorylineForkRepository:
             target_scenes.append(target_scene)
             mappings.extend(scene_mappings)
 
+        mappings.extend(
+            self._copy_memories(
+                session,
+                source.continuity_id,
+                target_continuity,
+                mappings,
+            )
+        )
+
         target_storyline.fork_provenance = {
             "branch_point_message_id": str(preview.source.branch_point_message_id),
             "mappings": [mapping.model_dump(mode="json") for mapping in mappings],
@@ -474,6 +486,206 @@ class DbStorylineForkRepository:
         return target_scene, mappings
 
     @staticmethod
+    def _copy_memories(
+        session: Session,
+        source_continuity_id: UUID,
+        target_continuity: ContinuityModel,
+        mappings: list[StorylineForkMapping],
+    ) -> list[StorylineForkMapping]:
+        """Copy active lineages supported entirely by copied source histories.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_continuity_id:
+                Source Storyline memory owner.
+            target_continuity:
+                Independent fork owner.
+            mappings:
+                Structural mappings created before memory is considered.
+
+        Returns:
+            Memory, revision, and supporting-evidence identifier mappings.
+        """
+
+        mapped = {
+            kind: {
+                mapping.source_id: mapping.target_id
+                for mapping in mappings
+                if mapping.kind == kind
+            }
+            for kind in ("scene", "conversation", "message")
+        }
+        source_memories = tuple(
+            session.scalars(
+                select(StorylineMemoryModel)
+                .where(StorylineMemoryModel.continuity_id == source_continuity_id)
+                .order_by(StorylineMemoryModel.id)
+                .with_for_update()
+            )
+        )
+
+        copied_mappings: list[StorylineForkMapping] = []
+        for source_memory in source_memories:
+            revisions = tuple(
+                session.scalars(
+                    select(MemoryRevisionModel)
+                    .where(
+                        MemoryRevisionModel.memory_id == source_memory.id,
+                        MemoryRevisionModel.continuity_id == source_continuity_id,
+                    )
+                    .order_by(MemoryRevisionModel.revision)
+                    .with_for_update()
+                )
+            )
+            current = next(
+                (
+                    revision
+                    for revision in revisions
+                    if revision.id == source_memory.current_revision_id
+                ),
+                None,
+            )
+            if current is None or current.state != "active":
+                continue
+
+            evidence = tuple(
+                session.scalars(
+                    select(MemoryEvidenceModel)
+                    .where(
+                        MemoryEvidenceModel.memory_id == source_memory.id,
+                        MemoryEvidenceModel.continuity_id == source_continuity_id,
+                        MemoryEvidenceModel.purpose == "support",
+                    )
+                    .order_by(MemoryEvidenceModel.created_at, MemoryEvidenceModel.id)
+                    .with_for_update()
+                )
+            )
+            copyable_evidence = tuple(
+                item
+                for item in evidence
+                if item.scene_id in mapped["scene"]
+                and item.occurrence_scene_id in mapped["scene"]
+                and item.learned_scene_id in mapped["scene"]
+                and item.conversation_id in mapped["conversation"]
+                and item.user_message_id in mapped["message"]
+                and item.source_persona_message_id in mapped["message"]
+            )
+            copyable_evidence_ids = {item.id for item in copyable_evidence}
+            required_evidence_ids = {
+                revision.source_evidence_id for revision in revisions
+            }
+            if (
+                current.source_evidence_id not in copyable_evidence_ids
+                or not required_evidence_ids <= copyable_evidence_ids
+            ):
+                continue
+
+            target_memory_id = uuid4()
+            target_memory = StorylineMemoryModel(
+                id=target_memory_id,
+                continuity_id=target_continuity.id,
+                identity_id=target_continuity.identity_id,
+                persona_id=target_continuity.persona_id,
+                current_revision_id=None,
+                subject_key=source_memory.subject_key,
+            )
+            session.add(target_memory)
+            session.flush()
+            copied_mappings.append(
+                StorylineForkMapping(
+                    kind="memory",
+                    source_id=source_memory.id,
+                    target_id=target_memory_id,
+                )
+            )
+
+            evidence_ids: dict[UUID, UUID] = {}
+            for source_evidence in copyable_evidence:
+                target_evidence_id = uuid4()
+                evidence_ids[source_evidence.id] = target_evidence_id
+                session.add(
+                    MemoryEvidenceModel(
+                        id=target_evidence_id,
+                        memory_id=target_memory_id,
+                        continuity_id=target_continuity.id,
+                        identity_id=target_continuity.identity_id,
+                        persona_id=target_continuity.persona_id,
+                        conversation_id=mapped["conversation"][
+                            source_evidence.conversation_id
+                        ],
+                        mode="storyline",
+                        purpose="support",
+                        scene_id=mapped["scene"][source_evidence.scene_id],
+                        user_message_id=mapped["message"][
+                            source_evidence.user_message_id
+                        ],
+                        source_persona_message_id=mapped["message"][
+                            source_evidence.source_persona_message_id
+                        ],
+                        persona_checkpoint=source_evidence.persona_checkpoint,
+                        occurrence_scene_id=mapped["scene"][
+                            source_evidence.occurrence_scene_id
+                        ],
+                        occurrence_position=source_evidence.occurrence_position,
+                        learned_scene_id=mapped["scene"][
+                            source_evidence.learned_scene_id
+                        ],
+                        learned_position=source_evidence.learned_position,
+                        extraction=deepcopy(source_evidence.extraction),
+                        created_at=source_evidence.created_at,
+                    )
+                )
+                copied_mappings.append(
+                    StorylineForkMapping(
+                        kind="memory_evidence",
+                        source_id=source_evidence.id,
+                        target_id=target_evidence_id,
+                    )
+                )
+            session.flush()
+
+            revision_ids: dict[UUID, UUID] = {}
+            for source_revision in revisions:
+                target_revision_id = uuid4()
+                revision_ids[source_revision.id] = target_revision_id
+                session.add(
+                    MemoryRevisionModel(
+                        id=target_revision_id,
+                        memory_id=target_memory_id,
+                        continuity_id=target_continuity.id,
+                        revision=source_revision.revision,
+                        predecessor_id=(
+                            None
+                            if source_revision.predecessor_id is None
+                            else revision_ids[source_revision.predecessor_id]
+                        ),
+                        subject=source_revision.subject,
+                        content=source_revision.content,
+                        state=source_revision.state,
+                        authorship=source_revision.authorship,
+                        kind=source_revision.kind,
+                        source_evidence_id=evidence_ids[
+                            source_revision.source_evidence_id
+                        ],
+                        created_at=source_revision.created_at,
+                    )
+                )
+                copied_mappings.append(
+                    StorylineForkMapping(
+                        kind="memory_revision",
+                        source_id=source_revision.id,
+                        target_id=target_revision_id,
+                    )
+                )
+            session.flush()
+
+            target_memory.current_revision_id = revision_ids[current.id]
+            session.flush()
+
+        return copied_mappings
+
+    @staticmethod
     def _copy_summaries(
         session: Session,
         source_conversation: ConversationModel,
@@ -595,13 +807,15 @@ class DbStorylineForkRepository:
         """
 
         row = session.scalar(
-            select(ConversationModel).where(
+            select(ConversationModel)
+            .where(
                 ConversationModel.id == scene.conversation_id,
                 ConversationModel.continuity_id == scene.continuity_id,
                 ConversationModel.identity_id == scene.identity_id,
                 ConversationModel.persona_id == scene.persona_id,
                 ConversationModel.mode == "storyline",
             )
+            .with_for_update()
         )
         if row is None:
             raise StorylineForkConflictError("Source conversation ownership changed")

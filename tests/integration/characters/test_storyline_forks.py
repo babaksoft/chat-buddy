@@ -12,9 +12,14 @@ from chat_buddy.characters.application import (
     StorylineService,
 )
 from chat_buddy.characters.domain import (
+    ChangeMemoryStateCommand,
     ConversationTarget,
+    CorrectMemoryCommand,
+    CreateMemoryCommand,
     EffectiveGeneration,
     IdentityDetails,
+    MemoryDelta,
+    ReinforceMemoryCommand,
     Scene,
     Storyline,
     StorylineForkConflictError,
@@ -24,9 +29,11 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
+    DbMemoryExtractionRepository,
     DbPersonaRepository,
     DbSceneRepository,
     DbStorylineForkRepository,
+    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -34,6 +41,11 @@ from tests.characters_support import FakeResponse
 from tests.integration.characters.test_storyline_conversations import (
     _service,
     _target,
+)
+from tests.integration.characters.test_storyline_memory_repositories import (
+    _evidence,
+    _parent_id,
+    _provenance,
 )
 from tests.integration.characters.test_storyline_repositories import (
     _next_scene,
@@ -250,6 +262,193 @@ def test_fork_rejects_revised_duplicate_and_changed_source(
     )
     with pytest.raises(StorylineForkConflictError, match="Source Storyline changed"):
         forks.confirm(second_preview)
+
+
+def test_fork_copies_active_memory_with_remapped_provenance(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Copy corrected memory and selected reinforcements as an independent lineage.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    (
+        storylines,
+        scenes,
+        _,
+        source_storyline,
+        source_scene,
+        source_target,
+        app,
+        _,
+        source_leaf_id,
+    ) = _prepared_older_scene(factory)
+    selected_history = app.history(source_target).messages
+    first_selected_persona_id = selected_history[1].id
+    extraction = DbMemoryExtractionRepository(factory)
+    memories = DbStorylineMemoryRepository(factory)
+    provenance = _provenance()
+    first_evidence = _evidence(
+        source_scene.scope,
+        source_scene.id,
+        _parent_id(factory, first_selected_persona_id),
+        first_selected_persona_id,
+        2,
+        provenance,
+    )
+    excluded_evidence = first_evidence.model_copy(update={"id": uuid4()})
+    first_effect = extraction.reserve(
+        source_scene.scope, source_scene.id, first_selected_persona_id
+    )
+    extraction.apply(
+        first_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=source_scene.scope,
+            source_persona_message_id=first_selected_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                CreateMemoryCommand(
+                    subject="departure time",
+                    content="The train leaves at midnight.",
+                    occurrence=first_evidence.occurrence,
+                    evidence=first_evidence,
+                ),
+                CreateMemoryCommand(
+                    subject="platform",
+                    content="The train leaves from platform four.",
+                    occurrence=excluded_evidence.occurrence,
+                    evidence=excluded_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    active, excluded = memories.list(source_storyline.id)
+    excluded = memories.change_state(
+        ChangeMemoryStateCommand(
+            operation="exclude",
+            continuity_id=source_storyline.id,
+            memory_id=excluded.id,
+            expected_revision_id=excluded.current.id,
+        )
+    )
+    second_evidence = _evidence(
+        source_scene.scope,
+        source_scene.id,
+        _parent_id(factory, source_leaf_id),
+        source_leaf_id,
+        4,
+        provenance,
+    )
+    second_effect = extraction.reserve(
+        source_scene.scope, source_scene.id, source_leaf_id
+    )
+    extraction.apply(
+        second_effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=source_scene.scope,
+            source_persona_message_id=source_leaf_id,
+            extractor=provenance.extractor,
+            commands=(
+                ReinforceMemoryCommand(
+                    target_memory_id=active.id,
+                    expected_revision_id=active.current.id,
+                    content=active.current.content,
+                    evidence=second_evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    reinforced = memories.get(source_storyline.id, active.id)
+    corrected = memories.correct(
+        CorrectMemoryCommand(
+            continuity_id=source_storyline.id,
+            memory_id=active.id,
+            expected_revision_id=reinforced.current.id,
+            subject="departure time",
+            content="The confirmed train leaves at midnight.",
+        )
+    )
+    source_before = tuple(
+        memory.model_dump(mode="json") for memory in memories.list(source_storyline.id)
+    )
+
+    identities = DbIdentityRepository(factory)
+    personas = DbPersonaRepository(factory)
+    duplicate = identities.create(identities.get(source_storyline.identity_id).details)
+    forks = StorylineForkService(
+        storylines,
+        scenes,
+        DbConversationRepository(factory),
+        DbConversationRepository(factory),
+        identities,
+        personas,
+        DbStorylineForkRepository(factory),
+    )
+    preview = forks.preview(
+        request_id=uuid4(),
+        name="Remembered departure",
+        target=source_target,
+        branch_point_message_id=source_leaf_id,
+        expected_selected_leaf_id=source_leaf_id,
+        expected_storyline_revision=source_storyline.revision + 1,
+        target_identity_id=duplicate.id,
+        target_persona_id=source_storyline.persona_id,
+    )
+    result = forks.confirm(preview)
+    assert forks.confirm(preview) == result
+
+    (copied,) = memories.list(result.storyline.id)
+    mapping = {(item.kind, item.source_id): item.target_id for item in result.mappings}
+    assert copied.id == mapping[("memory", corrected.id)]
+    assert copied.current.authorship == corrected.current.authorship
+    assert copied.current.content == corrected.current.content
+    assert tuple(item.id for item in copied.revisions) == tuple(
+        mapping[("memory_revision", item.id)] for item in corrected.revisions
+    )
+    assert tuple(item.id for item in copied.evidence) == tuple(
+        mapping[("memory_evidence", item.id)] for item in corrected.evidence
+    )
+    for source_item, copied_item in zip(
+        corrected.evidence, copied.evidence, strict=True
+    ):
+        assert copied_item.scope.continuity_id == result.storyline.id
+        assert copied_item.scene_id == mapping[("scene", source_item.scene_id)]
+        assert (
+            copied_item.user_message_id
+            == mapping[("message", source_item.user_message_id)]
+        )
+        assert (
+            copied_item.persona_message_id
+            == mapping[("message", source_item.persona_message_id)]
+        )
+    assert ("memory", excluded.id) not in mapping
+    assert extraction.list_conflicts(result.storyline.id) == ()
+    assert (
+        tuple(
+            memory.model_dump(mode="json")
+            for memory in memories.list(source_storyline.id)
+        )
+        == source_before
+    )
+
+    changed_copy = memories.correct(
+        CorrectMemoryCommand(
+            continuity_id=result.storyline.id,
+            memory_id=copied.id,
+            expected_revision_id=copied.current.id,
+            subject=copied.current.subject,
+            content="The fork now remembers a one o'clock departure.",
+        )
+    )
+    assert changed_copy.current.content != corrected.current.content
+    assert memories.get(source_storyline.id, corrected.id) == corrected
 
 
 def _prepared_older_scene(

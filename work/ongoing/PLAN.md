@@ -475,7 +475,7 @@ the future extractor may see.
 
 ### Slice 11 — Preserve eligible memory across Storyline forks
 
-Status: Pending
+Status: Complete
 
 Extend the Slice 7 fork transaction using its persisted identifier mapping. Copy
 only active memory lineages whose originating evidence is present on the copied
