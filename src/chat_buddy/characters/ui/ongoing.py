@@ -1,5 +1,6 @@
-"""Scoped durable Ongoing history, streaming, and recovery controls."""
+"""Scoped durable Characters history, streaming, and recovery controls."""
 
+from collections.abc import Callable
 from uuid import UUID
 
 import streamlit as st
@@ -13,6 +14,7 @@ from chat_buddy.characters.domain import (
     ConversationHistory,
     ConversationScope,
     ConversationSettings,
+    ConversationTarget,
     GenerationAttempt,
     GenerationConfiguration,
     GraphNodeView,
@@ -21,6 +23,18 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure import create_conversation_service
+
+BranchActionRenderer = Callable[
+    [
+        ConversationService,
+        ConversationScope | ConversationTarget,
+        ConversationGraphView,
+        GraphNodeView,
+        str,
+        bool,
+    ],
+    None,
+]
 
 
 def render_ongoing(continuity: Continuity) -> None:
@@ -31,7 +45,6 @@ def render_ongoing(continuity: Continuity) -> None:
             Ownership-checked selected continuity and lifecycle.
     """
 
-    service = create_conversation_service()
     scope = ConversationScope(
         identity_id=continuity.identity_id,
         persona_id=continuity.persona_id,
@@ -39,16 +52,59 @@ def render_ongoing(continuity: Continuity) -> None:
         conversation_id=continuity.conversation_id,
     )
     key = f"characters_ongoing_{continuity.id}_{continuity.conversation_id}"
+    render_conversation(
+        create_conversation_service(),
+        scope,
+        key,
+        continuity.lifecycle == ContinuityLifecycle.ARCHIVED,
+    )
+
+
+def render_conversation(
+    service: ConversationService,
+    target: ConversationScope | ConversationTarget,
+    key: str,
+    archived: bool,
+    branch_action: BranchActionRenderer | None = None,
+    read_only: bool = False,
+) -> None:
+    """Render durable controls for one exact mode-owned conversation.
+
+    Args:
+        service:
+            Conversation application operations.
+        target:
+            Exact Ongoing continuity or Storyline scene target.
+        key:
+            Full ownership-scoped widget namespace.
+        archived:
+            Whether every write must be disabled.
+        branch_action:
+            Optional mode-specific branch renderer.
+        read_only:
+            Whether ordinary conversation writes are disabled while branching may
+            remain available.
+    """
+
+    render_branch = branch_action or _branch_action
     try:
-        history = service.resume(scope)
-        graph = service.inspect_graph(scope)
-        archived = continuity.lifecycle == ContinuityLifecycle.ARCHIVED
+        history = service.resume(target)
+        graph = service.inspect_graph(target)
         active = any(
             attempt.status in {"pending", "streaming"} for attempt in history.attempts
         )
 
         unmatched = bool(history.messages and history.messages[-1].role == "user")
-        _transcript(service, history, graph, key, archived or active)
+        _transcript(
+            service,
+            target,
+            history,
+            graph,
+            key,
+            archived or active or read_only,
+            archived or active,
+            render_branch,
+        )
         if unmatched:
             for attempt in history.attempts:
                 if attempt.user_message_id != history.messages[-1].id:
@@ -60,7 +116,9 @@ def render_ongoing(continuity: Continuity) -> None:
                         f"{attempt.generation.model.provider} / {attempt.generation.model.model}"
                     )
                     st.markdown(attempt.incomplete_output or "No output saved.")
-        _configuration(service, scope, history.settings, key, archived or active)
+        _configuration(
+            service, target, history.settings, key, archived or active or read_only
+        )
 
         if active:
             st.info(
@@ -70,24 +128,24 @@ def render_ongoing(continuity: Continuity) -> None:
                 st.rerun()
         continuation = unmatched and st.button(
             "Continue incomplete turn",
-            disabled=archived or active,
+            disabled=archived or active or read_only,
             key=f"{key}_continue",
         )
         submitted = st.chat_input(
             "Message persona",
-            disabled=archived or active or unmatched,
+            disabled=archived or active or unmatched or read_only,
             key=f"{key}_input",
         )
         if continuation or submitted:
             attempt = (
-                service.continue_incomplete_turn(scope)
+                service.continue_incomplete_turn(target)
                 if continuation
-                else service.send(scope, SubmittedInput(content=submitted or ""))
+                else service.send(target, SubmittedInput(content=submitted or ""))
             )
             if submitted:
                 with st.chat_message("user"):
                     st.markdown(submitted)
-            _stream_attempt(service, scope, attempt)
+            _stream_attempt(service, target, attempt)
             st.rerun()
     except StaleSelectionError:
         st.warning("The selected future changed. Reloading its latest saved state.")
@@ -111,16 +169,21 @@ def render_ongoing(continuity: Continuity) -> None:
 
 def _transcript(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     history: ConversationHistory,
     graph: ConversationGraphView,
     key: str,
     writes_disabled: bool,
+    branch_writes_disabled: bool,
+    branch_action: BranchActionRenderer,
 ) -> None:
     """Render the selected path and every valid graph action.
 
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         history:
             Selected committed transcript and attempt state.
         graph:
@@ -129,6 +192,10 @@ def _transcript(
             Full-scope widget namespace.
         writes_disabled:
             Whether archival or an open attempt blocks graph writes.
+        branch_writes_disabled:
+            Whether mode-specific branch writes are blocked.
+        branch_action:
+            Mode-specific branch renderer.
     """
 
     views = {node.message.id: node for node in graph.nodes}
@@ -141,15 +208,37 @@ def _transcript(
                 continue
             _response_details(view)
             displayed_alternatives.update(
-                _alternatives(service, graph, view, views, key, writes_disabled)
+                _alternatives(
+                    service,
+                    target,
+                    graph,
+                    view,
+                    views,
+                    key,
+                    writes_disabled,
+                    branch_writes_disabled,
+                    branch_action,
+                )
             )
-            _response_actions(service, graph, view, key, writes_disabled)
+            _response_actions(
+                service,
+                target,
+                graph,
+                view,
+                key,
+                writes_disabled,
+                branch_writes_disabled,
+                branch_action,
+            )
     _saved_futures(
         service,
+        target,
         graph,
         displayed_alternatives,
         key,
         writes_disabled,
+        branch_writes_disabled,
+        branch_action,
     )
 
 
@@ -200,17 +289,22 @@ def _response_details(view: GraphNodeView, compact: bool = False) -> None:
 
 def _alternatives(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     graph: ConversationGraphView,
     selected: GraphNodeView,
     views: dict[UUID, GraphNodeView],
     key: str,
     writes_disabled: bool,
+    branch_writes_disabled: bool,
+    branch_action: BranchActionRenderer,
 ) -> set[UUID]:
     """Render persona siblings for one selected user turn.
 
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         graph:
             Complete graph view carrying the compare-and-swap guard.
         selected:
@@ -221,6 +315,10 @@ def _alternatives(
             Full-scope widget namespace.
         writes_disabled:
             Whether graph writes are currently blocked.
+        branch_writes_disabled:
+            Whether mode-specific branch writes are blocked.
+        branch_action:
+            Mode-specific branch renderer.
 
     Returns:
         Alternative identifiers rendered for duplicate suppression.
@@ -241,29 +339,35 @@ def _alternatives(
                 disabled=writes_disabled,
                 key=f"{key}_select_{alternative_id}",
             ):
-                _select(service, graph, alternative.message.id)
-            _branch_action(
+                _select(service, target, graph, alternative.message.id)
+            branch_action(
                 service,
+                target,
                 graph,
                 alternative,
                 key,
-                writes_disabled,
+                branch_writes_disabled,
             )
     return alternative_ids
 
 
 def _response_actions(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     graph: ConversationGraphView,
     view: GraphNodeView,
     key: str,
     writes_disabled: bool,
+    branch_writes_disabled: bool,
+    branch_action: BranchActionRenderer,
 ) -> None:
     """Render valid retry and confirmed branch controls for one response.
 
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         graph:
             Complete graph view carrying the compare-and-swap guard.
         view:
@@ -272,6 +376,10 @@ def _response_actions(
             Full-scope widget namespace.
         writes_disabled:
             Whether graph writes are currently blocked.
+        branch_writes_disabled:
+            Whether mode-specific branch writes are blocked.
+        branch_action:
+            Mode-specific branch renderer.
     """
 
     if (
@@ -280,14 +388,15 @@ def _response_actions(
         and not writes_disabled
         and st.button("Retry response", key=f"{key}_retry_{view.message.id}")
     ):
-        attempt = service.retry_completed_response(graph.scope)
-        _stream_attempt(service, graph.scope, attempt)
+        attempt = service.retry_completed_response(target)
+        _stream_attempt(service, target, attempt)
         st.rerun()
-    _branch_action(service, graph, view, key, writes_disabled)
+    branch_action(service, target, graph, view, key, branch_writes_disabled)
 
 
 def _branch_action(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     graph: ConversationGraphView,
     view: GraphNodeView,
     key: str,
@@ -298,6 +407,8 @@ def _branch_action(
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         graph:
             Complete graph view carrying the compare-and-swap guard.
         view:
@@ -321,7 +432,7 @@ def _branch_action(
     ):
         selected_leaf_id = _selected_leaf(graph)
         service.branch_from_here(
-            graph.scope,
+            target,
             view.message.id,
             selected_leaf_id,
         )
@@ -330,16 +441,21 @@ def _branch_action(
 
 def _saved_futures(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     graph: ConversationGraphView,
     displayed_alternatives: set[UUID],
     key: str,
     writes_disabled: bool,
+    branch_writes_disabled: bool,
+    branch_action: BranchActionRenderer,
 ) -> None:
     """Render exact off-path leaves so abandoned futures remain revisitable.
 
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         graph:
             Complete graph view carrying the compare-and-swap guard.
         displayed_alternatives:
@@ -348,6 +464,10 @@ def _saved_futures(
             Full-scope widget namespace.
         writes_disabled:
             Whether graph writes are currently blocked.
+        branch_writes_disabled:
+            Whether mode-specific branch writes are blocked.
+        branch_action:
+            Mode-specific branch renderer.
     """
 
     parent_ids = {
@@ -374,12 +494,13 @@ def _saved_futures(
                 disabled=writes_disabled,
                 key=f"{key}_future_{future.message.id}",
             ):
-                _select(service, graph, future.message.id)
-            _branch_action(service, graph, future, key, writes_disabled)
+                _select(service, target, graph, future.message.id)
+            branch_action(service, target, graph, future, key, branch_writes_disabled)
 
 
 def _select(
     service: ConversationService,
+    target: ConversationScope | ConversationTarget,
     graph: ConversationGraphView,
     message_id: UUID,
 ) -> None:
@@ -388,6 +509,8 @@ def _select(
     Args:
         service:
             Conversation application service.
+        target:
+            Exact mode-owned conversation target.
         graph:
             Complete graph view carrying the compare-and-swap guard.
         message_id:
@@ -395,7 +518,7 @@ def _select(
     """
 
     service.select_saved_future(
-        graph.scope,
+        target,
         message_id,
         _selected_leaf(graph),
     )
@@ -424,7 +547,7 @@ def _selected_leaf(graph: ConversationGraphView) -> UUID:
 
 def _stream_attempt(
     service: ConversationService,
-    scope: ConversationScope,
+    target: ConversationScope | ConversationTarget,
     attempt: GenerationAttempt,
 ) -> None:
     """Render and exhaust one durable generation attempt.
@@ -432,8 +555,8 @@ def _stream_attempt(
     Args:
         service:
             Conversation application service.
-        scope:
-            Complete conversation ownership.
+        target:
+            Exact mode-owned conversation target.
         attempt:
             Reserved attempt to stream.
     """
@@ -442,7 +565,7 @@ def _stream_attempt(
         st.caption("Generating · output is incomplete until the response is saved.")
         output = st.empty()
         chunks = ""
-        stream = service.stream(scope, attempt.id)
+        stream = service.stream(target, attempt.id)
         try:
             for chunk in stream:
                 chunks += chunk
@@ -453,7 +576,7 @@ def _stream_attempt(
 
 def _configuration(
     service: ConversationService,
-    scope: ConversationScope,
+    target: ConversationScope | ConversationTarget,
     saved: ConversationSettings | None,
     key: str,
     disabled: bool,
@@ -463,8 +586,8 @@ def _configuration(
     Args:
         service:
             Conversation application service.
-        scope:
-            Complete ownership.
+        target:
+            Exact mode-owned conversation target.
         saved:
             Durable selection, absent before first use.
         key:
@@ -520,7 +643,7 @@ def _configuration(
             "Save generation settings", disabled=disabled, key=f"{key}_configure"
         ):
             service.configure(
-                scope,
+                target,
                 ConversationSettings(
                     provider=selected[0],
                     model=selected[1],

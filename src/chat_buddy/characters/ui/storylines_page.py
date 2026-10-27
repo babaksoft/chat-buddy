@@ -1,17 +1,24 @@
 """Focused Storyline navigation and scene-management page."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import streamlit as st
 
 from chat_buddy.characters.application import (
+    ConversationService,
     IdentityService,
     PersonaService,
+    StorylineForkService,
     StorylineService,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     ContinuityLifecycle,
+    ContinuityMode,
+    ConversationGraphView,
+    ConversationScope,
+    ConversationTarget,
+    GraphNodeView,
     Identity,
     IncompleteLatestSceneError,
     LockedSceneSetupError,
@@ -24,10 +31,17 @@ from chat_buddy.characters.domain import (
     StaleSelectionError,
     StaleStorylineError,
     Storyline,
+    StorylineForkConflictError,
+    StorylineForkPreview,
     StorylineGroup,
 )
-from chat_buddy.characters.infrastructure import create_storyline_services
+from chat_buddy.characters.infrastructure import (
+    create_conversation_service,
+    create_storyline_fork_service,
+    create_storyline_services,
+)
 from chat_buddy.characters.ui.new_storyline_page import render_new_storyline
+from chat_buddy.characters.ui.ongoing import render_conversation
 
 _SCOPE_KEY = "characters_storyline_scope"
 _STYLE = ResponseStyleSnapshot(
@@ -369,6 +383,7 @@ def _render_scene(
         f"{scene.details.response_style.version}"
     )
     if storyline.lifecycle == ContinuityLifecycle.ARCHIVED:
+        _render_scene_conversation(scene, sequence)
         return
 
     key = f"characters_scene_title_{scene.id}_{storyline.revision}"
@@ -408,6 +423,297 @@ def _render_scene(
                 st.rerun()
     else:
         st.caption("Scene setup is locked after its first user message.")
+
+    _render_scene_conversation(scene, sequence)
+
+
+def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> None:
+    """Render one scene conversation with Storyline-specific branch policy.
+
+    Args:
+        scene:
+            Selected owned scene.
+        sequence:
+            Current Storyline and ordered scenes.
+    """
+
+    st.divider()
+    target = ConversationTarget(
+        scope=scene.scope,
+        mode=ContinuityMode.STORYLINE,
+        scene_id=scene.id,
+    )
+    conversation = create_conversation_service()
+    forks = create_storyline_fork_service()
+    identities, personas, _ = create_storyline_services()
+    render_conversation(
+        conversation,
+        target,
+        f"characters_storyline_scene_{scene.id}",
+        sequence.storyline.lifecycle == ContinuityLifecycle.ARCHIVED,
+        lambda service, owned_target, graph, view, key, disabled: (
+            _render_storyline_branch(
+                service,
+                forks,
+                identities,
+                personas,
+                sequence,
+                owned_target,
+                graph,
+                view,
+                key,
+                disabled,
+            )
+        ),
+        read_only=scene.id != sequence.scenes[-1].id,
+    )
+
+
+def _render_storyline_branch(
+    conversation: ConversationService,
+    forks: StorylineForkService,
+    identities: IdentityService,
+    personas: PersonaService,
+    sequence: SceneSequence,
+    target: ConversationScope | ConversationTarget,
+    graph: ConversationGraphView,
+    view: GraphNodeView,
+    key: str,
+    disabled: bool,
+) -> None:
+    """Render in-place branching or a reviewed structural fork.
+
+    Args:
+        conversation:
+            Conversation graph application operations.
+        forks:
+            Reviewed structural fork operations.
+        identities:
+            Identity duplication operations.
+        personas:
+            Persona duplication operations.
+        sequence:
+            Current Storyline revision and scene chronology.
+        target:
+            Exact selected scene target.
+        graph:
+            Observed graph and selection guard.
+        view:
+            Persona message offered as a branch point.
+        key:
+            Full ownership-scoped widget namespace.
+        disabled:
+            Whether archival or an open attempt blocks branching.
+    """
+
+    if not view.branchable or disabled or not isinstance(target, ConversationTarget):
+        return
+    decision = conversation.branch_decision(target, view.message.id)
+    if decision.disposition == "in_place":
+        confirmed = st.checkbox(
+            "I understand this keeps the current future saved.",
+            key=f"{key}_branch_confirm_{view.message.id}",
+        )
+        if st.button(
+            "Branch from here",
+            disabled=not confirmed,
+            key=f"{key}_branch_{view.message.id}",
+        ):
+            conversation.branch_from_here(
+                target, view.message.id, _selected_leaf(graph)
+            )
+            st.rerun()
+        return
+
+    _render_fork_review(
+        forks,
+        identities,
+        personas,
+        sequence,
+        target,
+        graph,
+        view,
+        key,
+    )
+
+
+def _render_fork_review(
+    forks: StorylineForkService,
+    identities: IdentityService,
+    personas: PersonaService,
+    sequence: SceneSequence,
+    target: ConversationTarget,
+    graph: ConversationGraphView,
+    view: GraphNodeView,
+    key: str,
+) -> None:
+    """Prepare and confirm an explicitly named older-scene fork.
+
+    Args:
+        forks:
+            Reviewed structural fork operations.
+        identities:
+            Identity duplication operations.
+        personas:
+            Persona duplication operations.
+        sequence:
+            Current Storyline revision and scene chronology.
+        target:
+            Exact older-scene target.
+        graph:
+            Observed graph and selected leaf.
+        view:
+            Exact persona branch point.
+        key:
+            Full ownership-scoped widget namespace.
+    """
+
+    preview_key = f"{key}_fork_preview_{view.message.id}"
+    with st.expander("Fork Storyline from here"):
+        st.info(
+            "A fork keeps this Storyline unchanged and creates an independent "
+            "Storyline under a distinct profile pair."
+        )
+        name = st.text_input(
+            "Fork Storyline name",
+            value=f"{sequence.storyline.name} fork",
+            max_chars=128,
+            key=f"{key}_fork_name_{view.message.id}",
+        )
+        duplicate = st.radio(
+            "Profile to duplicate exactly",
+            ("Identity", "Persona"),
+            horizontal=True,
+            key=f"{key}_fork_profile_{view.message.id}",
+        )
+        if st.button(
+            "Review Storyline fork", key=f"{key}_fork_review_{view.message.id}"
+        ):
+            try:
+                preview = _prepare_fork_preview(
+                    forks,
+                    identities,
+                    personas,
+                    sequence,
+                    target,
+                    graph,
+                    view,
+                    name,
+                    duplicate,
+                )
+            except (StorylineForkConflictError, StaleStorylineError) as error:
+                st.warning(str(error))
+            else:
+                st.session_state[preview_key] = preview
+                st.rerun()
+
+        stored_preview = st.session_state.get(preview_key)
+        if not isinstance(stored_preview, StorylineForkPreview):
+            return
+        preview = stored_preview
+        st.warning(
+            f"Confirm ‘{preview.name}’ with duplicated "
+            f"{preview.target_identity.details.name} / "
+            f"{preview.target_persona.core.name}. The source selection will not change."
+        )
+        if st.button(
+            "Confirm Storyline fork", key=f"{key}_fork_confirm_{view.message.id}"
+        ):
+            try:
+                result = forks.confirm(preview)
+            except (StorylineForkConflictError, StaleStorylineError) as error:
+                st.session_state.pop(preview_key, None)
+                st.warning(f"The fork preview is stale: {error}")
+            else:
+                _store_scope(
+                    result.storyline.identity_id,
+                    result.storyline.persona_id,
+                    result.storyline.id,
+                )
+                st.session_state["characters_scene_id"] = result.scenes[-1].id
+                st.session_state.pop(preview_key, None)
+                st.rerun()
+
+
+def _prepare_fork_preview(
+    forks: StorylineForkService,
+    identities: IdentityService,
+    personas: PersonaService,
+    sequence: SceneSequence,
+    target: ConversationTarget,
+    graph: ConversationGraphView,
+    view: GraphNodeView,
+    name: str,
+    duplicate: str,
+) -> StorylineForkPreview:
+    """Create one exact profile duplicate and return a guarded preview.
+
+    Args:
+        forks:
+            Reviewed structural fork operations.
+        identities:
+            Identity duplication operations.
+        personas:
+            Persona duplication operations.
+        sequence:
+            Current source Storyline snapshot.
+        target:
+            Exact older-scene target.
+        graph:
+            Observed graph and selected leaf.
+        view:
+            Exact persona branch point.
+        name:
+            Authored target Storyline name.
+        duplicate:
+            Profile kind selected for exact duplication.
+
+    Returns:
+        Immutable fork preview ready for explicit confirmation.
+    """
+
+    storyline = sequence.storyline
+    normalized_name = name.strip()
+    if not normalized_name or len(normalized_name) > 128:
+        raise StorylineForkConflictError(
+            "A fork Storyline name must contain 1 to 128 characters"
+        )
+    if duplicate == "Identity":
+        target_identity_id = identities.duplicate(storyline.identity_id).id
+        target_persona_id = storyline.persona_id
+    else:
+        target_identity_id = storyline.identity_id
+        target_persona_id = personas.duplicate(storyline.persona_id).id
+    return forks.preview(
+        request_id=uuid4(),
+        name=normalized_name,
+        target=target,
+        branch_point_message_id=view.message.id,
+        expected_selected_leaf_id=_selected_leaf(graph),
+        expected_storyline_revision=storyline.revision,
+        target_identity_id=target_identity_id,
+        target_persona_id=target_persona_id,
+    )
+
+
+def _selected_leaf(graph: ConversationGraphView) -> UUID:
+    """Return the exact nonempty graph selection.
+
+    Args:
+        graph:
+            Observed complete graph view.
+
+    Returns:
+        Exact selected persona leaf identifier.
+
+    Raises:
+        ValueError:
+            If a branch is somehow offered for an empty graph.
+    """
+
+    if graph.selected_leaf_id is None:
+        raise ValueError("A Storyline branch requires a selected response")
+    return graph.selected_leaf_id
 
 
 def _selected_scene(sequence: SceneSequence) -> Scene:

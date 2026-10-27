@@ -613,7 +613,7 @@ Complete when users can create, organize, resume, and archive Storylines safely.
 
 ### Slice 16 — Ship Storyline conversation and fork UI
 
-Status: Pending
+Status: Complete
 
 Add selected-scene chat using the established conversation controls: streaming,
 recovery, retries, alternatives, and exact-future selection. Expose Branch from

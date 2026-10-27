@@ -1,6 +1,7 @@
 """Acceptance tests for Storyline navigation and scene management."""
 
 from collections.abc import Generator
+from typing import cast
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
@@ -90,6 +91,9 @@ def services() -> Generator[tuple[Mock, Mock, Mock, list[SceneSequence]], None, 
             "create_storyline_services",
             return_value=(identities, personas, storylines),
         ),
+        patch.object(storylines_page, "render_conversation"),
+        patch.object(storylines_page, "create_conversation_service"),
+        patch.object(storylines_page, "create_storyline_fork_service"),
         patch.object(storylines_page, "_navigate_to_new_storyline") as navigate,
     ):
         storylines.navigate = navigate
@@ -292,6 +296,121 @@ def test_archive_stale_revision_is_visible_and_archived_pair_can_start_replaceme
     assert not button.disabled
     button.click().run()
     storylines.navigate.assert_called_once_with()
+
+
+def test_selected_scene_conversation_uses_exact_target_and_scene_write_policy(
+    services: tuple[Mock, Mock, Mock, list[SceneSequence]],
+) -> None:
+    """Route latest and historical scenes through mode-owned conversation targets.
+
+    Args:
+        services:
+            Storyline services and sequences.
+    """
+
+    active = services[3][0]
+    latest = _scene(active.storyline, 2, locked=False)
+    sequence = SceneSequence(
+        storyline=active.storyline.model_copy(update={"revision": 2}),
+        scenes=(active.scenes[0].model_copy(update={"setup_locked": True}), latest),
+    )
+    services[2].resume.side_effect = lambda *args: sequence
+    app = _selected_app(sequence)
+
+    rendered = cast(Mock, storylines_page.render_conversation)
+    call = rendered.call_args
+    target = call.args[1]
+    assert target.scope == latest.scope
+    assert target.scene_id == latest.id
+    assert target.mode == "storyline"
+    assert call.args[3] is False
+    assert call.kwargs["read_only"] is False
+
+    app.button(key=f"characters_select_scene_{sequence.scenes[0].id}").click().run()
+    call = rendered.call_args
+    assert call.args[1].scene_id == sequence.scenes[0].id
+    assert call.kwargs["read_only"] is True
+
+
+def test_fork_preview_duplicates_exactly_one_profile_with_observed_guards(
+    services: tuple[Mock, Mock, Mock, list[SceneSequence]],
+) -> None:
+    """Prepare a named fork from exact source revision, branch point, and leaf.
+
+    Args:
+        services:
+            Storyline services and sequences.
+    """
+
+    from datetime import UTC, datetime
+
+    from chat_buddy.characters.domain import (
+        ContinuityMode,
+        ConversationGraphView,
+        ConversationTarget,
+        GraphNodeView,
+        Identity,
+        IdentityDetails,
+        MessageNode,
+    )
+
+    identities, personas, _, sequences = services
+    sequence = sequences[0]
+    scene = sequence.scenes[0]
+    leaf_id = uuid4()
+    node = MessageNode.model_construct(
+        id=leaf_id,
+        scope=scene.scope,
+        parent_id=uuid4(),
+        role="persona",
+        content="A saved answer",
+        created_at=datetime.now(UTC),
+    )
+    view = GraphNodeView.model_construct(
+        message=node,
+        alternative_ids=(node.id,),
+        retry_count=0,
+        selected=True,
+        selected_leaf=True,
+        branchable=True,
+    )
+    graph = ConversationGraphView.model_construct(
+        scope=scene.scope, selected_leaf_id=leaf_id, nodes=(view,)
+    )
+    duplicate = Identity(
+        id=uuid4(), details=IdentityDetails(name="You"), is_default=False
+    )
+    identities.duplicate.return_value = duplicate
+    forks = Mock()
+    preview = Mock()
+    forks.preview.return_value = preview
+    target = ConversationTarget(
+        scope=scene.scope, mode=ContinuityMode.STORYLINE, scene_id=scene.id
+    )
+
+    result = storylines_page._prepare_fork_preview(
+        forks,
+        identities,
+        personas,
+        sequence,
+        target,
+        graph,
+        view,
+        "A different road",
+        "Identity",
+    )
+
+    assert result is preview
+    identities.duplicate.assert_called_once_with(sequence.storyline.identity_id)
+    personas.duplicate.assert_not_called()
+    call = forks.preview.call_args.kwargs
+    assert call["name"] == "A different road"
+    assert call["target"] == target
+    assert call["branch_point_message_id"] == node.id
+    assert call["expected_selected_leaf_id"] == leaf_id
+    assert call["expected_storyline_revision"] == sequence.storyline.revision
+    assert call["target_identity_id"] == duplicate.id
+    assert call["target_persona_id"] == sequence.storyline.persona_id
 
 
 def _selected_app(sequence: SceneSequence) -> AppTest:

@@ -4,6 +4,7 @@ from chat_buddy.characters.application import (
     ContinuityService,
     IdentityService,
     PersonaService,
+    StorylineForkService,
     StorylineService,
 )
 
@@ -95,4 +96,33 @@ def create_storyline_services() -> (
             DbSceneRepository(CharactersSessionLocal),
             DbConversationRepository(CharactersSessionLocal),
         ),
+    )
+
+
+def create_storyline_fork_service() -> StorylineForkService:
+    """Build reviewed structural Storyline fork operations.
+
+    Returns:
+        Lazily configured Storyline fork application operations.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbConversationRepository,
+        DbIdentityRepository,
+        DbPersonaRepository,
+        DbSceneRepository,
+        DbStorylineForkRepository,
+        DbStorylineRepository,
+    )
+
+    conversations = DbConversationRepository(CharactersSessionLocal)
+    return StorylineForkService(
+        DbStorylineRepository(CharactersSessionLocal),
+        DbSceneRepository(CharactersSessionLocal),
+        conversations,
+        conversations,
+        DbIdentityRepository(CharactersSessionLocal),
+        DbPersonaRepository(CharactersSessionLocal),
+        DbStorylineForkRepository(CharactersSessionLocal),
     )
