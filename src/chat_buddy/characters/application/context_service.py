@@ -14,6 +14,7 @@ from chat_buddy.characters.domain import (
     PromptMessage,
     Scene,
     Storyline,
+    StorylineMemory,
     SummaryRevision,
     TokenCounter,
 )
@@ -215,6 +216,7 @@ class StorylineContextBudgeter:
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
+        memories: tuple[StorylineMemory, ...] = (),
     ) -> ContextSelection:
         """Reserve Storyline blocks and greedily add whole turns newest first.
 
@@ -224,7 +226,7 @@ class StorylineContextBudgeter:
             identity:
                 Frozen authored identity.
             storyline:
-                Owned starting relationship.
+                Owned Storyine continuity.
             scene:
                 Exact scene setup and response style.
             context:
@@ -233,6 +235,8 @@ class StorylineContextBudgeter:
                 Effective response capacity after output reservation.
             counter:
                 Provider-specific deterministic estimator.
+            memories:
+                Dedicated-budget response memories in selector priority order.
 
         Returns:
             Bounded prompt and explicit compression prefix.
@@ -245,12 +249,38 @@ class StorylineContextBudgeter:
         turns = context.uncovered_turns
         mandatory_count = min(1, len(turns))
         selected = turns[-mandatory_count:] if mandatory_count else ()
-        prompt = self._render(persona, identity, storyline, scene, context, selected)
+        selected_memories: tuple[StorylineMemory, ...] = ()
+        prompt = self._render(
+            persona,
+            identity,
+            storyline,
+            scene,
+            context,
+            selected,
+            selected_memories,
+        )
         tokens = counter.count(prompt)
         if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
             raise ContextCapacityError(
                 "Mandatory Storyline context exceeds this model's capacity."
             )
+
+        for memory in memories:
+            candidate_memories = (*selected_memories, memory)
+            candidate = self._render(
+                persona,
+                identity,
+                storyline,
+                scene,
+                context,
+                selected,
+                candidate_memories,
+            )
+            candidate_tokens = counter.count(candidate)
+            if candidate_tokens + PROMPT_OVERHEAD_TOKENS <= generation.input_tokens:
+                selected_memories = candidate_memories
+                prompt = candidate
+                tokens = candidate_tokens
 
         omitted = turns[:-mandatory_count] if mandatory_count else ()
         for turn in reversed(omitted):
@@ -262,10 +292,12 @@ class StorylineContextBudgeter:
                 scene,
                 context,
                 candidate_turns,
+                selected_memories,
             )
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
                 break
+
             selected = candidate_turns
             prompt = candidate
             tokens = candidate_tokens
@@ -286,6 +318,7 @@ class StorylineContextBudgeter:
         scene: Scene,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
+        memories: tuple[StorylineMemory, ...],
     ) -> tuple[PromptMessage, ...]:
         """Format one candidate from exact Storyline scene inputs.
 
@@ -302,6 +335,8 @@ class StorylineContextBudgeter:
                 Summary and current input.
             turns:
                 Selected chronological complete turns.
+            memories:
+                Whole response memories admitted before optional older turns.
 
         Returns:
             Provider-ready prompt messages.
@@ -319,4 +354,5 @@ class StorylineContextBudgeter:
             messages,
             context.current_input,
             context.summary.content if context.summary is not None else None,
+            memories,
         )

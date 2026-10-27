@@ -34,6 +34,10 @@ from chat_buddy.characters.application.memory_service import StorylineMemoryServ
 from chat_buddy.characters.application.persona_service import (
     PersonaService,
 )
+from chat_buddy.characters.application.response_memory import (
+    BaselineResponseMemorySelector,
+    StorylineResponseMemoryService,
+)
 from chat_buddy.characters.application.rolling_summary_service import (
     RollingSummaryService,
 )
@@ -50,6 +54,7 @@ from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
     "BaselineMemoryContextSelector",
+    "BaselineResponseMemorySelector",
     "ContinuityService",
     "ConversationService",
     "DeferredBranchModeFactsResolver",
@@ -68,6 +73,7 @@ __all__ = [
     "StorylineMemoryEligibility",
     "StorylineMemoryExtractionService",
     "StorylineMemoryService",
+    "StorylineResponseMemoryService",
     "StorylineService",
     "decide_branch_mode",
     "resolve_starting_relationship",

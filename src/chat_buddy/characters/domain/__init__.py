@@ -161,6 +161,11 @@ from chat_buddy.characters.domain.repositories import (
     StorylineRepository,
     SummaryRepository,
 )
+from chat_buddy.characters.domain.response_memory import (
+    ResponseMemoryBudget,
+    ResponseMemorySelection,
+    ResponseMemorySelector,
+)
 from chat_buddy.characters.domain.storyline import (
     AppendBlockReason,
     Scene,
@@ -295,6 +300,9 @@ __all__ = [
     "RelationshipIntent",
     "RelationshipSelection",
     "ResponseGateway",
+    "ResponseMemoryBudget",
+    "ResponseMemorySelection",
+    "ResponseMemorySelector",
     "ResponseProvenance",
     "ResponseStyleSnapshot",
     "RetryAvailability",

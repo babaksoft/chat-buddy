@@ -3,14 +3,25 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
+from chat_buddy.characters.application import StorylineContextBudgeter
 from chat_buddy.characters.domain import (
+    CompletedTurn,
+    ContextCapacityError,
     ContinuityLifecycle,
     ConversationScope,
+    EffectiveGeneration,
+    EligibleContext,
+    GenerationConfiguration,
     Identity,
     IdentityDetails,
+    MemoryRevision,
     Message,
+    ModelDescriptor,
     Persona,
     PersonaCore,
+    PromptMessage,
     RelationshipIntent,
     ResponseStyleSnapshot,
     Scene,
@@ -18,12 +29,30 @@ from chat_buddy.characters.domain import (
     StartingOrigins,
     StartingRelationship,
     Storyline,
+    StorylineMemory,
 )
 from chat_buddy.characters.prompts import assemble_storyline_prompt
 
 
-def test_storyline_prompt_uses_exact_scene_blocks_and_excludes_future_inputs() -> None:
-    """Order required blocks without titles, memory placeholders, or other scenes."""
+class MessageCounter:
+    """Count one token per complete provider message."""
+
+    def count(self, messages: tuple[PromptMessage, ...]) -> int:
+        """Return the number of provider messages.
+
+        Args:
+            messages:
+                Complete prompt candidate.
+
+        Returns:
+            Number of indivisible messages.
+        """
+
+        return len(messages)
+
+
+def test_storyline_prompt_uses_exact_scene_blocks_and_selected_memory() -> None:
+    """Order memory before scene state without titles or other scenes."""
 
     identity_id, persona_id, storyline_id, conversation_id = (
         uuid4(),
@@ -109,6 +138,18 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_excludes_future_inputs() -
             created_at=datetime.now(UTC),
         ),
     )
+    memory = StorylineMemory.model_construct(
+        id=uuid4(),
+        continuity_id=storyline.id,
+        current_revision_id=uuid4(),
+        revisions=(
+            MemoryRevision.model_construct(
+                subject="departure time",
+                content="The train leaves at midnight.",
+            ),
+        ),
+        evidence=(),
+    )
 
     prompt = assemble_storyline_prompt(
         persona,
@@ -118,17 +159,19 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_excludes_future_inputs() -
         messages,
         current_input="I am ready.",
         summary="They agreed to depart.",
+        memories=(memory,),
     )
 
-    assert [message.content.split("\n", 1)[0] for message in prompt[:6]] == [
+    assert [message.content.split("\n", 1)[0] for message in prompt[:7]] == [
         "Persona core:",
         "Identity:",
         "Relationship intent and starting state:",
+        "Continuity memory:",
         "Scene setup:",
         "Response style:",
         "Conversation summary:",
     ]
-    assert [message.role for message in prompt] == ["system"] * 6 + [
+    assert [message.role for message in prompt] == ["system"] * 7 + [
         "user",
         "assistant",
         "user",
@@ -136,6 +179,49 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_excludes_future_inputs() -
     rendered = "\n".join(message.content for message in prompt)
     assert "Hidden presentation title" not in rendered
     assert "Secret title that must stay out" not in rendered
-    assert "memory" not in rendered.lower()
+    assert "The train leaves at midnight." in rendered
     assert "unselected alternative" not in rendered
     assert "partial attempt" not in rendered
+
+    context = EligibleContext(
+        summary=None,
+        uncovered_turns=(CompletedTurn(user=messages[0], persona=messages[1]),),
+        current_input="I am ready.",
+    )
+    exact_generation = EffectiveGeneration(
+        model=ModelDescriptor(
+            provider="fake",
+            model="exact",
+            context_tokens=73,
+            output_tokens=1,
+            capabilities=frozenset({"response"}),
+        ),
+        configuration=GenerationConfiguration(max_output_tokens=1),
+        capability="response",
+        input_tokens=72,
+    )
+    selection = StorylineContextBudgeter().assemble(
+        persona,
+        identity,
+        storyline,
+        scene,
+        context,
+        exact_generation,
+        MessageCounter(),
+        (memory,),
+    )
+    assert all(
+        not message.content.startswith("Continuity memory:")
+        for message in selection.prompt
+    )
+    with pytest.raises(ContextCapacityError, match="Mandatory Storyline"):
+        StorylineContextBudgeter().assemble(
+            persona,
+            identity,
+            storyline,
+            scene,
+            context,
+            exact_generation.model_copy(update={"input_tokens": 71}),
+            MessageCounter(),
+            (memory,),
+        )

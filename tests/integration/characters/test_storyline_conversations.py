@@ -6,28 +6,36 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
+    BaselineResponseMemorySelector,
     ConversationService,
     StorylineConversationAdapter,
+    StorylineResponseMemoryService,
     StorylineService,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
+    ChangeMemoryStateCommand,
     ContinuityMode,
     ConversationScope,
     ConversationTarget,
+    CreateMemoryCommand,
     ForkRequiredError,
     HistoricalSceneReadOnlyError,
     InvalidSceneOwnershipError,
+    MemoryDelta,
     ModelDescriptor,
     ProviderInvocationError,
+    ResponseMemoryBudget,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
     DbConversationRepository,
     DbIdentityRepository,
+    DbMemoryExtractionRepository,
     DbPersonaRepository,
     DbSceneRepository,
+    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -37,10 +45,89 @@ from tests.integration.characters.test_ongoing_summary_context import (
     FakeSummary,
     MessageCountCounter,
 )
+from tests.integration.characters.test_storyline_memory_repositories import (
+    _evidence,
+    _parent_id,
+    _provenance,
+)
 from tests.integration.characters.test_storyline_repositories import (
+    _complete_exchange,
     _next_scene,
+    _relationship,
     _repositories_and_request,
 )
+
+
+def test_storyline_response_prompt_reads_current_eligible_memory(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Render eligible memory and remove an exclusion from the next exact prompt.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    responses = FakeResponse()
+    storylines, scenes, request = _repositories_and_request(factory)
+    storyline, scene = storylines.start(request, _relationship())
+    source_persona_id = _complete_exchange(
+        factory, scene.scope.conversation_id, storyline.id
+    )
+    extraction = DbMemoryExtractionRepository(factory)
+    provenance = _provenance()
+    evidence = _evidence(
+        scene.scope,
+        scene.id,
+        _parent_id(factory, source_persona_id),
+        source_persona_id,
+        2,
+        provenance,
+    )
+    effect = extraction.reserve(scene.scope, scene.id, source_persona_id)
+    extraction.apply(
+        effect.id,
+        MemoryDelta(
+            selection_id=uuid4(),
+            scope=scene.scope,
+            source_persona_message_id=source_persona_id,
+            extractor=provenance.extractor,
+            commands=(
+                CreateMemoryCommand(
+                    subject="departure time",
+                    content="The train leaves at midnight.",
+                    occurrence=evidence.occurrence,
+                    evidence=evidence,
+                ),
+            ),
+        ),
+        provenance,
+    )
+    memories = DbStorylineMemoryRepository(factory)
+    app = _service(factory, responses, storylines, scenes)
+    target = _target(scene.id, scene.scope)
+
+    attempt = app.send(target, SubmittedInput(content="Remind me when we leave."))
+    list(app.stream(target, attempt.id))
+    rendered = "\n".join(message.content for message in responses.captured[-1])
+    assert "Continuity memory:" in rendered
+    assert "The train leaves at midnight." in rendered
+
+    (memory,) = memories.list(storyline.id)
+    memories.change_state(
+        ChangeMemoryStateCommand(
+            operation="exclude",
+            continuity_id=storyline.id,
+            memory_id=memory.id,
+            expected_revision_id=memory.current.id,
+        )
+    )
+    next_attempt = app.send(target, SubmittedInput(content="And now?"))
+    list(app.stream(target, next_attempt.id))
+    next_rendered = "\n".join(message.content for message in responses.captured[-1])
+    assert "Continuity memory:" not in next_rendered
+    assert "The train leaves at midnight." not in next_rendered
 
 
 def test_storyline_scene_supports_recovery_retries_selection_and_restart(
@@ -235,14 +322,22 @@ def _service(
         Fresh Storyline-aware conversation service.
     """
 
+    conversations = DbConversationRepository(factory)
     return ConversationService(
-        DbConversationRepository(factory),
+        conversations,
         DbContinuityRepository(factory),
         DbIdentityRepository(factory),
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(responses),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
+        response_memories=StorylineResponseMemoryService(
+            scenes,
+            conversations,
+            DbStorylineMemoryRepository(factory),
+            BaselineResponseMemorySelector(),
+            ResponseMemoryBudget(input_tokens=1024),
+        ),
     )
 
 

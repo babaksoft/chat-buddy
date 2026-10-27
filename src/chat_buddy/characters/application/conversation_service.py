@@ -48,12 +48,14 @@ from chat_buddy.characters.domain import (
     ModelRegistry,
     PersonaRepository,
     PromptMessage,
+    ResponseMemorySelection,
     RetryAvailability,
     Scene,
     SelectedPath,
     Storyline,
     SubmittedInput,
     SummaryRepository,
+    TokenCounter,
 )
 
 
@@ -84,6 +86,29 @@ class _StorylineExtractionProcessor(Protocol):
         ...
 
 
+class _StorylineResponseMemoryProvider(Protocol):
+    """Read and select eligible memory for one Storyline response."""
+
+    def select(
+        self, storyline: Storyline, scene: Scene, counter: TokenCounter
+    ) -> ResponseMemorySelection:
+        """Return a bounded selection for an exact Storyline scene.
+
+        Args:
+            storyline:
+                Owning Storyline snapshot.
+            scene:
+                Exact response scene.
+            counter:
+                Active provider token counter.
+
+        Returns:
+            Independently versioned response-memory selection.
+        """
+
+        ...
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,6 +126,7 @@ class ConversationService:
         branch_mode_facts: BranchModeFactsResolver | None = None,
         storyline_adapter: StorylineConversationAdapter | None = None,
         memory_extraction: _StorylineExtractionProcessor | None = None,
+        response_memories: _StorylineResponseMemoryProvider | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -123,6 +149,8 @@ class ConversationService:
                 Optional exact Storyline scene ownership and policy adapter.
             memory_extraction:
                 Optional post-completion Storyline memory workflow.
+            response_memories:
+                Optional branch-aware Storyline response-memory workflow.
         """
 
         self._conversations = conversations
@@ -132,6 +160,7 @@ class ConversationService:
         self._models = models
         self._storyline_adapter = storyline_adapter
         self._memory_extraction = memory_extraction
+        self._response_memories = response_memories
         self._branch_mode_facts = (
             branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
         )
@@ -772,6 +801,13 @@ class ConversationService:
         for _ in range(len(history.messages) // 2 + 1):
             eligible = self._eligibility.select(history, current, current_input)
             if storyline is not None and scene is not None:
+                memories = (
+                    self._response_memories.select(
+                        storyline, scene, counter
+                    ).included_memories
+                    if self._response_memories is not None
+                    else ()
+                )
                 selection = self._storyline_budgeter.assemble(
                     persona,
                     identity,
@@ -780,6 +816,7 @@ class ConversationService:
                     eligible,
                     generation,
                     counter,
+                    memories,
                 )
             else:
                 if continuity is None:

@@ -4,19 +4,22 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
+    BaselineResponseMemorySelector,
     ConversationService,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
     StorylineMemoryExtractionService,
+    StorylineResponseMemoryService,
 )
-from chat_buddy.characters.domain import ExtractionBudget
+from chat_buddy.characters.domain import ExtractionBudget, ResponseMemoryBudget
 from chat_buddy.characters.infrastructure.llm import (
     ContextualMemoryDeltaExtractor,
     create_model_registry,
 )
 
 _EXTRACTION_FIXED_OVERHEAD_TOKENS = 512
+_RESPONSE_MEMORY_BUDGET_TOKENS = 1024
 
 
 def create_conversation_service(
@@ -57,6 +60,13 @@ def create_conversation_service(
     memories = DbStorylineMemoryRepository(session_factory)
     effects = DbMemoryExtractionRepository(session_factory)
     models = create_model_registry()
+    response_memories = StorylineResponseMemoryService(
+        scenes,
+        conversations,
+        memories,
+        BaselineResponseMemorySelector(),
+        ResponseMemoryBudget(input_tokens=_RESPONSE_MEMORY_BUDGET_TOKENS),
+    )
     extraction = None
     if any("memory_extraction" in model.capabilities for model in models.list_models()):
         extraction_generation = models.resolve_default("memory_extraction")
@@ -98,4 +108,5 @@ def create_conversation_service(
         models,
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         memory_extraction=extraction,
+        response_memories=response_memories,
     )

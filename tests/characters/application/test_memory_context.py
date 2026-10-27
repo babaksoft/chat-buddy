@@ -8,8 +8,10 @@ import pytest
 
 from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
+    BaselineResponseMemorySelector,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
+    StorylineResponseMemoryService,
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -35,6 +37,7 @@ from chat_buddy.characters.domain import (
     PersonaCore,
     PromptMessage,
     RelationshipIntent,
+    ResponseMemoryBudget,
     ResponseStyleSnapshot,
     Scene,
     SceneDetails,
@@ -456,6 +459,114 @@ def test_selector_reports_capacity_failure_and_empty_optional_context() -> None:
         selector.select(
             context, ExtractionBudget(input_tokens=5, fixed_overhead_tokens=1)
         )
+
+
+def test_response_selector_has_independent_order_budget_and_exact_accounting() -> None:
+    """Select whole response records without inheriting extraction priority."""
+
+    scope = _scope()
+    source = _turn(scope, 1, "source")
+    first = _memory(scope, source, occurrence=1, learned=1)
+    second = _memory(scope, source, occurrence=1, learned=1)
+    selector = BaselineResponseMemorySelector()
+
+    result = selector.select(
+        (second, first),
+        ResponseMemoryBudget(input_tokens=1),
+        BlockTokenCounter(),
+    )
+
+    expected_order = tuple(
+        sorted(
+            (first, second),
+            key=lambda memory: (memory.current.subject.casefold(), str(memory.id)),
+        )
+    )
+    assert result.selector == StrategyIdentity(
+        name="baseline.storyline_response_memory", version="1.0.0"
+    )
+    assert result.eligible_memory_ids == tuple(memory.id for memory in expected_order)
+    assert result.included_memories == expected_order[:1]
+    assert result.omitted_memory_ids == (expected_order[1].id,)
+    assert result.token_count == 1
+
+
+def test_response_service_uses_same_branch_and_time_eligibility_query() -> None:
+    """Query repository eligibility from all selected scenes through the target."""
+
+    scope = _scope()
+    source = _turn(scope, 1, "selected")
+    memory = _memory(scope, source, occurrence=1, learned=1)
+    storyline = Storyline(
+        id=scope.continuity_id,
+        identity_id=scope.identity_id,
+        persona_id=scope.persona_id,
+        name="Eligible past",
+        lifecycle=ContinuityLifecycle.ACTIVE,
+        relationship=_relationship(),
+        revision=1,
+    )
+    scene = Scene(
+        id=uuid4(),
+        scope=scope,
+        position=1,
+        details=SceneDetails(
+            title="Arrival",
+            setup="At the platform.",
+            response_style=ResponseStyleSnapshot(
+                name="stage6.default",
+                version="1.0.0",
+                instruction="Respond naturally.",
+            ),
+        ),
+        setup_locked=True,
+    )
+    path = SelectedPath.model_construct(
+        scope=scope,
+        selected_leaf_id=source.persona.id,
+        messages=(
+            MessageNode.model_construct(
+                id=source.user.id,
+                scope=scope,
+                parent_id=None,
+                role="user",
+                content=source.user.content,
+                created_at=NOW,
+                response_provenance=None,
+            ),
+            MessageNode.model_construct(
+                id=source.persona.id,
+                scope=scope,
+                parent_id=source.user.id,
+                role="persona",
+                content=source.persona.content,
+                created_at=NOW,
+                response_provenance=None,
+            ),
+        ),
+    )
+    scenes = Mock()
+    scenes.list.return_value = SceneSequence(storyline=storyline, scenes=(scene,))
+    conversations = Mock()
+    conversations.selected_path.return_value = path
+    memories = Mock()
+    memories.list_eligible.return_value = (memory,)
+    service = StorylineResponseMemoryService(
+        scenes,
+        conversations,
+        memories,
+        BaselineResponseMemorySelector(),
+        ResponseMemoryBudget(input_tokens=4),
+    )
+
+    result = service.select(storyline, scene, BlockTokenCounter())
+
+    memories.list_eligible.assert_called_once_with(
+        storyline.id,
+        scene.position,
+        frozenset({source.persona.id}),
+    )
+    assert result.included_memories == (memory,)
 
 
 def test_snapshot_service_builds_owned_storyline_context_and_rejects_ongoing() -> None:

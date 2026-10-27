@@ -560,7 +560,7 @@ extraction failure cannot damage conversation completion.
 
 ### Slice 14 — Add memory to Storyline response context
 
-Status: Pending
+Status: Complete
 
 Apply Slice 10's eligibility semantics to response context through a
 continuity-scoped repository query and a separate response-memory selector/budget.

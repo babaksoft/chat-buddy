@@ -7,7 +7,34 @@ from chat_buddy.characters.domain import (
     PromptMessage,
     Scene,
     Storyline,
+    StorylineMemory,
 )
+
+
+def assemble_storyline_memory_blocks(
+    memories: tuple[StorylineMemory, ...],
+) -> tuple[PromptMessage, ...]:
+    """Render complete eligible memories as indivisible prompt blocks.
+
+    Args:
+        memories:
+            Ordered selected Storyline memories.
+
+    Returns:
+        One system message per complete current memory revision.
+    """
+
+    return tuple(
+        PromptMessage(
+            role="system",
+            content=(
+                "Continuity memory:\n"
+                f"Subject: {memory.current.subject}\n"
+                f"Content: {memory.current.content}"
+            ),
+        )
+        for memory in memories
+    )
 
 
 def assemble_storyline_prompt(
@@ -18,8 +45,9 @@ def assemble_storyline_prompt(
     messages: tuple[Message, ...],
     current_input: str | None = None,
     summary: str | None = None,
+    memories: tuple[StorylineMemory, ...] = (),
 ) -> tuple[PromptMessage, ...]:
-    """Render one scene without titles, other scenes, or future memory blocks.
+    """Render one scene with selected memory and without foreign context.
 
     Args:
         persona:
@@ -36,12 +64,14 @@ def assemble_storyline_prompt(
             New input, absent when continuing an existing tail.
         summary:
             Compatible summary from this scene only.
+        memories:
+            Selected eligible continuity memories in response-strategy order.
 
     Returns:
-        Ordered provider input without memory placeholders or partial output.
+        Ordered provider input without titles, other scenes, or partial output.
     """
 
-    blocks = (
+    ownership_blocks = (
         PromptMessage(
             role="system",
             content="Persona core:\n" + persona.core.model_dump_json(exclude_none=True),
@@ -56,6 +86,8 @@ def assemble_storyline_prompt(
             + storyline.relationship.model_dump_json()
             + "\nThese are starting qualities, not evidence of shared events. Do not invent shared history.",
         ),
+    )
+    scene_blocks = (
         PromptMessage(role="system", content="Scene setup:\n" + scene.details.setup),
         PromptMessage(
             role="system",
@@ -79,4 +111,11 @@ def assemble_storyline_prompt(
         if current_input is not None
         else ()
     )
-    return blocks + summary_block + history + tail
+    return (
+        ownership_blocks
+        + assemble_storyline_memory_blocks(memories)
+        + scene_blocks
+        + summary_block
+        + history
+        + tail
+    )
