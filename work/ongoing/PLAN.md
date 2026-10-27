@@ -664,7 +664,7 @@ Complete when users can understand and control every durable Stage 6 memory effe
 
 ### Slice 18 — Update project documents
 
-Status: Pending
+Status: Complete
 
 Update project documents only after shipped behavior and operator-facing names are
 verified:

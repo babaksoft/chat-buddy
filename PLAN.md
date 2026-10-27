@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-10-24
+Last updated: 2026-10-27
 
 ## How to use this plan
 
@@ -188,6 +188,8 @@ affect current state, and branch selection is covered by repository and
 application tests.
 
 ## Stage 6 — Add Storylines and continuity-scoped memory
+
+**Status: Complete.**
 
 - Allow at most one active named Storyline per identity/persona pair; archival
   permits a fresh independent Storyline while retaining read-only history.

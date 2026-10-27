@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 ## Purpose and scope
 
@@ -183,16 +183,18 @@ and source provenance:
 The Characters ownership hierarchy is:
 
 ```text
-Identity
-└── Persona
-    └── Continuity
-        ├── Mode
-        ├── Conversations, scenes, or days
-        ├── Selected conversation branches
-        ├── Continuity memories
-        ├── Relationship state and events
-        └── Persona adaptation
+Identity + Persona
+└── Continuity
+    ├── Mode
+    ├── Conversations, scenes, or days
+    ├── Selected conversation branches
+    ├── Continuity memories
+    ├── Relationship state and events
+    └── Persona adaptation
 ```
+
+Identities and personas are independently authored profiles. A continuity binds
+one of each; neither profile owns the other.
 
 An **identity** describes who the user is inside Characters. A default identity is
 shown as **You**. Authored identity details are editable until first continuity
@@ -279,11 +281,12 @@ for context and downstream derivation.
   retry and saved-future selection require a writable scene and never fork.
 - Because a Storyline fork preserves the active source while creating another
   active future, it creates a distinct pair by exactly duplicating at least one
-  source profile. It copies ordered metadata and selected histories for earlier
-  scenes, then the chosen scene's ancestry through the exact persona branch point.
-  It assigns new continuity-owned identifiers, remaps compatible summary and
-  completed-attempt provenance, excludes later scenes and nodes outside the copied
-  ancestries, and changes only the fork.
+  source profile. The target pair must not already own a Storyline. The fork copies
+  ordered metadata and selected histories for earlier scenes, then the chosen
+  scene's ancestry through the exact persona branch point. It assigns new
+  continuity-owned identifiers, remaps compatible summary and completed-attempt
+  provenance, excludes later scenes and nodes outside the copied ancestries, and
+  changes only the fork.
 - A closed Timeline day cannot retry or branch in place; an alternate past requires
   a Timeline fork.
 
@@ -324,7 +327,9 @@ Extraction occurs only after a complete selected turn. Users can inspect, correc
 exclude, reactivate, and permanently delete extracted interpretations. Switching
 away from the current revision's source branch makes it ineligible without
 deleting it; switching back restores eligibility. A deselected reinforcement does
-not invalidate content whose originating evidence remains selected.
+not invalidate content whose originating evidence remains selected. Lifecycle and
+correction changes affect the next assembled response context; they do not rewrite
+prior prompts or messages.
 
 An explicit Storyline fork may copy an eligible active lineage only when its
 originating evidence is on the copied selected histories. The fork remaps copied

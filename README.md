@@ -42,6 +42,17 @@ experiences:
   alternative.
 - Branch an Ongoing conversation from an earlier persona response without losing
   either future.
+- Create a named Storyline with an initial scene, then append scenes one at a time
+  as the narrative advances.
+- Converse, retry responses, select alternatives, and branch within the latest
+  Storyline scene while preserving saved futures.
+- Fork an older Storyline scene into an independently owned Storyline under an
+  exact duplicate of either source profile.
+- Use branch-aware, time-aware Storyline memory extracted after complete turns.
+- Inspect memory evidence and revisions; correct, exclude, reactivate, or
+  permanently delete memories; and review extraction conflicts.
+- Archive a Storyline as read-only and start a fresh independent Storyline for the
+  same identity and persona.
 - Duplicate frozen profiles when authored changes are needed.
 
 ## Product model and scope
@@ -49,22 +60,28 @@ experiences:
 | Area | Purpose | Context and memory | Persistence |
 |---|---|---|---|
 | Chat | General conversations | Conversation summaries and user-controlled Chat-wide memory | PostgreSQL `chat` schema |
-| Characters | Persona-based continuities | Continuity-local transcript and rolling summary | PostgreSQL `characters` schema |
+| Characters | Persona-based Ongoing and Storyline continuities | Ongoing rolling summaries; scene-local Storyline summaries and continuity-scoped Storyline memory | PostgreSQL `characters` schema |
 
 Chat and Characters are independent product areas. They do not share
 conversations, memories, repositories, prompts, or database records. Streamlit
 provides only the common navigation shell.
 
-Characters currently supports Ongoing conversations. Each continuity belongs to
-one identity and persona, starts with an explicit relationship state, and remains
-isolated from other continuities. Characters does not currently extract long-term
-memory or evolve relationship and persona state from conversation content.
+Characters supports Ongoing and Storyline conversations. Each continuity belongs
+to one identity and persona, starts with an explicit relationship state, and
+remains isolated from other continuities. Ongoing uses a rolling summary and does
+not extract long-term memory. A Storyline owns ordered scenes and its own extracted
+memory; branch and scene-time rules prevent unrelated or future knowledge from
+entering a prompt. Storyline memory crosses into another continuity only through a
+reviewed Storyline fork, which creates an independent lineage by remapping copied
+evidence. Characters does not yet evolve relationship or persona state from
+conversation content.
 
 ## Local-first behavior and cloud usage
 
 PostgreSQL stores application data in the configured local database. Ollama
-provides the default generation path for both areas and also performs Chat title
-generation, rolling summarization, and memory extraction.
+provides the default generation path for both areas. It also performs Chat title
+generation, summarization, and memory extraction, plus Characters summarization
+and Storyline memory extraction.
 
 OpenAI is an explicit, optional provider for visible Chat responses. When selected,
 the eligible current input, recent turns, conversation summary, and active Chat
@@ -73,9 +90,14 @@ configured Ollama endpoint. Requests may be billable, provider retention policie
 may apply, and deleting local data cannot retract content already sent to an
 external provider.
 
-Chat and Characters use separate provider configuration. Data sent to an Ollama
-endpoint remains under the control of that endpoint and the selected model; verify
-their hosting behavior when local-only processing is required.
+Chat and Characters use separate provider configuration. Depending on the
+Characters operation, its Ollama endpoint may receive the authored identity and
+persona, starting relationship, eligible Storyline memory, scene setup, compatible
+summary, selected-path messages, and the current or newly completed turn. Data sent
+to an Ollama endpoint remains under the control of that endpoint and selected
+model. If either points to a hosted or remote service, that eligible context leaves
+the local machine; verify the endpoint and model hosting behavior when local-only
+processing is required.
 
 ## Architecture at a glance
 
@@ -186,12 +208,20 @@ default page; use the sidebar to open the focused Characters pages.
 
 1. Open **Identities** to create, inspect, or edit who you are in Characters.
 2. Open **Personas** to create, inspect, or edit who you want to talk with.
-3. Open **New Ongoing**, select an identity and persona, and define the starting
-   relationship.
-4. Preview and confirm the Ongoing start.
-5. Send a message, then use **Ongoing** to retry a response, select an alternative,
-   or branch from an earlier response without deleting the existing future.
-6. Navigate active or archived histories under their identity and persona.
+3. For a continuous conversation, open **New Ongoing**, define and review the
+   starting relationship, then confirm it. Use **Ongoing** to chat, retry a
+   response, select an alternative, or branch without deleting a saved future.
+4. For a scene-based narrative, open **New Storyline**, select the profiles, name
+   the Storyline, define its starting relationship and first scene, then review and
+   confirm it.
+5. Use **Storylines** to chat in the latest scene. After that scene has a complete
+   exchange, append the next scene. Older scenes remain readable; branching from
+   one with later scenes opens a reviewed fork that exactly duplicates either the
+   identity or persona and leaves the source unchanged.
+6. On the selected Storyline, inspect its memory and conflicts below the scene.
+   Corrections, exclusions, reactivations, and confirmed permanent deletions affect
+   that Storyline only. Archived Storylines and their memory are read-only.
+7. Navigate active or archived histories under their identity and persona.
 
 Confirming the first continuity permanently freezes the selected identity and
 persona. Duplicate a frozen profile to create an editable variant. Archived
@@ -243,6 +273,11 @@ export CHARACTERS_MEMORY_EXTRACTION_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_CONTEXT_TOKENS=8192
 export CHARACTERS_OUTPUT_TOKENS=1024
 ```
+
+The response, summary, and memory-extraction models are independently selectable
+but must all be available through the configured Characters Ollama endpoint.
+Storyline extraction uses the context and output limits above with its own bounded
+input selection; it does not make Ongoing memory-bearing.
 
 The Characters database URL is currently source-configured in
 `src/chat_buddy/characters/infrastructure/config/settings.py` and defaults to the

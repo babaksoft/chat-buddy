@@ -1,6 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 6, Slice 14 — eligible memory in Storyline response context.
+Next delivery focus: Stage 6, Slice 19 — milestone verification and area-isolation
+proof.
 
 Deferred engineering:
 
