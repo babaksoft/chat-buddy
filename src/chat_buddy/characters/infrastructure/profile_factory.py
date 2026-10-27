@@ -5,6 +5,7 @@ from chat_buddy.characters.application import (
     IdentityService,
     PersonaService,
     StorylineForkService,
+    StorylineMemoryService,
     StorylineService,
 )
 
@@ -125,4 +126,23 @@ def create_storyline_fork_service() -> StorylineForkService:
         DbIdentityRepository(CharactersSessionLocal),
         DbPersonaRepository(CharactersSessionLocal),
         DbStorylineForkRepository(CharactersSessionLocal),
+    )
+
+
+def create_storyline_memory_service() -> StorylineMemoryService:
+    """Build continuity-scoped Storyline memory management operations.
+
+    Returns:
+        Lazily configured Storyline memory application operations.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbMemoryExtractionRepository,
+        DbStorylineMemoryRepository,
+    )
+
+    return StorylineMemoryService(
+        DbStorylineMemoryRepository(CharactersSessionLocal),
+        DbMemoryExtractionRepository(CharactersSessionLocal),
     )

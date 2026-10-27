@@ -639,7 +639,7 @@ without memory-management UI.
 
 ### Slice 17 — Ship memory and conflict controls
 
-Status: Pending
+Status: Complete
 
 Add a continuity-scoped memory view with current revision, source/evidence,
 temporal, extraction-strategy, and lifecycle provenance. Allow correction,

@@ -38,10 +38,15 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure import (
     create_conversation_service,
     create_storyline_fork_service,
+    create_storyline_memory_service,
     create_storyline_services,
 )
 from chat_buddy.characters.ui.new_storyline_page import render_new_storyline
 from chat_buddy.characters.ui.ongoing import render_conversation
+from chat_buddy.characters.ui.storyline_memory import (
+    clear_storyline_memory_state,
+    render_storyline_memory,
+)
 
 _SCOPE_KEY = "characters_storyline_scope"
 _STYLE = ResponseStyleSnapshot(
@@ -257,7 +262,10 @@ def _render_storyline(
         ):
             st.session_state["characters_scene_id"] = scene.id
             st.rerun()
-    _render_scene(selected, sequence, service)
+    selected_leaf_id = _render_scene(selected, sequence, service)
+    render_storyline_memory(
+        create_storyline_memory_service(), storyline, selected_leaf_id
+    )
 
 
 def _render_storyline_actions(
@@ -363,7 +371,7 @@ def _render_next_scene(
 
 def _render_scene(
     scene: Scene, sequence: SceneSequence, service: StorylineService
-) -> None:
+) -> UUID | None:
     """Render one selected scene and its writable presentation fields.
 
     Args:
@@ -373,6 +381,9 @@ def _render_scene(
             Current Storyline and ordered scenes.
         service:
             Storyline lifecycle operations.
+
+    Returns:
+        Selected branch leaf for memory-widget invalidation, when present.
     """
 
     storyline = sequence.storyline
@@ -383,8 +394,7 @@ def _render_scene(
         f"{scene.details.response_style.version}"
     )
     if storyline.lifecycle == ContinuityLifecycle.ARCHIVED:
-        _render_scene_conversation(scene, sequence)
-        return
+        return _render_scene_conversation(scene, sequence)
 
     key = f"characters_scene_title_{scene.id}_{storyline.revision}"
     with st.form(key):
@@ -424,10 +434,10 @@ def _render_scene(
     else:
         st.caption("Scene setup is locked after its first user message.")
 
-    _render_scene_conversation(scene, sequence)
+    return _render_scene_conversation(scene, sequence)
 
 
-def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> None:
+def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> UUID | None:
     """Render one scene conversation with Storyline-specific branch policy.
 
     Args:
@@ -435,6 +445,9 @@ def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> None:
             Selected owned scene.
         sequence:
             Current Storyline and ordered scenes.
+
+    Returns:
+        Selected persona leaf identifier, when the scene graph is nonempty.
     """
 
     st.divider()
@@ -446,7 +459,7 @@ def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> None:
     conversation = create_conversation_service()
     forks = create_storyline_fork_service()
     identities, personas, _ = create_storyline_services()
-    render_conversation(
+    return render_conversation(
         conversation,
         target,
         f"characters_storyline_scene_{scene.id}",
@@ -776,6 +789,7 @@ def _store_scope(identity_id: UUID, persona_id: UUID, storyline_id: UUID) -> Non
     st.session_state["characters_persona_id"] = persona_id
     st.session_state["characters_storyline_id"] = storyline_id
     st.session_state.pop("characters_scene_id", None)
+    clear_storyline_memory_state()
 
 
 def _clear_selection() -> None:
@@ -784,6 +798,7 @@ def _clear_selection() -> None:
     st.session_state.pop(_SCOPE_KEY, None)
     st.session_state.pop("characters_storyline_id", None)
     st.session_state.pop("characters_scene_id", None)
+    clear_storyline_memory_state()
 
 
 def _prepare_start(identity_id: UUID, persona_id: UUID) -> None:

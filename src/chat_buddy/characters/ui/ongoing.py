@@ -67,7 +67,7 @@ def render_conversation(
     archived: bool,
     branch_action: BranchActionRenderer | None = None,
     read_only: bool = False,
-) -> None:
+) -> UUID | None:
     """Render durable controls for one exact mode-owned conversation.
 
     Args:
@@ -84,6 +84,10 @@ def render_conversation(
         read_only:
             Whether ordinary conversation writes are disabled while branching may
             remain available.
+
+    Returns:
+        Selected persona leaf identifier, or None when the graph is empty or could
+        not be loaded.
     """
 
     render_branch = branch_action or _branch_action
@@ -147,6 +151,7 @@ def render_conversation(
                     st.markdown(submitted)
             _stream_attempt(service, target, attempt)
             st.rerun()
+        return graph.selected_leaf_id
     except StaleSelectionError:
         st.warning("The selected future changed. Reloading its latest saved state.")
         st.rerun()
@@ -165,6 +170,7 @@ def render_conversation(
     except (ValueError, LookupError) as error:
         st.error(str(error))
         st.info("Reload the continuity to inspect its saved state before continuing.")
+    return None
 
 
 def _transcript(

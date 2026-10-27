@@ -9,6 +9,7 @@ from chat_buddy.characters.infrastructure.profile_factory import (
     create_persona_service,
     create_profile_services,
     create_storyline_fork_service,
+    create_storyline_memory_service,
     create_storyline_services,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "create_persona_service",
     "create_profile_services",
     "create_storyline_fork_service",
+    "create_storyline_memory_service",
     "create_storyline_services",
 ]

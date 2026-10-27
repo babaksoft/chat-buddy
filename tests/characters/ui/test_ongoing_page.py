@@ -122,6 +122,8 @@ def test_renders_every_profile_pair_and_continuity(
 
     assert not app.exception
     assert app.title[0].value == "💞 Ongoing"
+    assert not any(row.value == "Storyline memory" for row in app.subheader)
+    assert not any("memory" in button.label.lower() for button in app.button)
     assert {expander.label for expander in app.sidebar.expander} == {
         "You",
         "Traveler",

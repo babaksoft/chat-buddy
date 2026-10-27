@@ -94,8 +94,11 @@ def services() -> Generator[tuple[Mock, Mock, Mock, list[SceneSequence]], None, 
         patch.object(storylines_page, "render_conversation"),
         patch.object(storylines_page, "create_conversation_service"),
         patch.object(storylines_page, "create_storyline_fork_service"),
+        patch.object(storylines_page, "create_storyline_memory_service") as memories,
+        patch.object(storylines_page, "render_storyline_memory"),
         patch.object(storylines_page, "_navigate_to_new_storyline") as navigate,
     ):
+        memories.return_value = Mock()
         storylines.navigate = navigate
         yield identities, personas, storylines, [active, archived]
 
@@ -115,6 +118,7 @@ def test_navigation_separates_active_and_archived_and_uses_complete_scope(
     app = AppTest.from_function(_render).run()
     assert any(item.value == "Active" for item in app.sidebar.caption)
     assert any(item.value == "Archived" for item in app.sidebar.caption)
+    app.session_state["characters_storyline_memory_correction_target"] = (uuid4(),)
     app.button(key=f"characters_select_storyline_{selected.storyline.id}").click().run()
 
     scope = (
@@ -123,6 +127,7 @@ def test_navigation_separates_active_and_archived_and_uses_complete_scope(
         selected.storyline.id,
     )
     assert app.session_state["characters_storyline_scope"] == scope
+    assert "characters_storyline_memory_correction_target" not in app.session_state
     storylines.resume.assert_called_with(*scope)
     assert app.session_state["characters_scene_id"] == selected.scenes[-1].id
 
