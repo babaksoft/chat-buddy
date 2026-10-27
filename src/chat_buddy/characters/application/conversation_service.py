@@ -1,5 +1,6 @@
 """Durable bounded Characters generation with isolated turn recovery."""
 
+import logging
 from collections.abc import Generator, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -62,6 +63,30 @@ class _ConversationPersistence(
     """Combined persistence capabilities required by conversation orchestration."""
 
 
+class _StorylineExtractionProcessor(Protocol):
+    """Post-completion Storyline extraction seam."""
+
+    def process(
+        self, target: ConversationTarget, source_persona_message_id: UUID
+    ) -> object:
+        """Process one committed Storyline response.
+
+        Args:
+            target:
+                Exact Storyline scene target.
+            source_persona_message_id:
+                Newly committed persona response.
+
+        Returns:
+            Durable extraction outcome.
+        """
+
+        ...
+
+
+logger = logging.getLogger(__name__)
+
+
 class ConversationService:
     """Orchestrate short repository operations around external streaming calls."""
 
@@ -75,6 +100,7 @@ class ConversationService:
         models: ModelRegistry,
         branch_mode_facts: BranchModeFactsResolver | None = None,
         storyline_adapter: StorylineConversationAdapter | None = None,
+        memory_extraction: _StorylineExtractionProcessor | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -95,6 +121,8 @@ class ConversationService:
                 Optional future-mode fact adapter; unavailable facts fail closed.
             storyline_adapter:
                 Optional exact Storyline scene ownership and policy adapter.
+            memory_extraction:
+                Optional post-completion Storyline memory workflow.
         """
 
         self._conversations = conversations
@@ -103,6 +131,7 @@ class ConversationService:
         self._personas = personas
         self._models = models
         self._storyline_adapter = storyline_adapter
+        self._memory_extraction = memory_extraction
         self._branch_mode_facts = (
             branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
         )
@@ -529,8 +558,21 @@ class ConversationService:
             for chunk in output:
                 self._conversations.append(scope, attempt_id, chunk)
                 yield chunk
-            self._conversations.complete(scope, attempt_id)
+            message = self._conversations.complete(scope, attempt_id)
             completed = True
+            if (
+                self._memory_extraction is not None
+                and isinstance(target, ConversationTarget)
+                and target.mode == ContinuityMode.STORYLINE
+            ):
+                try:
+                    self._memory_extraction.process(target, message.id)
+                except Exception:
+                    logger.exception(
+                        "Storyline memory extraction did not reach a terminal "
+                        "outcome for persona message %s.",
+                        message.id,
+                    )
         except Exception:
             self._conversations.stop(scope, attempt_id, "failed")
             raise

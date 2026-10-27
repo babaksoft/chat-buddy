@@ -27,6 +27,9 @@ from chat_buddy.characters.application.memory_context import (
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
 )
+from chat_buddy.characters.application.memory_extraction_service import (
+    StorylineMemoryExtractionService,
+)
 from chat_buddy.characters.application.memory_service import StorylineMemoryService
 from chat_buddy.characters.application.persona_service import (
     PersonaService,
@@ -63,6 +66,7 @@ __all__ = [
     "StorylineExtractionContextService",
     "StorylineForkService",
     "StorylineMemoryEligibility",
+    "StorylineMemoryExtractionService",
     "StorylineMemoryService",
     "StorylineService",
     "decide_branch_mode",

@@ -271,6 +271,26 @@ class ContextualMemoryDeltaExtractor:
                 "Memory extraction returned an invalid delta."
             ) from error
 
+    def provenance(self, selection: MemorySelectionResult) -> ExtractionProvenance:
+        """Describe the exact provider and strategy configuration used.
+
+        Args:
+            selection:
+                Immutable selection supplying the selector identity.
+
+        Returns:
+            Complete non-secret extraction provenance.
+        """
+
+        return ExtractionProvenance(
+            selector=selection.selector,
+            extractor=self.strategy_id,
+            prompt_schema_version=MEMORY_DELTA_PROMPT_SCHEMA_VERSION,
+            provider=self._generation.model.provider,
+            model=self._generation.model.model,
+            configuration=self._generation.configuration,
+        )
+
     def _to_delta(
         self, selection: MemorySelectionResult, proposal: _ProviderDelta
     ) -> MemoryDelta:
@@ -367,13 +387,6 @@ class ContextualMemoryDeltaExtractor:
             persona_checkpoint=source.persona.sequence,
             occurrence=reference.occurrence,
             learned=selection.context.scene,
-            extraction=ExtractionProvenance(
-                selector=selection.selector,
-                extractor=self.strategy_id,
-                prompt_schema_version=MEMORY_DELTA_PROMPT_SCHEMA_VERSION,
-                provider=self._generation.model.provider,
-                model=self._generation.model.model,
-                configuration=self._generation.configuration,
-            ),
+            extraction=self.provenance(selection),
             created_at=created_at,
         )

@@ -14,6 +14,7 @@ from chat_buddy.characters.domain.errors import (
     ProtectedMemoryCorrectionError,
 )
 from chat_buddy.characters.domain.memory import (
+    ExtractionProvenance,
     MemoryAuthorship,
     MemoryEvidence,
     MemoryRevisionState,
@@ -590,6 +591,19 @@ class MemoryDeltaExtractor(Protocol):
 
         Returns:
             Detached delta carrying no write authority.
+        """
+
+        ...
+
+    def provenance(self, selection: MemorySelectionResult) -> ExtractionProvenance:
+        """Describe the exact extraction configuration for a selection.
+
+        Args:
+            selection:
+                Immutable snapshot whose selector completes the provenance.
+
+        Returns:
+            Complete non-secret extraction provenance.
         """
 
         ...

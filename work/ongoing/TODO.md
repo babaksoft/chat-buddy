@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 6, Slice 9 — memory and conflict management workflows.
+Next delivery focus: Stage 6, Slice 14 — eligible memory in Storyline response context.
 
 Deferred engineering:
 
