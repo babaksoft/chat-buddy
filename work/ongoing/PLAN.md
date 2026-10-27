@@ -1,6 +1,6 @@
 # Stage 6 Execution Plan — Storylines and continuity-scoped memory
 
-Status: In progress
+Status: Complete
 
 Last updated: 2026-10-27
 
@@ -691,7 +691,7 @@ delivery status remains in the plan files.
 
 ### Slice 19 — Prove the Stage 6 milestone
 
-Status: Pending
+Status: Complete
 
 Add a focused acceptance journey that creates one Storyline for a pair, archives
 it, starts a fresh independent Storyline for that pair, and creates a simultaneous

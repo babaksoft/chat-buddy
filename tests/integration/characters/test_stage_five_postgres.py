@@ -60,7 +60,7 @@ def test_complete_migration_chain_and_milestone_preserve_populated_chat(
             connection.scalars(
                 text("SELECT version_num FROM characters.alembic_version")
             )
-        ) == {"e42b7c91d5a0"}
+        ) == {"b17c4e92a6d1"}
     queried_tables: set[str] = set()
 
     def verify_query_scope(
@@ -102,7 +102,12 @@ def test_complete_migration_chain_and_milestone_preserve_populated_chat(
 
     assert queried_tables == set(inspector.get_table_names(schema="characters")) - {
         "alembic_version",
+        "memory_conflicts",
+        "memory_evidence",
+        "memory_extraction_effects",
+        "memory_revisions",
         "scenes",
+        "storyline_memories",
         "storylines",
     }
     assert _chat_snapshot(engine) == before

@@ -105,7 +105,12 @@ def test_complete_migration_chain_and_milestone_preserve_populated_chat(
         event.remove(engine, "before_cursor_execute", verify_query_scope)
     assert queried_tables == set(inspector.get_table_names(schema="characters")) - {
         "alembic_version",
+        "memory_conflicts",
+        "memory_evidence",
+        "memory_extraction_effects",
+        "memory_revisions",
         "scenes",
+        "storyline_memories",
         "storylines",
     }
     assert _chat_snapshot(engine) == before

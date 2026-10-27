@@ -1,7 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 6, Slice 19 — milestone verification and area-isolation
-proof.
+Next delivery focus: Stage 7 planning — relationship and persona evolution.
 
 Deferred engineering:
 
