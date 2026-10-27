@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 from chat_buddy.characters.ui import (
     render_identities,
     render_new_ongoing,
+    render_new_storyline,
     render_ongoing_page,
     render_personas,
+    render_storylines_page,
 )
 from chat_buddy.chat.ui import render as render_chat
 from chat_buddy.shared.config.logging import configure_logging
@@ -40,6 +42,18 @@ def main() -> None:
                 title="New Ongoing",
                 icon="✨",
                 url_path="new-ongoing",
+            ),
+            st.Page(
+                render_storylines_page,
+                title="Storylines",
+                icon="📚",
+                url_path="storylines",
+            ),
+            st.Page(
+                render_new_storyline,
+                title="New Storyline",
+                icon="✨",
+                url_path="new-storyline",
             ),
             st.Page(
                 render_identities,

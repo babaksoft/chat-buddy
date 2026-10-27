@@ -104,7 +104,7 @@ def _persona_form(service: PersonaService, persona: Persona | None) -> None:
     frozen = persona is not None and persona.is_frozen
     if frozen:
         st.info(
-            "This persona was used to start an Ongoing, so changing it would "
+            "This persona was used to start a continuity, so changing it would "
             "rewrite that history. Duplicate it to make changes."
         )
     key = (

@@ -255,6 +255,7 @@ class MemorySelectionResult(BaseModel):
             raise InvalidMemoryDeltaTargetError(
                 "Delta does not belong to the extraction selection"
             )
+
         included = {
             memory.id: memory
             for memory in self.context.eligible_memories
@@ -267,12 +268,14 @@ class MemorySelectionResult(BaseModel):
                     raise InvalidMemoryDeltaTargetError(
                         "Delta target is omitted, foreign, or stale"
                     )
+
                 if command.operation == "supersede" and (
                     target.current.authorship == MemoryAuthorship.USER
                 ):
                     raise ProtectedMemoryCorrectionError(
                         "Automatic extraction cannot supersede user content"
                     )
+
             elif command.operation == "conflict" and command.target_memory_id:
                 target = included.get(command.target_memory_id)
                 if target is None or target.current.id != command.expected_revision_id:

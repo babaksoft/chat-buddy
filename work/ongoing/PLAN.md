@@ -587,7 +587,7 @@ Complete when each Storyline response sees exactly the eligible memory that fits
 
 ### Slice 15 — Ship Storyline creation and scene-management UI
 
-Status: Pending
+Status: Complete
 
 Add dedicated **Storylines** and **New Storyline** routes. Extend identity → persona
 navigation with the pair's sole active Storyline and clearly separated archived

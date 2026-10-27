@@ -101,7 +101,7 @@ def _identity_form(service: IdentityService, identity: Identity | None) -> None:
     frozen = identity is not None and identity.is_frozen
     if frozen:
         st.info(
-            "This identity was used to start an Ongoing, so changing it would "
+            "This identity was used to start a continuity, so changing it would "
             "rewrite that history. Duplicate it to make changes."
         )
     key = (

@@ -26,8 +26,10 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.ui import identities_page as characters_identities_page
 from chat_buddy.characters.ui import new_ongoing_page as characters_new_ongoing_page
+from chat_buddy.characters.ui import new_storyline_page as characters_new_storyline_page
 from chat_buddy.characters.ui import ongoing_page as characters_ongoing_page
 from chat_buddy.characters.ui import personas_page as characters_personas_page
+from chat_buddy.characters.ui import storylines_page as characters_storylines_page
 from chat_buddy.chat.application import (
     ChatRequest,
     GenerationSelection,
@@ -126,7 +128,7 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
         Profile and continuity application doubles.
     """
 
-    identities, personas, continuities = Mock(), Mock(), Mock()
+    identities, personas, continuities, storylines = Mock(), Mock(), Mock(), Mock()
     identity = Identity(id=uuid4(), details=IdentityDetails(name="You"))
     persona = Persona(id=uuid4(), core=PersonaCore(name="Guide", definition="Helpful"))
     identities.ensure_default.return_value = identity
@@ -134,6 +136,9 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
     personas.list.return_value = [persona]
     continuities.list_grouped.return_value = ()
     continuities.start_availability.return_value = StartAvailability(can_start=True)
+    storylines.list_grouped.return_value = ()
+    storylines.start_availability.return_value = StartAvailability(can_start=True)
+    continuities.storylines = storylines
 
     def start(request: StartContinuity) -> Continuity:
         """Return a continuity and expose it through focused navigation.
@@ -204,6 +209,17 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             characters_ongoing_page,
             "create_ongoing_services",
             return_value=(identities, personas, continuities),
+        ),
+        patch.object(
+            characters_new_storyline_page,
+            "create_storyline_services",
+            return_value=(identities, personas, storylines),
+        ),
+        patch.object(characters_new_storyline_page, "_navigate_to_storylines"),
+        patch.object(
+            characters_storylines_page,
+            "create_storyline_services",
+            return_value=(identities, personas, storylines),
         ),
     ):
         yield identities, personas, continuities
@@ -464,6 +480,49 @@ def test_new_ongoing_opens_without_chat_services(
         character_services[0].list.return_value[0].id,
         character_services[1].list.return_value[0].id,
     )
+    services.assert_not_called()
+
+
+def test_storylines_opens_without_chat_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to Storyline navigation without constructing Chat.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "storylines")
+
+    assert not app.exception
+    assert app.title[0].value == "📚 Storylines"
+    assert app.sidebar.header[0].value == "Identity → Persona → Storylines"
+    character_services[2].storylines.list_grouped.assert_called_once_with()
+    services.assert_not_called()
+
+
+def test_new_storyline_opens_without_chat_services(
+    services: Mock, character_services: tuple[Mock, Mock, Mock]
+) -> None:
+    """Route directly to Storyline definition without constructing Chat.
+
+    Args:
+        services:
+            Chat factory double.
+        character_services:
+            Characters application doubles.
+    """
+
+    app = AppTest.from_function(_render_app, default_timeout=10)
+    _switch_area(app, "new-storyline")
+
+    assert not app.exception
+    assert app.title[0].value == "✨ New Storyline"
+    assert app.subheader[0].value == "Define Storyline"
     services.assert_not_called()
 
 

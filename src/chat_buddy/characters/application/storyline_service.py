@@ -152,6 +152,26 @@ class StorylineService:
         sequence = self._scenes.list(storyline)
         return sequence.storyline, sequence.scenes[-1]
 
+    def resume(
+        self, identity_id: UUID, persona_id: UUID, storyline_id: UUID
+    ) -> SceneSequence:
+        """Load a Storyline and every scene in chronological order.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            storyline_id:
+                Storyline to resume or inspect.
+
+        Returns:
+            Current Storyline and its complete ordered scene sequence.
+        """
+
+        storyline = self._storylines.get(identity_id, persona_id, storyline_id)
+        return self._scenes.list(storyline)
+
     def append_eligibility(
         self, identity_id: UUID, persona_id: UUID, storyline_id: UUID
     ) -> SceneAppendEligibility:

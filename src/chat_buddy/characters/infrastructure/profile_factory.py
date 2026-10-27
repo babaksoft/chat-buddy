@@ -4,11 +4,12 @@ from chat_buddy.characters.application import (
     ContinuityService,
     IdentityService,
     PersonaService,
+    StorylineService,
 )
 
 
 def create_identity_service() -> IdentityService:
-    """Build identity management without composing unrelated Characters services.
+    """Build identity management service.
 
     Returns:
         Lazily configured identity application operations.
@@ -23,7 +24,7 @@ def create_identity_service() -> IdentityService:
 
 
 def create_persona_service() -> PersonaService:
-    """Build persona management without composing unrelated Characters services.
+    """Build persona management service.
 
     Returns:
         Lazily configured persona application operations.
@@ -40,7 +41,7 @@ def create_persona_service() -> PersonaService:
 def create_profile_services() -> (
     tuple[IdentityService, PersonaService, ContinuityService]
 ):
-    """Build profile services only when the Characters page needs persistence.
+    """Build profile management services.
 
     Returns:
         Independently configured identity, persona, and continuity services.
@@ -68,3 +69,30 @@ def create_ongoing_services() -> (
     """
 
     return create_profile_services()
+
+
+def create_storyline_services() -> (
+    tuple[IdentityService, PersonaService, StorylineService]
+):
+    """Build profile and lifecycle services used by Storyline pages.
+
+    Returns:
+        Identity, persona, and Storyline application operations.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbConversationRepository,
+        DbSceneRepository,
+        DbStorylineRepository,
+    )
+
+    return (
+        create_identity_service(),
+        create_persona_service(),
+        StorylineService(
+            DbStorylineRepository(CharactersSessionLocal),
+            DbSceneRepository(CharactersSessionLocal),
+            DbConversationRepository(CharactersSessionLocal),
+        ),
+    )
