@@ -5,6 +5,8 @@ from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+type GenerationCapability = Literal["response", "summary", "memory_extraction"]
+
 
 class PromptMessage(BaseModel):
     """One ordered provider input.
@@ -63,7 +65,7 @@ class ModelDescriptor(BaseModel):
         output_tokens:
             Default output reserve and enforced output limit.
         capabilities:
-            Supported response and summary operations.
+            Supported response, summary, and memory-extraction operations.
         parameters:
             Supported optional generation parameters.
         defaults:
@@ -76,7 +78,7 @@ class ModelDescriptor(BaseModel):
     model: str = Field(min_length=1, description="Local model name.")
     context_tokens: int = Field(gt=1, description="Total context budget.")
     output_tokens: int = Field(gt=0, description="Default output reserve.")
-    capabilities: frozenset[Literal["response", "summary"]] = Field(
+    capabilities: frozenset[GenerationCapability] = Field(
         description="Supported operations."
     )
     parameters: frozenset[Literal["temperature", "top_p", "seed"]] = Field(
@@ -129,9 +131,7 @@ class EffectiveGeneration(BaseModel):
 
     model: ModelDescriptor = Field(description="Selected capabilities.")
     configuration: GenerationConfiguration = Field(description="Effective settings.")
-    capability: Literal["response", "summary"] = Field(
-        description="Selected operation."
-    )
+    capability: GenerationCapability = Field(description="Selected operation.")
     input_tokens: int = Field(gt=0, description="Input capacity.")
 
     @model_validator(mode="after")
@@ -203,6 +203,32 @@ class SummaryGateway(Protocol):
         ...
 
 
+class MemoryExtractionGateway(Protocol):
+    """Generate one schema-constrained memory-delta payload."""
+
+    def extract_memory(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Return the exact provider JSON text for adapter validation.
+
+        Args:
+            messages:
+                Ordered extraction prompt with separated context and evidence.
+            generation:
+                Resolved memory-extraction settings.
+            schema:
+                Strict provider-neutral JSON schema for the expected payload.
+
+        Returns:
+            Provider response text without parsing or business authorization.
+        """
+
+        ...
+
+
 class TokenCounter(Protocol):
     """Account for text and message framing before provider invocation."""
 
@@ -236,7 +262,7 @@ class ModelRegistry(Protocol):
         self,
         provider: str,
         model: str,
-        capability: Literal["response", "summary"],
+        capability: GenerationCapability,
         requested: GenerationConfiguration,
     ) -> EffectiveGeneration:
         """Resolve a supported operation and merge model defaults.
@@ -259,7 +285,7 @@ class ModelRegistry(Protocol):
 
     def resolve_default(
         self,
-        capability: Literal["response", "summary"],
+        capability: GenerationCapability,
         requested: GenerationConfiguration | None = None,
     ) -> EffectiveGeneration:
         """Resolve the independently configured default operation.
@@ -298,6 +324,19 @@ class ModelRegistry(Protocol):
 
         Returns:
             Summary capability implementation.
+        """
+
+        ...
+
+    def memory_extraction_gateway(self, provider: str) -> MemoryExtractionGateway:
+        """Select a memory-extraction adapter.
+
+        Args:
+            provider:
+                Provider key.
+
+        Returns:
+            Structured memory-extraction capability implementation.
         """
 
         ...

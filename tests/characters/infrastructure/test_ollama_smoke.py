@@ -6,8 +6,9 @@ from contextlib import closing
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.domain import SubmittedInput
+from chat_buddy.characters.domain import PromptMessage, SubmittedInput
 from chat_buddy.characters.infrastructure import create_conversation_service
+from chat_buddy.characters.infrastructure.llm import create_model_registry
 from tests.characters_support import start
 
 
@@ -34,3 +35,34 @@ def test_local_ollama_stream_persists_and_resumes(
     assert history.messages[-1].content == "".join(chunks)
     assert history.attempts[-1].status == "completed"
     assert history.attempts[-1].generation == attempt.generation
+
+
+@pytest.mark.characters_ollama_smoke
+def test_local_ollama_memory_extraction_returns_schema_constrained_json() -> None:
+    """Exercise the separately configured structured utility capability."""
+
+    if os.environ.get("CHARACTERS_OLLAMA_SMOKE_TEST", "").lower() != "true":
+        pytest.skip("Set CHARACTERS_OLLAMA_SMOKE_TEST=true with local models available")
+    registry = create_model_registry()
+    generation = registry.resolve_default("memory_extraction")
+    schema: dict[str, object] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["operation"],
+        "properties": {"operation": {"const": "no_change"}},
+    }
+
+    result = registry.memory_extraction_gateway(
+        generation.model.provider
+    ).extract_memory(
+        (
+            PromptMessage(
+                role="system",
+                content="Return the schema-constrained no_change object.",
+            ),
+        ),
+        generation,
+        schema,
+    )
+
+    assert '"no_change"' in result

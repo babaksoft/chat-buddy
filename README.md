@@ -229,8 +229,9 @@ Characters reads its model settings when its services are composed:
 | `CHARACTERS_OLLAMA_ENDPOINT_URL` | `http://localhost:11434` | Characters Ollama endpoint |
 | `CHARACTERS_RESPONSE_MODEL` | `gpt-oss:20b-cloud` | Persona response model |
 | `CHARACTERS_SUMMARY_MODEL` | `gpt-oss:20b-cloud` | Rolling-summary model |
-| `CHARACTERS_CONTEXT_TOKENS` | `8192` | Total configured context window |
-| `CHARACTERS_OUTPUT_TOKENS` | `1024` | Default output-token limit |
+| `CHARACTERS_MEMORY_EXTRACTION_MODEL` | `gpt-oss:20b-cloud` | Storyline memory-extraction model |
+| `CHARACTERS_CONTEXT_TOKENS` | `32768` | Total configured context window |
+| `CHARACTERS_OUTPUT_TOKENS` | `4096` | Default output-token limit |
 
 For example:
 
@@ -238,6 +239,7 @@ For example:
 export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
 export CHARACTERS_RESPONSE_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_SUMMARY_MODEL=gpt-oss:20b-cloud
+export CHARACTERS_MEMORY_EXTRACTION_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_CONTEXT_TOKENS=8192
 export CHARACTERS_OUTPUT_TOKENS=1024
 ```

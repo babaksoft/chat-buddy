@@ -1,4 +1,4 @@
-"""Ollama implementation of the response and summary contracts."""
+"""Ollama implementation of Characters generation capabilities."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -117,6 +117,55 @@ class OllamaGateway:
             raise
         except Exception:  # noqa: BLE001
             raise ProviderInvocationError("Summary generation failed.") from None
+
+    def extract_memory(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Generate one schema-constrained memory-delta payload.
+
+        Args:
+            messages:
+                Application-assembled extraction prompt.
+            generation:
+                Effective memory-extraction settings.
+            schema:
+                Strict JSON schema passed to Ollama structured output.
+
+        Returns:
+            Exact nonempty provider text for strict adapter parsing.
+
+        Raises:
+            UnsupportedGenerationError:
+                If this is not an Ollama memory-extraction request.
+            InvalidProviderResponseError:
+                If provider text is malformed or empty.
+            ProviderInvocationError:
+                If the local provider fails.
+        """
+
+        self._validate(generation, "memory_extraction")
+        try:
+            response = self._client.chat(
+                model=generation.model.model,
+                messages=[message.model_dump() for message in messages],
+                options=self._options(generation),
+                format=schema,
+                stream=False,
+            )
+            content = self._content(response).strip()
+            if not content:
+                raise InvalidProviderResponseError(
+                    "Memory extraction output was empty."
+                )
+
+            return content
+        except InvalidProviderResponseError:
+            raise
+        except Exception:  # noqa: BLE001
+            raise ProviderInvocationError("Memory extraction failed.") from None
 
     def _validate(self, generation: EffectiveGeneration, capability: str) -> None:
         """Reject selections intended for another adapter or operation.

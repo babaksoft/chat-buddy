@@ -100,7 +100,9 @@ from chat_buddy.characters.domain.identity import (
 )
 from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
+    GenerationCapability,
     GenerationConfiguration,
+    MemoryExtractionGateway,
     ModelDescriptor,
     ModelRegistry,
     PromptMessage,
@@ -236,6 +238,7 @@ __all__ = [
     "FrozenIdentityError",
     "FrozenPersonaError",
     "GenerationAttempt",
+    "GenerationCapability",
     "GenerationConfiguration",
     "GraphAction",
     "GraphActionRequest",
@@ -263,6 +266,7 @@ __all__ = [
     "MemoryDeltaExtractor",
     "MemoryEvidence",
     "MemoryExtractionContext",
+    "MemoryExtractionGateway",
     "MemoryExtractionRepository",
     "MemoryManagementCommand",
     "MemoryNotFoundError",

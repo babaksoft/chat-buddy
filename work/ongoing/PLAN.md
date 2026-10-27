@@ -502,7 +502,7 @@ both continuities evolve independently afterward.
 
 ### Slice 12 — Produce contextual delta proposals
 
-Status: Pending
+Status: Complete
 
 Add the configured Characters memory-extraction capability, strict prompt/schema,
 parser, and provider adapter. Given only a Slice 10 snapshot, return a bounded

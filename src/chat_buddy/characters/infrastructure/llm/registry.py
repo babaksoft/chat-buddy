@@ -1,12 +1,12 @@
 """Configured model resolution with independent capability bindings."""
 
-from typing import Literal
-
 from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
     EffectiveGeneration,
+    GenerationCapability,
     GenerationConfiguration,
+    MemoryExtractionGateway,
     ModelDescriptor,
     ModelResolutionError,
     ResponseGateway,
@@ -25,7 +25,8 @@ class ConfiguredModelRegistry:
         responses: dict[str, ResponseGateway],
         summaries: dict[str, SummaryGateway],
         counters: dict[str, TokenCounter],
-        defaults: dict[Literal["response", "summary"], tuple[str, str]] | None = None,
+        memory_extractions: dict[str, MemoryExtractionGateway] | None = None,
+        defaults: dict[GenerationCapability, tuple[str, str]] | None = None,
     ) -> None:
         """Capture configured models and separate capability implementations.
 
@@ -36,6 +37,8 @@ class ConfiguredModelRegistry:
                 Response providers keyed by provider identifier.
             summaries:
                 Summary providers keyed by provider identifier.
+            memory_extractions:
+                Memory-extraction providers keyed by provider identifier.
             counters:
                 Token estimators keyed by provider identifier.
             defaults:
@@ -49,6 +52,7 @@ class ConfiguredModelRegistry:
         self._models = {(item.provider, item.model): item for item in models}
         self._responses = dict(responses)
         self._summaries = dict(summaries)
+        self._memory_extractions = dict(memory_extractions or {})
         self._counters = dict(counters)
         self._defaults = dict(defaults or {})
 
@@ -59,11 +63,15 @@ class ConfiguredModelRegistry:
                 item.provider not in counters
                 or ("response" in item.capabilities and item.provider not in responses)
                 or ("summary" in item.capabilities and item.provider not in summaries)
+                or (
+                    "memory_extraction" in item.capabilities
+                    and item.provider not in self._memory_extractions
+                )
             ):
                 raise ValueError("Missing model capability binding.")
 
         for capability in self._defaults:
-            if capability not in {"response", "summary"}:
+            if capability not in {"response", "summary", "memory_extraction"}:
                 raise ValueError("Unknown default capability.")
 
             self.resolve_default(capability)
@@ -81,7 +89,7 @@ class ConfiguredModelRegistry:
         self,
         provider: str,
         model: str,
-        capability: Literal["response", "summary"],
+        capability: GenerationCapability,
         requested: GenerationConfiguration,
     ) -> EffectiveGeneration:
         """Merge supported overrides with model defaults and reserve output.
@@ -126,7 +134,7 @@ class ConfiguredModelRegistry:
 
     def resolve_default(
         self,
-        capability: Literal["response", "summary"],
+        capability: GenerationCapability,
         requested: GenerationConfiguration | None = None,
     ) -> EffectiveGeneration:
         """Resolve the configured default for one independent operation.
@@ -193,6 +201,28 @@ class ConfiguredModelRegistry:
             raise UnsupportedGenerationError("Summary capability is unavailable.")
 
         return self._summaries[provider]
+
+    def memory_extraction_gateway(self, provider: str) -> MemoryExtractionGateway:
+        """Select a memory-extraction implementation.
+
+        Args:
+            provider:
+                Configured provider key.
+
+        Returns:
+            Structured extraction adapter.
+
+        Raises:
+            UnsupportedGenerationError:
+                If no memory-extraction adapter is configured.
+        """
+
+        if provider not in self._memory_extractions:
+            raise UnsupportedGenerationError(
+                "Memory-extraction capability is unavailable."
+            )
+
+        return self._memory_extractions[provider]
 
     def token_counter(self, provider: str) -> TokenCounter:
         """Select a provider's deterministic prompt estimator.

@@ -93,7 +93,7 @@ class ProviderInvocationError(RuntimeError):
 
 
 class InvalidProviderResponseError(ProviderInvocationError):
-    """A provider returned malformed or empty summary output."""
+    """A provider returned malformed or empty utility output."""
 
 
 class ConversationNotFoundError(LookupError):
