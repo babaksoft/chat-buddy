@@ -79,17 +79,8 @@ class DbSceneRepository:
                 storyline.persona_id,
                 storyline.id,
             )
-            current = DbStorylineRepository._snapshot(session, row)
-            scenes = session.scalars(
-                select(SceneModel)
-                .where(SceneModel.continuity_id == current.id)
-                .order_by(SceneModel.position)
-            )
 
-            return SceneSequence(
-                storyline=current,
-                scenes=tuple(self._snapshot(scene) for scene in scenes),
-            )
+            return self._sequence(session, row)
 
     def append_next(
         self, details: SceneDetails, eligibility: SceneAppendEligibility
@@ -110,6 +101,7 @@ class DbSceneRepository:
             raise IncompleteLatestSceneError(str(eligibility.block_reason))
 
         with self._factory() as session, session.begin():
+            # Ensure parent storyline exists
             storyline = session.scalar(
                 select(StorylineModel)
                 .where(StorylineModel.continuity_id == eligibility.storyline_id)
@@ -117,6 +109,8 @@ class DbSceneRepository:
             )
             if storyline is None:
                 raise InvalidSceneOwnershipError(str(eligibility.storyline_id))
+
+            # Ensure storyline is writable and latest scene hasn't changed
             DbStorylineRepository._guard_write(
                 session, storyline, eligibility.expected_storyline_revision
             )
@@ -134,6 +128,7 @@ class DbSceneRepository:
                     "The observed scene is no longer the latest"
                 )
 
+            # Ensure selected conversation path hasn't changed
             conversation = session.scalars(
                 select(ConversationModel)
                 .where(
@@ -145,6 +140,8 @@ class DbSceneRepository:
             ).one()
             if conversation.selected_leaf_id != eligibility.expected_selected_leaf_id:
                 raise StaleSelectionError("Scene selection changed before append")
+
+            # Ensure latest scene has no open generation attempt
             leaf = (
                 None
                 if conversation.selected_leaf_id is None
@@ -161,6 +158,7 @@ class DbSceneRepository:
                     "The persisted latest scene has no complete idle exchange"
                 )
 
+            # Atomically create new conversation, new scene and update storyline revision
             new_conversation = ConversationModel(
                 continuity_id=storyline.continuity_id,
                 identity_id=storyline.identity_id,
@@ -169,6 +167,7 @@ class DbSceneRepository:
             )
             session.add(new_conversation)
             session.flush()
+
             session.add(
                 SceneModel(
                     continuity_id=storyline.continuity_id,
@@ -185,6 +184,7 @@ class DbSceneRepository:
             )
             storyline.revision += 1
             session.flush()
+
             return self._sequence(session, storyline)
 
     def rename(

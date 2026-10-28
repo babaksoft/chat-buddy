@@ -1112,9 +1112,11 @@ class DbMemoryExtractionRepository:
             raise InvalidMemoryDeltaTargetError(
                 "Memory target is foreign, missing, or stale"
             )
+
         current = session.get(MemoryRevisionModel, memory.current_revision_id)
         if current is None or current.state != MemoryRevisionState.ACTIVE:
             raise InvalidMemoryDeltaTargetError("Memory target is not active")
+
         return memory, current
 
     @staticmethod
@@ -1335,7 +1337,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _required_current(row: StorylineMemoryModel) -> UUID:
-    """Return the current revision of a fully constructed logical memory.
+    """Return the current revision of a logical memory.
 
     Args:
         row:

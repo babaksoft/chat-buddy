@@ -57,6 +57,7 @@ class OngoingContextEligibility:
         if messages and messages[-1].role == "user":
             if current_input is not None:
                 raise ValueError("Current input duplicates the unmatched user tail.")
+
             persisted_current = messages[-1].content
             messages = messages[:-1]
         if len(messages) % 2:
@@ -66,6 +67,7 @@ class OngoingContextEligibility:
         if summary is not None:
             if summary.scope != history.scope:
                 raise ValueError("Summary ownership does not match the history.")
+
             checkpoint_message = next(
                 (
                     message
@@ -83,6 +85,7 @@ class OngoingContextEligibility:
                     "Summary checkpoint is not on the selected complete ancestry."
                 )
             checkpoint = checkpoint_message.sequence
+
         uncovered = tuple(
             message for message in messages if message.sequence > checkpoint
         )
@@ -90,6 +93,7 @@ class OngoingContextEligibility:
             CompletedTurn(user=uncovered[index], persona=uncovered[index + 1])
             for index in range(0, len(uncovered), 2)
         )
+
         return EligibleContext(
             summary=summary,
             uncovered_turns=turns,
@@ -154,10 +158,12 @@ class OngoingContextBudgeter:
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
                 break
+
             selected = candidate_turns
             prompt = candidate
             tokens = candidate_tokens
         omitted_count = len(turns) - len(selected)
+
         return ContextSelection(
             prompt=prompt,
             included_turns=selected,
@@ -194,6 +200,7 @@ class OngoingContextBudgeter:
         messages: tuple[Message, ...] = tuple(
             message for turn in turns for message in (turn.user, turn.persona)
         )
+
         return assemble_ongoing_prompt(
             persona,
             identity,

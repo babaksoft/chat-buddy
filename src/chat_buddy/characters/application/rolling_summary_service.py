@@ -101,12 +101,15 @@ class RollingSummaryService:
                     > generation.input_tokens
                 ):
                     break
+
                 covered = candidate
                 prompt = candidate_prompt
+
             if not covered:
                 raise ContextCapacityError(
                     "One complete turn exceeds the summary model's input capacity."
                 )
+
             content = (
                 self._models.summary_gateway(generation.model.provider)
                 .summarize(prompt, generation)
@@ -127,6 +130,7 @@ class RollingSummaryService:
                 generation=generation,
                 created_at=datetime.now(UTC),
             )
+
             return self._repository.append(
                 replacement,
                 expected_revision=active.revision if active is not None else None,
@@ -146,6 +150,7 @@ class RollingSummaryService:
                 and current.checkpoint_sequence >= covered[-1].persona.sequence
             ):
                 return current
+
             raise ContextCapacityError(
                 "The conversation summary changed; retry the response."
             ) from None
