@@ -2,8 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-24
+- Last revised: 2026-10-28
 - Scope: Characters, Stage 4
 - Refines: ADR 007
+- Consistent with: ADR 034
 
 ## Context
 
@@ -14,7 +16,7 @@ character or copy continuity-specific state into a new persona.
 ## Decision
 
 A persona has a stable identifier and a global authored core containing its
-display name, required definition, and optional long-term traits. Relationship
+display name, required definition, and optional long-term traits. Persona
 adaptation, current state, conversations, and continuity history are not part of
 that core.
 

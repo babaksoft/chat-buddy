@@ -1,5 +1,9 @@
 # Stage 7 Execution Plan — Relationship and Persona Evolution
 
+Status: In progress
+
+Last updated: 2026-10-28
+
 ## Outcome
 
 Add explainable, continuity-scoped relationship evolution and persona adaptation
@@ -159,6 +163,8 @@ strategy metrics may be comparative rather than absolute.
 ## Slice details
 
 ### Slice 1 — Record terminology and durable decisions
+
+Status: Complete
 
 Revise or supersede ADR 010 and add only the ADRs needed to establish:
 

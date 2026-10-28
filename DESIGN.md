@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-27
+Last updated: 2026-10-28
 
 ## Purpose and scope
 
@@ -204,8 +204,9 @@ changes require a new or duplicated identity. A continuity cannot change identit
 A **persona** has three conceptual layers:
 
 1. **Persona core** — authored long-term definition and traits.
-2. **Relationship adaptation** — continuity-specific knowledge, feelings, habits,
-   and behavior toward one identity.
+2. **Persona adaptation** — durable continuity-specific behavior toward one
+   identity, such as communication, openness, support, conflict, and shared-habit
+   preferences.
 3. **Current state** — temporary scene, mood, and immediate context.
 
 The persona core is editable until its first continuity use, then freezes globally
@@ -343,22 +344,57 @@ source-deletion workflow must reject deletion while memory provenance refers to
 the source. Archival preserves those records. Hard deletion of a logical memory
 removes its own provenance but does not delete its sources.
 
-Relationship state belongs to one identity, persona, and continuity. It separates:
+Relationship state belongs to one identity, persona, and continuity. It is the
+durable relationship between the identity and persona and separates:
 
 - Social status.
 - Romantic status.
 - Current interaction dynamic.
 - Qualitative supporting dimensions such as trust and affection.
-- Boundaries and provenance-backed milestones.
+- Provenance-backed milestones.
 
 Friendship and romance are independent tracks. Supporting dimensions do not imply
 a status or shared event. Established starting states are explicitly user-selected.
 Major romantic transitions require narrative evidence. Gradual changes use
 conservative thresholds and hysteresis.
 
-Strategies propose relationship or persona changes; they do not write state
-directly. The application validates proposals against relationship intent,
-boundaries, allowed transitions, evidence, and provenance before persistence.
+Persona adaptation is durable continuity-specific behavior toward the identity.
+It specializes expression of the persona core but cannot contradict or modify it.
+Memory instead records declarative facts and past events. One turn may support
+both memory and adaptation, but each has independent eligibility, validation,
+persistence, and correction. Current state remains temporary mood, scene,
+activity, and immediate context; prompt inclusion does not make it durable.
+
+User-selected relationship intent and boundaries constrain evolution rather than
+acting as inferred relationship dimensions. Automated evolution cannot remove or
+weaken a boundary, and platonic intent prohibits romantic evolution.
+
+Evolution uses the following durable vocabulary:
+
+- Evidence is an exact eligible source turn or checkpoint on selected history.
+- A proposal is a bounded atomic set of typed changes from a versioned strategy.
+- A decision is the application's apply, reject, or no-change validation result.
+- An event is an immutable accepted relationship or adaptation change, including
+  a user correction.
+- An effect idempotently processes one source persona checkpoint and records its
+  terminal decision and exact strategy configuration.
+- A projection is a rebuildable current view derived by replaying eligible events
+  from the user-selected starting state.
+
+Strategies propose changes; they do not write state directly. The application
+validates ownership, selected evidence, expected projection revision, relationship
+intent, boundaries, persona-core compatibility, transition rules, conservative
+thresholds, and proposal bounds. It applies a proposal atomically or rejects it in
+full. Accepted events are append-only and authoritative; projections are caches.
+A correction appends a user-authored event rather than rewriting an inference or
+conversation history.
+
+Ownership, evidence, replay, user authority, persona-core immutability, bounded
+atomic application, and milestone requirements are stable invariants. Evidence
+selection, prompts, providers, strategies, adaptation facets, gradual thresholds,
+and evaluation rubrics are versioned experimental surfaces and cannot relax those
+invariants. Each effect records the exact selector, strategy, policy,
+prompt-schema, provider, and model versions.
 
 ## Behavioral design
 
@@ -498,6 +534,14 @@ rewriting its lineage. Derived relationship and persona projections rebuild from
 eligible evidence when those capabilities are present. Unselected alternatives
 cannot continue to influence context, memory, relationship projections, or persona
 adaptation.
+
+Relationship and adaptation evolution follows the same selected-history rule but
+uses its own append-only events. A branch switch makes events supported only by
+the deselected path inactive without deleting them and restores them if their
+evidence becomes selected again. A reviewed Storyline fork copies only events
+supported by copied history, remaps ownership and provenance, and then evolves
+independently. A fresh continuity starts from its reviewed relationship and copies
+no events, projection, memory, or adaptation.
 
 Response style changes apply at a message boundary and affect only subsequent
 persona responses. They never rewrite prior messages, facts, memories, or
