@@ -1,6 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 7 planning — relationship and persona evolution.
+Next delivery focus: Stage 7, Slice 1 — record relationship and persona evolution
+terminology and durable decisions.
 
 Deferred engineering:
 
