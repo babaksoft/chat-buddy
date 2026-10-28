@@ -33,7 +33,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
     DbSummaryRepository,
 )
-from tests.characters_support import FakeResponse
+from tests.characters_support import FakeResponse, ongoing_target
 from tests.integration.characters.test_ongoing_summary_context import (
     FakeSummary,
     _service,
@@ -109,11 +109,16 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     scope = _scope(continuity)
     responses, summary_provider = FakeResponse(), FakeSummary()
     app = _service(factory, responses, summary_provider)
-    app.configure(scope, ConversationSettings(provider="fake", model="response"))
+    app.configure(
+        ongoing_target(scope), ConversationSettings(provider="fake", model="response")
+    )
     for content in ("First", "Second", "Third", "Fourth"):
-        attempt = app.send(scope, SubmittedInput(content=content))
-        assert list(app.stream(scope, attempt.id)) == ["Hello", " there"]
-    saved = app.history(scope)
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=content))
+        assert list(app.stream(ongoing_target(scope), attempt.id)) == [
+            "Hello",
+            " there",
+        ]
+    saved = app.history(ongoing_target(scope))
     summary = summaries.get_current(scope)
     assert summary is not None and summary.revision == 2
     assert summary.scope == scope
@@ -127,25 +132,28 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     # New service and provider instances retain no browser or provider state.
     responses, summary_provider = FakeResponse(), FakeSummary()
     restarted = _service(factory, responses, summary_provider)
-    assert restarted.resume(scope) == saved
+    assert restarted.resume(ongoing_target(scope)) == saved
     assert summaries.get_current(scope) == summary
     assert continuities.resume(identity.id, persona.id, continuity.id) == continuity
     responses.chunks, responses.fail = ("Uncommitted fragment",), True
-    failed = restarted.send(scope, SubmittedInput(content="Fifth"))
+    failed = restarted.send(ongoing_target(scope), SubmittedInput(content="Fifth"))
     with pytest.raises(ProviderInvocationError):
-        list(restarted.stream(scope, failed.id))
-    incomplete = restarted.history(scope)
+        list(restarted.stream(ongoing_target(scope), failed.id))
+    incomplete = restarted.history(ongoing_target(scope))
     checkpoint = summaries.get_current(scope)
     assert incomplete.messages[:-1] == saved.messages
     assert incomplete.attempts[-1].status == "failed"
     assert incomplete.attempts[-1].incomplete_output == "Uncommitted fragment"
     responses = FakeResponse()
     recovered = _service(factory, responses, FakeSummary())
-    assert recovered.resume(scope) == incomplete
-    continued = recovered.continue_incomplete_turn(scope)
+    assert recovered.resume(ongoing_target(scope)) == incomplete
+    continued = recovered.continue_incomplete_turn(ongoing_target(scope))
     assert continued.user_message_id == failed.user_message_id
-    assert list(recovered.stream(scope, continued.id)) == ["Hello", " there"]
-    final = recovered.history(scope)
+    assert list(recovered.stream(ongoing_target(scope), continued.id)) == [
+        "Hello",
+        " there",
+    ]
+    final = recovered.history(ongoing_target(scope))
     assert len(final.messages) == 10
     assert final.messages[:8] == saved.messages
     assert final.attempts[-2] == incomplete.attempts[-1]
@@ -156,12 +164,12 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
 
     archived = continuities.archive(identity.id, persona.id, continuity.id)
     assert archived.lifecycle == "archived"
-    assert recovered.resume(scope) == final
+    assert recovered.resume(ongoing_target(scope)) == final
     with pytest.raises(ArchivedContinuityError):
-        recovered.send(scope, SubmittedInput(content="After archive"))
+        recovered.send(ongoing_target(scope), SubmittedInput(content="After archive"))
     assert final.settings is not None
     with pytest.raises(ArchivedContinuityError):
-        recovered.configure(scope, final.settings)
+        recovered.configure(ongoing_target(scope), final.settings)
     with pytest.raises(FrozenIdentityError):
         identities.edit(identity.id, identity.details, identity.revision)
     with pytest.raises(FrozenPersonaError):
@@ -202,10 +210,10 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     assert fresh.relationship.social == foreign.relationship.social == "stranger"
     assert fresh.relationship.romantic == "none"
     assert fresh.relationship.origins.social == "default"
-    assert recovered.history(fresh_scope).messages == ()
-    assert recovered.history(fresh_scope).attempts == ()
+    assert recovered.history(ongoing_target(fresh_scope)).messages == ()
+    assert recovered.history(ongoing_target(fresh_scope)).attempts == ()
     assert summaries.get_current(fresh_scope) is None
-    assert recovered.history(scope) == final
+    assert recovered.history(ongoing_target(scope)) == final
     assert summaries.get_current(scope) == checkpoint
     assert continuities.resume(identity.id, persona.id, continuity.id) == archived
     assert archived.relationship == continuity.relationship
@@ -219,22 +227,26 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     ):
         forged = scope.model_copy(update={field: value})
         with pytest.raises(ConversationNotFoundError):
-            recovered.resume(forged)
+            recovered.resume(ongoing_target(forged))
         with pytest.raises(ConversationNotFoundError):
-            recovered.send(forged, SubmittedInput(content="Foreign probe"))
+            recovered.send(
+                ongoing_target(forged), SubmittedInput(content="Foreign probe")
+            )
         with pytest.raises(ConversationNotFoundError):
-            recovered.continue_incomplete_turn(forged)
+            recovered.continue_incomplete_turn(ongoing_target(forged))
         with pytest.raises(ConversationNotFoundError):
             summaries.get_current(forged)
     with pytest.raises(ContinuityNotFoundError):
         continuities.archive(other_identity.id, persona.id, continuity.id)
     with pytest.raises(ConversationNotFoundError):
-        list(recovered.stream(fresh_scope, continued.id))
-    attempt = recovered.send(fresh_scope, SubmittedInput(content="Fresh start"))
-    list(recovered.stream(fresh_scope, attempt.id))
+        list(recovered.stream(ongoing_target(fresh_scope), continued.id))
+    attempt = recovered.send(
+        ongoing_target(fresh_scope), SubmittedInput(content="Fresh start")
+    )
+    list(recovered.stream(ongoing_target(fresh_scope), attempt.id))
     assert [m.content for m in responses.captured[-1][-1:]] == ["Fresh start"]
     assert len(responses.captured[-1]) == 5
-    assert recovered.history(scope) == final
+    assert recovered.history(ongoing_target(scope)) == final
     assert identities.inspect(identity.id) == frozen_identity
     assert personas.inspect(persona.id) == frozen_persona
 

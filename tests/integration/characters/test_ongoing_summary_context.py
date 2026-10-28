@@ -29,7 +29,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import ConfiguredModelRegistry
-from tests.characters_support import FakeResponse, start
+from tests.characters_support import FakeResponse, ongoing_target, start
 
 
 class MessageCountCounter:
@@ -104,10 +104,10 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
     summaries = FakeSummary()
     app = _service(factory, responses, summaries)
     for text in ("First", "Second", "Third"):
-        attempt = app.send(scope, SubmittedInput(content=text))
-        list(app.stream(scope, attempt.id))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=text))
+        list(app.stream(ongoing_target(scope), attempt.id))
 
-    fourth = app.send(scope, SubmittedInput(content="Fourth"))
+    fourth = app.send(ongoing_target(scope), SubmittedInput(content="Fourth"))
     active = DbSummaryRepository(factory).get_current(scope)
     assert active is not None
     assert active.revision == 2
@@ -119,7 +119,7 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
     assert "Prior summary:\nDurable summary 1" in "".join(
         message.content for message in summaries.captured[1]
     )
-    list(app.stream(scope, fourth.id))
+    list(app.stream(ongoing_target(scope), fourth.id))
     prompt = responses.captured[-1]
     assert prompt[4].content == "Conversation summary:\nDurable summary 2"
     assert [message.content for message in prompt[-3:]] == [
@@ -130,29 +130,31 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
     assert all("First" not in message.content for message in prompt)
 
     restarted = _service(factory, responses, summaries)
-    fifth = restarted.send(scope, SubmittedInput(content="Fifth"))
+    fifth = restarted.send(ongoing_target(scope), SubmittedInput(content="Fifth"))
     resumed = DbSummaryRepository(factory).get_current(scope)
     assert resumed is not None
     assert resumed.revision == 3
     assert resumed.checkpoint_sequence == 6
-    list(restarted.stream(scope, fifth.id))
-    assert restarted.history(scope).messages[-1].content == "Hello there"
+    list(restarted.stream(ongoing_target(scope), fifth.id))
+    assert (
+        restarted.history(ongoing_target(scope)).messages[-1].content == "Hello there"
+    )
 
-    previous = restarted.history(scope)
+    previous = restarted.history(ongoing_target(scope))
     responses.chunks, responses.fail = ("Partial",), True
-    failed = restarted.send(scope, SubmittedInput(content="Sixth"))
+    failed = restarted.send(ongoing_target(scope), SubmittedInput(content="Sixth"))
     with pytest.raises(ProviderInvocationError):
-        list(restarted.stream(scope, failed.id))
+        list(restarted.stream(ongoing_target(scope), failed.id))
     responses.chunks, responses.fail = ("Recovered",), False
     recovered = _service(factory, responses, summaries)
-    restored = recovered.resume(scope)
+    restored = recovered.resume(ongoing_target(scope))
     assert restored.settings == previous.settings
     assert restored.attempts[-1].incomplete_output == "Partial"
     assert restored.messages[:-1] == previous.messages
-    continued = recovered.continue_incomplete_turn(scope)
+    continued = recovered.continue_incomplete_turn(ongoing_target(scope))
     assert continued.user_message_id == failed.user_message_id
-    assert list(recovered.stream(scope, continued.id)) == ["Recovered"]
-    assert recovered.history(scope).messages[-1].content == "Recovered"
+    assert list(recovered.stream(ongoing_target(scope), continued.id)) == ["Recovered"]
+    assert recovered.history(ongoing_target(scope)).messages[-1].content == "Recovered"
     assert all(message.content != "Partial" for message in responses.captured[-1])
 
 
@@ -171,14 +173,14 @@ def test_required_summary_failure_preserves_history_and_active_revision(
     responses = FakeResponse()
     working = _service(factory, responses, FakeSummary())
     for text in ("First", "Second", "Third"):
-        attempt = working.send(scope, SubmittedInput(content=text))
-        list(working.stream(scope, attempt.id))
-    before = working.history(scope)
+        attempt = working.send(ongoing_target(scope), SubmittedInput(content=text))
+        list(working.stream(ongoing_target(scope), attempt.id))
+    before = working.history(ongoing_target(scope))
     failing_summary = FakeSummary(fail=True)
     failing = _service(factory, responses, failing_summary)
     with pytest.raises(ContextCapacityError, match="compression failed"):
-        failing.send(scope, SubmittedInput(content="Fourth"))
-    assert failing.history(scope) == before
+        failing.send(ongoing_target(scope), SubmittedInput(content="Fourth"))
+    assert failing.history(ongoing_target(scope)) == before
     assert DbSummaryRepository(factory).get_current(scope) is None
     assert len(failing_summary.captured) == 1
 
@@ -200,13 +202,13 @@ def test_summary_repository_requires_ownership_and_rejects_stale_replacement(
     summaries = FakeSummary()
     app = _service(factory, responses, summaries)
     for text in ("First", "Second", "Third"):
-        attempt = app.send(scope, SubmittedInput(content=text))
-        list(app.stream(scope, attempt.id))
-    fourth = app.send(scope, SubmittedInput(content="Fourth"))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=text))
+        list(app.stream(ongoing_target(scope), attempt.id))
+    fourth = app.send(ongoing_target(scope), SubmittedInput(content="Fourth"))
     repository = DbSummaryRepository(factory)
     active = repository.get_current(scope)
     assert active is not None
-    checkpoint = app.history(scope).messages[5]
+    checkpoint = app.history(ongoing_target(scope)).messages[5]
     successor = active.model_copy(
         update={
             "id": uuid4(),
@@ -231,7 +233,7 @@ def test_summary_repository_requires_ownership_and_rejects_stale_replacement(
         bad_scope = scope.model_copy(update={field: getattr(foreign, field)})
         with pytest.raises(ConversationNotFoundError):
             repository.get_current(bad_scope)
-    list(app.stream(scope, fourth.id))
+    list(app.stream(ongoing_target(scope), fourth.id))
 
 
 def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
@@ -253,8 +255,8 @@ def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
     summary_repository = DbSummaryRepository(factory)
 
     for content in ("First", "Second", "Third", "Fourth", "Fifth"):
-        attempt = app.send(scope, SubmittedInput(content=content))
-        list(app.stream(scope, attempt.id))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=content))
+        list(app.stream(ongoing_target(scope), attempt.id))
     old_path = repository.selected_path(scope)
     old_leaf_id = old_path.selected_leaf_id
     assert old_leaf_id is not None
@@ -264,8 +266,8 @@ def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
 
     repository.select_leaf(scope, branch_point_id, old_leaf_id)
     for content in ("Branch second", "Branch third", "Branch fourth"):
-        attempt = app.send(scope, SubmittedInput(content=content))
-        list(app.stream(scope, attempt.id))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=content))
+        list(app.stream(ongoing_target(scope), attempt.id))
     new_leaf_id = repository.selected_path(scope).selected_leaf_id
     assert new_leaf_id is not None
     branch_summary = summary_repository.get_current(scope)
@@ -275,8 +277,8 @@ def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
 
     repository.select_leaf(scope, old_leaf_id, new_leaf_id)
     assert summary_repository.get_current(scope) == old_summary
-    inspect_old = app.send(scope, SubmittedInput(content="Inspect old"))
-    list(app.stream(scope, inspect_old.id))
+    inspect_old = app.send(ongoing_target(scope), SubmittedInput(content="Inspect old"))
+    list(app.stream(ongoing_target(scope), inspect_old.id))
     old_prompt = "\n".join(message.content for message in responses.captured[-1])
     assert "Fifth" in old_prompt
     assert "Branch fourth" not in old_prompt
@@ -285,8 +287,10 @@ def test_path_switches_restore_each_branch_summary_and_exclude_other_future(
     assert extended_old_leaf_id is not None
     repository.select_leaf(scope, new_leaf_id, extended_old_leaf_id)
     assert summary_repository.get_current(scope) == branch_summary
-    inspect_branch = app.send(scope, SubmittedInput(content="Inspect branch"))
-    list(app.stream(scope, inspect_branch.id))
+    inspect_branch = app.send(
+        ongoing_target(scope), SubmittedInput(content="Inspect branch")
+    )
+    list(app.stream(ongoing_target(scope), inspect_branch.id))
     branch_prompt = "\n".join(message.content for message in responses.captured[-1])
     assert "Branch fourth" in branch_prompt
     assert "Fifth" not in branch_prompt
@@ -307,20 +311,20 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
     responses = FakeResponse()
     app = _service(factory, responses, FakeSummary())
     repository = DbConversationRepository(factory)
-    first = app.send(scope, SubmittedInput(content="First"))
-    list(app.stream(scope, first.id))
+    first = app.send(ongoing_target(scope), SubmittedInput(content="First"))
+    list(app.stream(ongoing_target(scope), first.id))
     branch_point_id = repository.selected_path(scope).selected_leaf_id
     assert branch_point_id is not None
-    old_future = app.send(scope, SubmittedInput(content="Old future"))
-    list(app.stream(scope, old_future.id))
+    old_future = app.send(ongoing_target(scope), SubmittedInput(content="Old future"))
+    list(app.stream(ongoing_target(scope), old_future.id))
     old_leaf_id = repository.selected_path(scope).selected_leaf_id
     assert old_leaf_id is not None
     repository.select_leaf(scope, branch_point_id, old_leaf_id)
-    new_future = app.send(scope, SubmittedInput(content="New future"))
-    list(app.stream(scope, new_future.id))
+    new_future = app.send(ongoing_target(scope), SubmittedInput(content="New future"))
+    list(app.stream(ongoing_target(scope), new_future.id))
     observed_leaf_id = repository.selected_path(scope).selected_leaf_id
     assert observed_leaf_id is not None
-    before = app.history(scope)
+    before = app.history(ongoing_target(scope))
     original_begin = DbConversationRepository.begin
 
     def switch_before_begin(
@@ -371,9 +375,9 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
         ),
         pytest.raises(AttemptConflictError, match="History changed"),
     ):
-        app.send(scope, SubmittedInput(content="Must not commit"))
+        app.send(ongoing_target(scope), SubmittedInput(content="Must not commit"))
 
-    after = app.history(scope)
+    after = app.history(ongoing_target(scope))
     assert after.messages[:2] == before.messages[:2]
     assert [message.content for message in after.messages[2:]] == [
         "Old future",

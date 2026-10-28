@@ -11,6 +11,7 @@ from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
     GenerationConfiguration,
 )
+from chat_buddy.characters.domain.validation import NON_BLANK_TEXT_PATTERN
 
 
 class ConversationScope(BaseModel):
@@ -89,7 +90,7 @@ class SubmittedInput(BaseModel):
     content: str = Field(
         min_length=1,
         max_length=32768,
-        pattern=r"\S",
+        pattern=NON_BLANK_TEXT_PATTERN,
         description="Exact submitted input.",
     )
 

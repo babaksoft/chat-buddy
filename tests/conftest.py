@@ -54,7 +54,7 @@ def characters_session_factory() -> Generator[sessionmaker[Session], None, None]
 
     from sqlalchemy.pool import StaticPool
 
-    from chat_buddy.characters.infrastructure.db import models  # noqa: F401
+    import chat_buddy.characters.infrastructure.db.models  # noqa: F401
     from chat_buddy.characters.infrastructure.db import (
         CHARACTERS_SCHEMA,
         CharactersBase,

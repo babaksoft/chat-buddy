@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import ContinuityService, ConversationService
 from chat_buddy.characters.domain import (
     BranchModeFactsResolver,
+    ContinuityMode,
     ConversationScope,
+    ConversationTarget,
     EffectiveGeneration,
     ModelDescriptor,
     PersonaCore,
@@ -172,3 +174,17 @@ def start(
         continuity_id=continuity.id,
         conversation_id=continuity.conversation_id,
     )
+
+
+def ongoing_target(scope: ConversationScope) -> ConversationTarget:
+    """Wrap durable ownership in the explicit Ongoing service target.
+
+    Args:
+        scope:
+            Complete owned conversation scope.
+
+    Returns:
+        Mode-owned Ongoing conversation target.
+    """
+
+    return ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING)

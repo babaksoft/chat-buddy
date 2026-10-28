@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.domain import PromptMessage, SubmittedInput
 from chat_buddy.characters.infrastructure import create_conversation_service
 from chat_buddy.characters.infrastructure.llm import create_model_registry
-from tests.characters_support import start
+from tests.characters_support import ongoing_target, start
 
 
 @pytest.mark.characters_ollama_smoke
@@ -27,11 +27,15 @@ def test_local_ollama_stream_persists_and_resumes(
         pytest.skip("Set CHARACTERS_OLLAMA_SMOKE_TEST=true with local models available")
     scope = start(characters_session_factory)
     service = create_conversation_service(characters_session_factory)
-    attempt = service.send(scope, SubmittedInput(content="Say hello in one sentence."))
-    with closing(service.stream(scope, attempt.id)) as stream:
+    attempt = service.send(
+        ongoing_target(scope), SubmittedInput(content="Say hello in one sentence.")
+    )
+    with closing(service.stream(ongoing_target(scope), attempt.id)) as stream:
         chunks = list(stream)
     assert chunks and "".join(chunks).strip()
-    history = create_conversation_service(characters_session_factory).resume(scope)
+    history = create_conversation_service(characters_session_factory).resume(
+        ongoing_target(scope)
+    )
     assert history.messages[-1].content == "".join(chunks)
     assert history.attempts[-1].status == "completed"
     assert history.attempts[-1].generation == attempt.generation

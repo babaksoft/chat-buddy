@@ -10,6 +10,7 @@ from chat_buddy.characters.domain import (
     ContextCapacityError,
     Continuity,
     ContinuityLifecycle,
+    ContinuityMode,
     ConversationGraphView,
     ConversationHistory,
     ConversationScope,
@@ -27,7 +28,7 @@ from chat_buddy.characters.infrastructure import create_conversation_service
 BranchActionRenderer = Callable[
     [
         ConversationService,
-        ConversationScope | ConversationTarget,
+        ConversationTarget,
         ConversationGraphView,
         GraphNodeView,
         str,
@@ -45,16 +46,19 @@ def render_ongoing(continuity: Continuity) -> None:
             Ownership-checked selected continuity and lifecycle.
     """
 
-    scope = ConversationScope(
-        identity_id=continuity.identity_id,
-        persona_id=continuity.persona_id,
-        continuity_id=continuity.id,
-        conversation_id=continuity.conversation_id,
+    target = ConversationTarget(
+        scope=ConversationScope(
+            identity_id=continuity.identity_id,
+            persona_id=continuity.persona_id,
+            continuity_id=continuity.id,
+            conversation_id=continuity.conversation_id,
+        ),
+        mode=ContinuityMode.ONGOING,
     )
     key = f"characters_ongoing_{continuity.id}_{continuity.conversation_id}"
     render_conversation(
         create_conversation_service(),
-        scope,
+        target,
         key,
         continuity.lifecycle == ContinuityLifecycle.ARCHIVED,
     )
@@ -62,7 +66,7 @@ def render_ongoing(continuity: Continuity) -> None:
 
 def render_conversation(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     key: str,
     archived: bool,
     branch_action: BranchActionRenderer | None = None,
@@ -175,7 +179,7 @@ def render_conversation(
 
 def _transcript(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     history: ConversationHistory,
     graph: ConversationGraphView,
     key: str,
@@ -295,7 +299,7 @@ def _response_details(view: GraphNodeView, compact: bool = False) -> None:
 
 def _alternatives(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     selected: GraphNodeView,
     views: dict[UUID, GraphNodeView],
@@ -359,7 +363,7 @@ def _alternatives(
 
 def _response_actions(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     view: GraphNodeView,
     key: str,
@@ -402,7 +406,7 @@ def _response_actions(
 
 def _branch_action(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     view: GraphNodeView,
     key: str,
@@ -447,7 +451,7 @@ def _branch_action(
 
 def _saved_futures(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     displayed_alternatives: set[UUID],
     key: str,
@@ -506,7 +510,7 @@ def _saved_futures(
 
 def _select(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     message_id: UUID,
 ) -> None:
@@ -553,7 +557,7 @@ def _selected_leaf(graph: ConversationGraphView) -> UUID:
 
 def _stream_attempt(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     attempt: GenerationAttempt,
 ) -> None:
     """Render and exhaust one durable generation attempt.
@@ -582,7 +586,7 @@ def _stream_attempt(
 
 def _configuration(
     service: ConversationService,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     saved: ConversationSettings | None,
     key: str,
     disabled: bool,

@@ -13,7 +13,7 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 
 
 def test_completed_turn_persists_parent_graph_selection_and_provenance(
@@ -29,8 +29,8 @@ def test_completed_turn_persists_parent_graph_selection_and_provenance(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hello"))
-    list(app.stream(scope, attempt.id))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hello"))
+    list(app.stream(ongoing_target(scope), attempt.id))
     repository = DbConversationRepository(characters_session_factory)
 
     graph = repository.graph(scope)
@@ -45,7 +45,9 @@ def test_completed_turn_persists_parent_graph_selection_and_provenance(
     assert provenance.generation == attempt.generation
     assert provenance.response_style.name == "ongoing.default"
     assert provenance.evolution_strategy.name == "baseline.no_change"
-    assert [message.sequence for message in app.history(scope).messages] == [1, 2]
+    assert [
+        message.sequence for message in app.history(ongoing_target(scope)).messages
+    ] == [1, 2]
 
 
 def test_exact_selection_preserves_old_future_and_next_send_branches(
@@ -61,20 +63,22 @@ def test_exact_selection_preserves_old_future_and_next_send_branches(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    first = app.send(scope, SubmittedInput(content="First"))
-    list(app.stream(scope, first.id))
-    first_persona_id = app.history(scope).messages[-1].id
-    second = app.send(scope, SubmittedInput(content="Old future"))
-    list(app.stream(scope, second.id))
+    first = app.send(ongoing_target(scope), SubmittedInput(content="First"))
+    list(app.stream(ongoing_target(scope), first.id))
+    first_persona_id = app.history(ongoing_target(scope)).messages[-1].id
+    second = app.send(ongoing_target(scope), SubmittedInput(content="Old future"))
+    list(app.stream(ongoing_target(scope), second.id))
     repository = DbConversationRepository(characters_session_factory)
     old_leaf_id = repository.selected_path(scope).selected_leaf_id
 
     selected = repository.select_leaf(scope, first_persona_id, old_leaf_id)
     assert [node.content for node in selected.messages] == ["First", "Hello there"]
-    branch = app.send(scope, SubmittedInput(content="New future"))
-    list(app.stream(scope, branch.id))
+    branch = app.send(ongoing_target(scope), SubmittedInput(content="New future"))
+    list(app.stream(ongoing_target(scope), branch.id))
 
-    assert [message.content for message in app.history(scope).messages] == [
+    assert [
+        message.content for message in app.history(ongoing_target(scope)).messages
+    ] == [
         "First",
         "Hello there",
         "New future",
@@ -99,8 +103,8 @@ def test_selection_is_guarded_and_every_graph_read_requires_full_ownership(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hello"))
-    list(app.stream(scope, attempt.id))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hello"))
+    list(app.stream(ongoing_target(scope), attempt.id))
     repository = DbConversationRepository(characters_session_factory)
     selected = repository.selected_path(scope)
     assert selected.selected_leaf_id is not None
@@ -127,8 +131,8 @@ def test_alternatives_are_read_as_parent_siblings(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hello"))
-    list(app.stream(scope, attempt.id))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hello"))
+    list(app.stream(ongoing_target(scope), attempt.id))
     repository = DbConversationRepository(characters_session_factory)
     path = repository.selected_path(scope)
 

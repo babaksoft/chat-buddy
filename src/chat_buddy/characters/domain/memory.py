@@ -16,6 +16,7 @@ from chat_buddy.characters.domain.errors import (
 )
 from chat_buddy.characters.domain.llm import GenerationConfiguration
 from chat_buddy.characters.domain.strategy import StrategyIdentity
+from chat_buddy.characters.domain.validation import SEMANTIC_VERSION_PATTERN
 
 
 class MemoryRevisionState(StrEnum):
@@ -99,7 +100,7 @@ class ExtractionProvenance(BaseModel):
     prompt_schema_version: str = Field(
         min_length=1,
         max_length=64,
-        pattern=r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$",
+        pattern=SEMANTIC_VERSION_PATTERN,
         description="Structured prompt schema version.",
     )
     provider: str = Field(min_length=1, max_length=64, description="Provider key.")

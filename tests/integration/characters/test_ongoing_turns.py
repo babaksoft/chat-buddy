@@ -35,7 +35,7 @@ from chat_buddy.characters.infrastructure.llm import (
     OllamaGateway,
     Utf8TokenCounter,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 
 
 def test_completed_turn_reloads_with_exact_history_and_provenance(
@@ -52,10 +52,10 @@ def test_completed_turn_reloads_with_exact_history_and_provenance(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="  Hi\n"))
-    assert app.history(scope).messages[0].content == "  Hi\n"
-    assert list(app.stream(scope, attempt.id)) == ["Hello", " there"]
-    saved = service(factory, gateway).resume(scope)
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="  Hi\n"))
+    assert app.history(ongoing_target(scope)).messages[0].content == "  Hi\n"
+    assert list(app.stream(ongoing_target(scope), attempt.id)) == ["Hello", " there"]
+    saved = service(factory, gateway).resume(ongoing_target(scope))
     assert [m.content for m in saved.messages] == ["  Hi\n", "Hello there"]
     assert [m.sequence for m in saved.messages] == [1, 2]
     assert saved.attempts[0].status == "completed"
@@ -66,19 +66,21 @@ def test_completed_turn_reloads_with_exact_history_and_provenance(
         model="second",
         requested=GenerationConfiguration(temperature=0.4),
     )
-    app.configure(scope, settings)
-    new = service(factory, gateway).send(scope, SubmittedInput(content="Next"))
+    app.configure(ongoing_target(scope), settings)
+    new = service(factory, gateway).send(
+        ongoing_target(scope), SubmittedInput(content="Next")
+    )
     assert new.generation.model.model == "second"
     assert new.generation.configuration.temperature == 0.4
-    assert list(app.stream(scope, new.id))
-    assert app.history(scope).attempts[0] == saved.attempts[0]
+    assert list(app.stream(ongoing_target(scope), new.id))
+    assert app.history(ongoing_target(scope)).attempts[0] == saved.attempts[0]
     assert gateway.captured[-1][-3].content == "  Hi\n"
-    assert app.history(scope).settings == settings
+    assert app.history(ongoing_target(scope)).settings == settings
     with pytest.raises(IncompleteTurnError):
-        app.continue_incomplete_turn(scope)
+        app.continue_incomplete_turn(ongoing_target(scope))
     with pytest.raises(AttemptConflictError):
-        list(app.stream(scope, attempt.id))
-    assert app.history(scope).messages[:2] == saved.messages
+        list(app.stream(ongoing_target(scope), attempt.id))
+    assert app.history(ongoing_target(scope)).messages[:2] == saved.messages
 
 
 @pytest.mark.parametrize("chunks", [(), ("Partial",)])
@@ -99,21 +101,23 @@ def test_failed_generation_continues_existing_input_without_partial_context(
     gateway = FakeResponse()
     gateway.chunks, gateway.fail = chunks, True
     app = service(factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     with pytest.raises(ProviderInvocationError):
-        list(app.stream(scope, attempt.id))
-    saved = app.history(scope)
+        list(app.stream(ongoing_target(scope), attempt.id))
+    saved = app.history(ongoing_target(scope))
     assert saved.attempts[0].status == "failed"
     assert saved.attempts[0].incomplete_output == "".join(chunks)
     assert len(saved.messages) == 1 and gateway.closed
     with pytest.raises(IncompleteTurnError):
-        app.send(scope, SubmittedInput(content="Duplicate"))
+        app.send(ongoing_target(scope), SubmittedInput(content="Duplicate"))
     gateway.chunks, gateway.fail = ("Recovered",), False
     restarted = service(factory, gateway)
-    continuation = restarted.continue_incomplete_turn(scope)
+    continuation = restarted.continue_incomplete_turn(ongoing_target(scope))
     assert continuation.user_message_id == attempt.user_message_id
-    assert list(restarted.stream(scope, continuation.id)) == ["Recovered"]
-    history = restarted.history(scope)
+    assert list(restarted.stream(ongoing_target(scope), continuation.id)) == [
+        "Recovered"
+    ]
+    history = restarted.history(ongoing_target(scope))
     assert [m.content for m in history.messages] == ["Hi", "Recovered"]
     assert history.attempts[0] == saved.attempts[0]
     assert len(history.attempts) == 2
@@ -134,17 +138,17 @@ def test_consumer_close_and_expired_attempts_are_fenced(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
-    assert app.resume(scope).attempts[0].status == "pending"
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+    assert app.resume(ongoing_target(scope)).attempts[0].status == "pending"
     with pytest.raises(AttemptConflictError):
-        app.continue_incomplete_turn(scope)
-    stream = app.stream(scope, attempt.id)
+        app.continue_incomplete_turn(ongoing_target(scope))
+    stream = app.stream(ongoing_target(scope), attempt.id)
     assert next(stream) == "Hello"
     stream.close()
     assert gateway.closed
-    assert app.history(scope).attempts[0].status == "interrupted"
-    continued = app.continue_incomplete_turn(scope)
-    stream = app.stream(scope, continued.id)
+    assert app.history(ongoing_target(scope)).attempts[0].status == "interrupted"
+    continued = app.continue_incomplete_turn(ongoing_target(scope))
+    stream = app.stream(ongoing_target(scope), continued.id)
     assert next(stream) == "Hello"
     with factory() as session, session.begin():
         session.execute(
@@ -152,12 +156,15 @@ def test_consumer_close_and_expired_attempts_are_fenced(
             .where(GenerationAttemptModel.id == continued.id)
             .values(updated_at=datetime.now(UTC) - timedelta(minutes=6))
         )
-    assert service(factory, gateway).resume(scope).attempts[-1].status == "interrupted"
-    replacement = app.continue_incomplete_turn(scope)
+    assert (
+        service(factory, gateway).resume(ongoing_target(scope)).attempts[-1].status
+        == "interrupted"
+    )
+    replacement = app.continue_incomplete_turn(ongoing_target(scope))
     with pytest.raises(AttemptConflictError):
         next(stream)
-    assert list(app.stream(scope, replacement.id))
-    assert len(app.history(scope).messages) == 2
+    assert list(app.stream(ongoing_target(scope), replacement.id))
+    assert len(app.history(ongoing_target(scope)).messages) == 2
 
 
 def test_pending_abandonment_and_duplicate_consumers_preserve_live_stream(
@@ -174,21 +181,21 @@ def test_pending_abandonment_and_duplicate_consumers_preserve_live_stream(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     with factory() as session, session.begin():
         session.execute(
             update(GenerationAttemptModel)
             .where(GenerationAttemptModel.id == attempt.id)
             .values(updated_at=datetime.now(UTC) - timedelta(minutes=6))
         )
-    assert app.resume(scope).attempts[0].status == "interrupted"
-    continued = app.continue_incomplete_turn(scope)
-    stream = app.stream(scope, continued.id)
+    assert app.resume(ongoing_target(scope)).attempts[0].status == "interrupted"
+    continued = app.continue_incomplete_turn(ongoing_target(scope))
+    stream = app.stream(ongoing_target(scope), continued.id)
     assert next(stream) == "Hello"
     with pytest.raises(AttemptConflictError):
-        list(app.stream(scope, continued.id))
+        list(app.stream(ongoing_target(scope), continued.id))
     assert list(stream) == [" there"]
-    assert app.history(scope).attempts[-1].status == "completed"
+    assert app.history(ongoing_target(scope)).attempts[-1].status == "completed"
 
 
 def test_budget_overflow_commits_nothing_and_calls_no_provider(
@@ -206,18 +213,18 @@ def test_budget_overflow_commits_nothing_and_calls_no_provider(
     gateway = FakeResponse()
     app = service(factory, gateway)
     with pytest.raises(ContextCapacityError):
-        app.send(scope, SubmittedInput(content="X" * 32768))
-    assert app.history(scope).messages == ()
-    assert app.history(scope).attempts == ()
+        app.send(ongoing_target(scope), SubmittedInput(content="X" * 32768))
+    assert app.history(ongoing_target(scope)).messages == ()
+    assert app.history(ongoing_target(scope)).attempts == ()
     assert gateway.captured == []
-    first = app.send(scope, SubmittedInput(content="Hi"))
-    list(app.stream(scope, first.id))
-    saved = app.history(scope)
+    first = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+    list(app.stream(ongoing_target(scope), first.id))
+    saved = app.history(ongoing_target(scope))
     with pytest.raises(ContextCapacityError):
         service(factory, gateway, context=256).send(
-            scope, SubmittedInput(content="Next")
+            ongoing_target(scope), SubmittedInput(content="Next")
         )
-    assert app.history(scope) == saved
+    assert app.history(ongoing_target(scope)) == saved
 
 
 @pytest.mark.parametrize(
@@ -240,21 +247,23 @@ def test_foreign_ownership_cannot_read_or_generate(
     foreign = start(factory, "Foreign secret persona")
     gateway = FakeResponse()
     app = service(factory, gateway)
-    other = app.send(foreign, SubmittedInput(content="Foreign secret input"))
-    list(app.stream(foreign, other.id))
+    other = app.send(
+        ongoing_target(foreign), SubmittedInput(content="Foreign secret input")
+    )
+    list(app.stream(ongoing_target(foreign), other.id))
     bad = scope.model_copy(
         update={field: getattr(foreign, field) if field != "identity_id" else uuid4()}
     )
     with pytest.raises(ConversationNotFoundError):
-        app.history(bad)
+        app.history(ongoing_target(bad))
     with pytest.raises(ConversationNotFoundError):
-        app.send(bad, SubmittedInput(content="Probe"))
+        app.send(ongoing_target(bad), SubmittedInput(content="Probe"))
     with pytest.raises(ConversationNotFoundError):
-        list(app.stream(scope, other.id))
-    attempt = app.send(scope, SubmittedInput(content="Own input"))
-    list(app.stream(scope, attempt.id))
+        list(app.stream(ongoing_target(scope), other.id))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Own input"))
+    list(app.stream(ongoing_target(scope), attempt.id))
     assert "Foreign secret" not in "".join(m.content for m in gateway.captured[-1])
-    assert len(app.history(scope).messages) == 2
+    assert len(app.history(ongoing_target(scope)).messages) == 2
 
 
 def test_archive_during_generation_prevents_completion_and_profile_mutation(
@@ -282,18 +291,20 @@ def test_archive_during_generation_prevents_completion_and_profile_mutation(
     original_state = continuities.get(
         scope.identity_id, scope.persona_id, scope.continuity_id
     ).relationship
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
-    stream = app.stream(scope, attempt.id)
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+    stream = app.stream(ongoing_target(scope), attempt.id)
     assert next(stream) == "Hello"
     continuities.archive(scope.identity_id, scope.persona_id, scope.continuity_id)
     with pytest.raises(ArchivedContinuityError):
         list(stream)
-    assert app.history(scope).attempts[0].status == "failed"
-    assert len(app.history(scope).messages) == 1
+    assert app.history(ongoing_target(scope)).attempts[0].status == "failed"
+    assert len(app.history(ongoing_target(scope)).messages) == 1
     with pytest.raises(ArchivedContinuityError):
-        app.continue_incomplete_turn(scope)
+        app.continue_incomplete_turn(ongoing_target(scope))
     with pytest.raises(ArchivedContinuityError):
-        app.configure(scope, ConversationSettings(provider="fake", model="second"))
+        app.configure(
+            ongoing_target(scope), ConversationSettings(provider="fake", model="second")
+        )
     assert identities.get(scope.identity_id) == original_identity
     assert personas.get(scope.persona_id) == original_persona
     assert (
@@ -341,11 +352,11 @@ def test_user_attempt_and_persona_completion_writes_roll_back_together(
     event.listen(GenerationAttemptModel, "before_insert", fail)
     try:
         with pytest.raises(RuntimeError):
-            app.send(scope, SubmittedInput(content="Hi"))
+            app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     finally:
         event.remove(GenerationAttemptModel, "before_insert", fail)
-    assert app.history(scope).messages == ()
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
+    assert app.history(ongoing_target(scope)).messages == ()
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     repository.claim(scope, attempt.id)
     repository.append(scope, attempt.id, "Answer")
     event.listen(GenerationAttemptModel, "before_update", fail)
@@ -354,10 +365,10 @@ def test_user_attempt_and_persona_completion_writes_roll_back_together(
             repository.complete(scope, attempt.id)
     finally:
         event.remove(GenerationAttemptModel, "before_update", fail)
-    saved = app.history(scope)
+    saved = app.history(ongoing_target(scope))
     assert len(saved.messages) == 1 and saved.attempts[0].status == "streaming"
     repository.complete(scope, attempt.id)
-    assert len(app.history(scope).messages) == 2
+    assert len(app.history(ongoing_target(scope)).messages) == 2
 
 
 def test_mocked_ollama_stream_uses_durable_service_contract(
@@ -401,9 +412,9 @@ def test_mocked_ollama_stream_uses_durable_service_contract(
         DbSummaryRepository(factory),
         models,
     )
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
-    assert list(app.stream(scope, attempt.id)) == ["Ollama answer"]
-    assert app.history(scope).messages[-1].content == "Ollama answer"
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+    assert list(app.stream(ongoing_target(scope), attempt.id)) == ["Ollama answer"]
+    assert app.history(ongoing_target(scope)).messages[-1].content == "Ollama answer"
 
 
 def test_empty_provider_output_never_completes_a_turn(
@@ -421,11 +432,11 @@ def test_empty_provider_output_never_completes_a_turn(
     gateway = FakeResponse()
     gateway.chunks = ()
     app = service(factory, gateway)
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     with pytest.raises(InvalidProviderResponseError):
-        list(app.stream(scope, attempt.id))
-    assert len(app.history(scope).messages) == 1
-    assert app.history(scope).attempts[0].status == "failed"
+        list(app.stream(ongoing_target(scope), attempt.id))
+    assert len(app.history(ongoing_target(scope)).messages) == 1
+    assert app.history(ongoing_target(scope)).attempts[0].status == "failed"
 
 
 def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflight(
@@ -442,9 +453,11 @@ def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflig
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    pending = app.send(scope, SubmittedInput(content="First"))
-    app.configure(scope, ConversationSettings(provider="fake", model="second"))
-    list(app.stream(scope, pending.id))
+    pending = app.send(ongoing_target(scope), SubmittedInput(content="First"))
+    app.configure(
+        ongoing_target(scope), ConversationSettings(provider="fake", model="second")
+    )
+    list(app.stream(ongoing_target(scope), pending.id))
     assert gateway.generations[-1].model.model == "first"
     repository = DbConversationRepository(factory)
     with pytest.raises(AttemptConflictError):
@@ -455,11 +468,13 @@ def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflig
             uuid4(),
             SubmittedInput(content="Stale"),
         )
-    assert len(app.history(scope).messages) == 2
-    next_attempt = app.send(scope, SubmittedInput(content="Next"))
+    assert len(app.history(ongoing_target(scope)).messages) == 2
+    next_attempt = app.send(ongoing_target(scope), SubmittedInput(content="Next"))
     assert next_attempt.generation.model.model == "second"
-    list(app.stream(scope, next_attempt.id))
-    assert app.history(scope).attempts[0].generation == pending.generation
+    list(app.stream(ongoing_target(scope), next_attempt.id))
+    assert (
+        app.history(ongoing_target(scope)).attempts[0].generation == pending.generation
+    )
 
 
 def test_lazy_composition_uses_replaceable_characters_capabilities(
@@ -485,6 +500,6 @@ def test_lazy_composition_uses_replaceable_characters_capabilities(
         return_value=registry(gateway),
     ):
         app = create_conversation_service(factory)
-    attempt = app.send(scope, SubmittedInput(content="Hi"))
-    assert list(app.stream(scope, attempt.id)) == ["Hello", " there"]
-    assert app.history(scope).attempts[0].status == "completed"
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+    assert list(app.stream(ongoing_target(scope), attempt.id)) == ["Hello", " there"]
+    assert app.history(ongoing_target(scope)).attempts[0].status == "completed"

@@ -2,6 +2,11 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chat_buddy.characters.domain.validation import (
+    MACHINE_READABLE_NAME_PATTERN,
+    SEMANTIC_VERSION_PATTERN,
+)
+
 
 class StrategyIdentity(BaseModel):
     """Stable identity recorded on every strategy result.
@@ -18,12 +23,12 @@ class StrategyIdentity(BaseModel):
     name: str = Field(
         min_length=1,
         max_length=128,
-        pattern=r"^[a-z][a-z0-9_.-]*$",
+        pattern=MACHINE_READABLE_NAME_PATTERN,
         description="Stable machine-readable strategy name.",
     )
     version: str = Field(
         min_length=1,
         max_length=64,
-        pattern=r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$",
+        pattern=SEMANTIC_VERSION_PATTERN,
         description="Semantic strategy behavior version.",
     )

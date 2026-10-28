@@ -9,6 +9,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.util import calc_hash
 
+import chat_buddy.ui.streamlit_app as streamlit_app  # noqa: PLR0402
 from chat_buddy.characters.domain import (
     Continuity,
     ContinuityGroup,
@@ -60,13 +61,12 @@ from chat_buddy.chat.domain import (
     ProviderId,
 )
 from chat_buddy.chat.ui import page as chat_page
-from chat_buddy.ui import streamlit_app
 
 
 def _render_app() -> None:
     from unittest.mock import patch
 
-    from chat_buddy.ui import streamlit_app
+    import chat_buddy.ui.streamlit_app as streamlit_app  # noqa: PLR0402
 
     with patch.object(streamlit_app, "_load_environment"):
         streamlit_app.main()
@@ -1109,7 +1109,7 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
         Message,
     )
     from chat_buddy.characters.ui import ongoing
-    from tests.characters_support import FakeResponse, registry
+    from tests.characters_support import FakeResponse, ongoing_target, registry
 
     identity = character_services[0].list.return_value[0]
     persona = character_services[1].list.return_value[0]
@@ -1201,4 +1201,4 @@ def test_ongoing_transcript_survives_area_switch_without_leaking(
         assert any(m.value == "Characters saved response" for m in app.markdown)
         assert app.chat_input[0].disabled
         services.assert_not_called()
-        conversation.resume.assert_called_with(scope)
+        conversation.resume.assert_called_with(ongoing_target(scope))

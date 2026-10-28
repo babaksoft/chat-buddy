@@ -29,7 +29,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
     DbConversationRepository,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
@@ -67,7 +67,9 @@ def test_turn_migration_round_trips_and_preserves_populated_chat(
     existing = start(factory)
     command.check(configuration)
     app = service(factory, FakeResponse())
-    attempt = app.send(existing, SubmittedInput(content="Preserve profiles"))
+    attempt = app.send(
+        ongoing_target(existing), SubmittedInput(content="Preserve profiles")
+    )
     # The partial index and ownership guards also protect direct persistence writes.
     with factory() as session:
         row = session.get(GenerationAttemptModel, attempt.id)
@@ -98,7 +100,7 @@ def test_turn_migration_round_trips_and_preserves_populated_chat(
                 continuity_id=foreign.continuity_id,
             )
         )
-    list(app.stream(existing, attempt.id))
+    list(app.stream(ongoing_target(existing), attempt.id))
     message_columns = {
         column["name"]
         for column in inspect(engine).get_columns("messages", schema="characters")
@@ -117,7 +119,7 @@ def test_turn_migration_round_trips_and_preserves_populated_chat(
     assert "messages" not in inspect(engine).get_table_names(schema="characters")
     command.upgrade(configuration, "head")
     command.check(configuration)
-    assert app.history(existing).messages == ()
+    assert app.history(ongoing_target(existing)).messages == ()
     assert _chat_snapshot(engine) == before
     # Also prove a fresh baseline upgrade independently of surviving profile rows.
     command.downgrade(configuration, "base")
@@ -145,9 +147,11 @@ def test_competing_turn_actions_have_exactly_one_winner(
     repository = DbConversationRepository(factory)
     operation: Callable[[], object]
     if action == "send":
-        operation = lambda: app.send(scope, SubmittedInput(content="Competing input"))
+        operation = lambda: app.send(
+            ongoing_target(scope), SubmittedInput(content="Competing input")
+        )
     else:
-        attempt = app.send(scope, SubmittedInput(content="Input"))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content="Input"))
         if action == "claim":
             operation = lambda: repository.claim(scope, attempt.id)
         elif action == "complete":
@@ -156,7 +160,7 @@ def test_competing_turn_actions_have_exactly_one_winner(
             operation = lambda: repository.complete(scope, attempt.id)
         else:
             repository.stop(scope, attempt.id, "failed")
-            operation = lambda: app.continue_incomplete_turn(scope)
+            operation = lambda: app.continue_incomplete_turn(ongoing_target(scope))
     outcomes = _race(operation, operation)
     assert sum(isinstance(item, (GenerationAttempt, Message)) for item in outcomes) == 1
     assert (
@@ -166,7 +170,7 @@ def test_competing_turn_actions_have_exactly_one_winner(
         )
         == 1
     )
-    saved = app.history(scope)
+    saved = app.history(ongoing_target(scope))
     assert len(saved.messages) == (2 if action == "complete" else 1)
     assert sum(a.status in {"pending", "streaming"} for a in saved.attempts) <= 1
 
@@ -189,7 +193,7 @@ def test_archive_completion_row_lock_order_determines_commit(
     scope = start(factory)
     repository = DbConversationRepository(factory)
     app = service(factory, FakeResponse())
-    attempt = app.send(scope, SubmittedInput(content="Input"))
+    attempt = app.send(ongoing_target(scope), SubmittedInput(content="Input"))
     repository.claim(scope, attempt.id)
     repository.append(scope, attempt.id, "Answer")
     locked, issued, release = Event(), Event(), Event()
@@ -302,10 +306,10 @@ def test_archive_completion_row_lock_order_determines_commit(
         event.remove(engine, "after_cursor_execute", after)
     if winner == "archive":
         assert isinstance(outcomes[1], ArchivedContinuityError)
-        assert len(app.history(scope).messages) == 1
+        assert len(app.history(ongoing_target(scope)).messages) == 1
     else:
         assert isinstance(outcomes[0], Message)
-        assert len(app.history(scope).messages) == 2
+        assert len(app.history(ongoing_target(scope)).messages) == 2
     with pytest.raises(ArchivedContinuityError):
         repository.append(scope, attempt.id, "Late output")
 
@@ -375,22 +379,27 @@ def test_send_racing_completion_keeps_a_single_unmatched_tail(
     scope = start(factory)
     app = service(factory, FakeResponse())
     repository = DbConversationRepository(factory)
-    pending = app.send(scope, SubmittedInput(content="First"))
+    pending = app.send(ongoing_target(scope), SubmittedInput(content="First"))
     repository.claim(scope, pending.id)
     repository.append(scope, pending.id, "Answer")
     completed, sent = _race(
         lambda: repository.complete(scope, pending.id),
-        lambda: app.send(scope, SubmittedInput(content="Second")),
+        lambda: app.send(ongoing_target(scope), SubmittedInput(content="Second")),
     )
     assert isinstance(completed, Message)
-    saved = app.history(scope)
+    saved = app.history(ongoing_target(scope))
     assert [m.content for m in saved.messages[:2]] == ["First", "Answer"]
     if isinstance(sent, GenerationAttempt):
         assert len(saved.messages) == 3
         assert saved.messages[-1].id == sent.user_message_id
         assert sum(a.status == "pending" for a in saved.attempts) == 1
-        list(app.stream(scope, sent.id))
-        assert [m.sequence for m in app.history(scope).messages] == [1, 2, 3, 4]
+        list(app.stream(ongoing_target(scope), sent.id))
+        assert [m.sequence for m in app.history(ongoing_target(scope)).messages] == [
+            1,
+            2,
+            3,
+            4,
+        ]
     else:
         assert isinstance(sent, AttemptConflictError)
         assert len(saved.messages) == 2
@@ -411,23 +420,23 @@ def test_retry_limit_is_serialized_across_reservation_and_completion(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
     for number in range(2):
         gateway.chunks = (f"Alternative {number}",)
-        retry = app.retry_completed_response(scope)
-        list(app.stream(scope, retry.id))
+        retry = app.retry_completed_response(ongoing_target(scope))
+        list(app.stream(ongoing_target(scope), retry.id))
 
     outcomes = _race(
-        lambda: app.retry_completed_response(scope),
-        lambda: app.retry_completed_response(scope),
+        lambda: app.retry_completed_response(ongoing_target(scope)),
+        lambda: app.retry_completed_response(ongoing_target(scope)),
     )
     pending = [item for item in outcomes if isinstance(item, GenerationAttempt)]
     assert len(pending) == 1
     assert sum(isinstance(item, AttemptConflictError) for item in outcomes) == 1
     gateway.chunks = ("Final alternative",)
-    list(app.stream(scope, pending[0].id))
-    assert app.retry_availability(scope).successful_response_count == 4
+    list(app.stream(ongoing_target(scope), pending[0].id))
+    assert app.retry_availability(ongoing_target(scope)).successful_response_count == 4
 
     def exceed_limit() -> object:
         """Return the expected limit failure from a synchronized operation.
@@ -437,7 +446,7 @@ def test_retry_limit_is_serialized_across_reservation_and_completion(
         """
 
         try:
-            return app.retry_completed_response(scope)
+            return app.retry_completed_response(ongoing_target(scope))
         except RetryLimitError as error:
             return error
 
@@ -458,12 +467,12 @@ def test_competing_branch_actions_use_one_selection_winner(
     factory = _factory(characters_postgres_engine)
     scope = start(factory)
     app = service(factory, FakeResponse())
-    first = app.send(scope, SubmittedInput(content="First"))
-    list(app.stream(scope, first.id))
-    branch_point_id = app.history(scope).messages[-1].id
-    second = app.send(scope, SubmittedInput(content="Future"))
-    list(app.stream(scope, second.id))
-    expected_leaf_id = app.history(scope).messages[-1].id
+    first = app.send(ongoing_target(scope), SubmittedInput(content="First"))
+    list(app.stream(ongoing_target(scope), first.id))
+    branch_point_id = app.history(ongoing_target(scope)).messages[-1].id
+    second = app.send(ongoing_target(scope), SubmittedInput(content="Future"))
+    list(app.stream(ongoing_target(scope), second.id))
+    expected_leaf_id = app.history(ongoing_target(scope)).messages[-1].id
 
     def branch() -> object:
         """Return the selected path or its expected stale-selection loss.
@@ -473,14 +482,16 @@ def test_competing_branch_actions_use_one_selection_winner(
         """
 
         try:
-            return app.branch_from_here(scope, branch_point_id, expected_leaf_id)
+            return app.branch_from_here(
+                ongoing_target(scope), branch_point_id, expected_leaf_id
+            )
         except StaleSelectionError as error:
             return error
 
     outcomes = _race(branch, branch)
     assert sum(isinstance(item, SelectedPath) for item in outcomes) == 1
     assert sum(isinstance(item, StaleSelectionError) for item in outcomes) == 1
-    assert app.history(scope).messages[-1].id == branch_point_id
+    assert app.history(ongoing_target(scope)).messages[-1].id == branch_point_id
 
 
 def test_archive_racing_retry_completion_cannot_commit_after_archive(
@@ -497,10 +508,10 @@ def test_archive_racing_retry_completion_cannot_commit_after_archive(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
     repository = DbConversationRepository(factory)
-    retry = app.retry_completed_response(scope)
+    retry = app.retry_completed_response(ongoing_target(scope))
     repository.claim(scope, retry.id)
     repository.append(scope, retry.id, "Alternative")
 
@@ -532,6 +543,10 @@ def test_archive_racing_retry_completion_cannot_commit_after_archive(
         == "archived"
     )
     if archived:
-        assert app.retry_availability(scope).successful_response_count == 1
+        assert (
+            app.retry_availability(ongoing_target(scope)).successful_response_count == 1
+        )
     else:
-        assert app.retry_availability(scope).successful_response_count == 2
+        assert (
+            app.retry_availability(ongoing_target(scope)).successful_response_count == 2
+        )

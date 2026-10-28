@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chat_buddy.characters.domain.conversation import ConversationScope, Message
 from chat_buddy.characters.domain.llm import EffectiveGeneration, PromptMessage
+from chat_buddy.characters.domain.validation import NON_BLANK_TEXT_PATTERN
 
 
 class CompletedTurn(BaseModel):
@@ -80,7 +81,11 @@ class SummaryRevision(BaseModel):
     predecessor_id: UUID | None = Field(description="Prior revision identifier.")
     checkpoint_message_id: UUID = Field(description="Last covered persona message.")
     checkpoint_sequence: int = Field(gt=0, description="Covered path position.")
-    content: str = Field(min_length=1, pattern=r"\S", description="Summary text.")
+    content: str = Field(
+        min_length=1,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Summary text.",
+    )
     generation: EffectiveGeneration = Field(description="Generation provenance.")
     created_at: datetime = Field(description="UTC creation timestamp.")
 

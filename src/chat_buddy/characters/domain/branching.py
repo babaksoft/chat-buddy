@@ -13,6 +13,11 @@ from chat_buddy.characters.domain.continuity import ContinuityMode
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.strategy import StrategyIdentity
+from chat_buddy.characters.domain.validation import (
+    MACHINE_READABLE_NAME_PATTERN,
+    NON_BLANK_TEXT_PATTERN,
+    SEMANTIC_VERSION_PATTERN,
+)
 
 
 class ResponseStyleSnapshot(BaseModel):
@@ -32,19 +37,19 @@ class ResponseStyleSnapshot(BaseModel):
     name: str = Field(
         min_length=1,
         max_length=128,
-        pattern=r"^[a-z][a-z0-9_.-]*$",
+        pattern=MACHINE_READABLE_NAME_PATTERN,
         description="Stable machine-readable style name.",
     )
     version: str = Field(
         min_length=1,
         max_length=64,
-        pattern=r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$",
+        pattern=SEMANTIC_VERSION_PATTERN,
         description="Semantic style behavior version.",
     )
     instruction: str = Field(
         min_length=1,
         max_length=4096,
-        pattern=r"\S",
+        pattern=NON_BLANK_TEXT_PATTERN,
         description="Exact effective response instruction.",
     )
 
@@ -121,7 +126,11 @@ class MessageNode(BaseModel):
     scope: ConversationScope = Field(description="Complete ownership.")
     parent_id: UUID | None = Field(description="Immediate parent message.")
     role: Literal["user", "persona"] = Field(description="Speaker.")
-    content: str = Field(min_length=1, pattern=r"\S", description="Committed text.")
+    content: str = Field(
+        min_length=1,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Committed text.",
+    )
     created_at: datetime = Field(description="UTC commit timestamp.")
     response_provenance: ResponseProvenance | None = Field(
         default=None, description="Persona response provenance."

@@ -16,7 +16,6 @@ from chat_buddy.characters.domain import (
     ContinuityLifecycle,
     ContinuityMode,
     ConversationGraphView,
-    ConversationScope,
     ConversationTarget,
     GraphNodeView,
     Identity,
@@ -488,7 +487,7 @@ def _render_storyline_branch(
     identities: IdentityService,
     personas: PersonaService,
     sequence: SceneSequence,
-    target: ConversationScope | ConversationTarget,
+    target: ConversationTarget,
     graph: ConversationGraphView,
     view: GraphNodeView,
     key: str,
@@ -519,7 +518,7 @@ def _render_storyline_branch(
             Whether archival or an open attempt blocks branching.
     """
 
-    if not view.branchable or disabled or not isinstance(target, ConversationTarget):
+    if not view.branchable or disabled:
         return
     decision = conversation.branch_decision(target, view.message.id)
     if decision.disposition == "in_place":

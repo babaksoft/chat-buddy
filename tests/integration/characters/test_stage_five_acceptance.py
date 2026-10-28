@@ -16,7 +16,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
     DbSummaryRepository,
 )
-from tests.characters_support import FakeResponse, start
+from tests.characters_support import FakeResponse, ongoing_target, start
 from tests.integration.characters.test_ongoing_summary_context import (
     FakeSummary,
     _service,
@@ -51,10 +51,10 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
     summary_repository = DbSummaryRepository(factory)
 
     for content in ("First", "Second", "Third", "Fourth"):
-        attempt = app.send(scope, SubmittedInput(content=content))
-        list(app.stream(scope, attempt.id))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=content))
+        list(app.stream(ongoing_target(scope), attempt.id))
 
-    original_path = app.history(scope)
+    original_path = app.history(ongoing_target(scope))
     branch_point_id = original_path.messages[1].id
     original_leaf_id = original_path.messages[-1].id
     original_summary = summary_repository.get_current(scope)
@@ -64,33 +64,37 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
     alternative_ids = []
     for number in range(1, 4):
         responses.chunks = (f"Fourth answer {number}",)
-        retry = app.retry_completed_response(scope)
-        assert list(app.stream(scope, retry.id)) == [f"Fourth answer {number}"]
-        alternative_ids.append(app.history(scope).messages[-1].id)
+        retry = app.retry_completed_response(ongoing_target(scope))
+        assert list(app.stream(ongoing_target(scope), retry.id)) == [
+            f"Fourth answer {number}"
+        ]
+        alternative_ids.append(app.history(ongoing_target(scope)).messages[-1].id)
         exact_prompt = "\n".join(message.content for message in responses.captured[-1])
         assert "Fourth" in exact_prompt
         assert all(
             f"Fourth answer {prior}" not in exact_prompt for prior in range(1, number)
         )
 
-    assert app.retry_availability(scope).retries_remaining == 0
+    assert app.retry_availability(ongoing_target(scope)).retries_remaining == 0
     with pytest.raises(RetryLimitError):
-        app.retry_completed_response(scope)
+        app.retry_completed_response(ongoing_target(scope))
 
     selected_original = app.select_alternative(
-        scope, original_leaf_id, alternative_ids[-1]
+        ongoing_target(scope), original_leaf_id, alternative_ids[-1]
     )
     assert selected_original.selected_leaf_id == original_leaf_id
-    app.branch_from_here(scope, branch_point_id, original_leaf_id)
+    app.branch_from_here(ongoing_target(scope), branch_point_id, original_leaf_id)
     branch_summary = summary_repository.get_current(scope)
     assert branch_summary is not None
     assert branch_summary.id != original_summary.id
     assert branch_summary.checkpoint_message_id == branch_point_id
 
     responses.chunks = ("The new future disagrees",)
-    branched = app.send(scope, SubmittedInput(content="Choose the new future"))
-    list(app.stream(scope, branched.id))
-    branch_leaf_id = app.history(scope).messages[-1].id
+    branched = app.send(
+        ongoing_target(scope), SubmittedInput(content="Choose the new future")
+    )
+    list(app.stream(ongoing_target(scope), branched.id))
+    branch_leaf_id = app.history(ongoing_target(scope)).messages[-1].id
     branch_prompt = "\n".join(message.content for message in responses.captured[-1])
     assert "Durable summary 1" in branch_prompt
     assert "Choose the new future" in branch_prompt
@@ -98,22 +102,26 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
 
     restarted_responses = FakeResponse()
     restarted = _service(factory, restarted_responses, FakeSummary())
-    assert restarted.resume(scope).messages[-1].id == branch_leaf_id
+    assert restarted.resume(ongoing_target(scope)).messages[-1].id == branch_leaf_id
     restarted_responses.chunks = ("Uncommitted fragment",)
     restarted_responses.fail = True
-    failed = restarted.send(scope, SubmittedInput(content="Recover this turn"))
+    failed = restarted.send(
+        ongoing_target(scope), SubmittedInput(content="Recover this turn")
+    )
     with pytest.raises(ProviderInvocationError, match="Provider failed"):
-        list(restarted.stream(scope, failed.id))
+        list(restarted.stream(ongoing_target(scope), failed.id))
 
     recovered_responses = FakeResponse()
     recovered_responses.chunks = ("Recovered answer",)
     recovered = _service(factory, recovered_responses, FakeSummary())
-    incomplete = recovered.resume(scope)
+    incomplete = recovered.resume(ongoing_target(scope))
     assert incomplete.attempts[-1].incomplete_output == "Uncommitted fragment"
-    continuation = recovered.continue_incomplete_turn(scope)
+    continuation = recovered.continue_incomplete_turn(ongoing_target(scope))
     assert continuation.user_message_id == failed.user_message_id
-    assert list(recovered.stream(scope, continuation.id)) == ["Recovered answer"]
-    recovered_branch_leaf_id = recovered.history(scope).messages[-1].id
+    assert list(recovered.stream(ongoing_target(scope), continuation.id)) == [
+        "Recovered answer"
+    ]
+    recovered_branch_leaf_id = recovered.history(ongoing_target(scope)).messages[-1].id
     recovery_prompt = "\n".join(
         message.content for message in recovered_responses.captured[-1]
     )
@@ -122,7 +130,7 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
     assert "Second" not in recovery_prompt and "Fourth answer" not in recovery_prompt
 
     restored_old = recovered.select_saved_future(
-        scope, original_leaf_id, recovered_branch_leaf_id
+        ongoing_target(scope), original_leaf_id, recovered_branch_leaf_id
     )
     assert restored_old.selected_leaf_id == original_leaf_id
     assert summary_repository.get_current(scope) == original_summary
@@ -130,11 +138,11 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
         message.content for message in original_path.messages
     ]
     restored_branch = recovered.select_saved_future(
-        scope, recovered_branch_leaf_id, original_leaf_id
+        ongoing_target(scope), recovered_branch_leaf_id, original_leaf_id
     )
     assert restored_branch.selected_leaf_id == recovered_branch_leaf_id
 
-    graph_before_archive = recovered.inspect_graph(scope)
+    graph_before_archive = recovered.inspect_graph(ongoing_target(scope))
     assert set(alternative_ids).issubset(
         {node.message.id for node in graph_before_archive.nodes}
     )
@@ -148,17 +156,19 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
     ):
         forged = scope.model_copy(update={field: uuid4()})
         with pytest.raises(ConversationNotFoundError):
-            recovered.inspect_graph(forged)
+            recovered.inspect_graph(ongoing_target(forged))
         with pytest.raises(ConversationNotFoundError):
-            recovered.retry_completed_response(forged)
+            recovered.retry_completed_response(ongoing_target(forged))
 
     DbContinuityRepository(factory).archive(
         scope.identity_id, scope.persona_id, scope.continuity_id
     )
-    archived = recovered.inspect_graph(scope)
+    archived = recovered.inspect_graph(ongoing_target(scope))
     assert archived.selected_leaf_id == recovered_branch_leaf_id
     assert not any(node.branchable for node in archived.nodes)
     with pytest.raises(ArchivedContinuityError):
-        recovered.select_saved_future(scope, original_leaf_id, recovered_branch_leaf_id)
+        recovered.select_saved_future(
+            ongoing_target(scope), original_leaf_id, recovered_branch_leaf_id
+        )
     with pytest.raises(ArchivedContinuityError):
-        recovered.retry_completed_response(scope)
+        recovered.retry_completed_response(ongoing_target(scope))

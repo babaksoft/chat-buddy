@@ -30,7 +30,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
 )
 from chat_buddy.characters.infrastructure.llm import ConfiguredModelRegistry
 from chat_buddy.characters.prompts import assemble_ongoing_prompt
-from tests.characters_support import FakeResponse, registry, start
+from tests.characters_support import FakeResponse, ongoing_target, registry, start
 
 
 class FixedCounter:
@@ -136,10 +136,13 @@ def test_capacity_boundary_includes_fixed_overhead_and_output_reserve(
     )
     if extra:
         with pytest.raises(ContextCapacityError):
-            app.send(scope, SubmittedInput(content="Hi"))
-        assert app.history(scope).attempts == ()
+            app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
+        assert app.history(ongoing_target(scope)).attempts == ()
     else:
-        assert app.send(scope, SubmittedInput(content="Hi")).status == "pending"
+        assert (
+            app.send(ongoing_target(scope), SubmittedInput(content="Hi")).status
+            == "pending"
+        )
     assert gateway.captured == []
 
 

@@ -109,6 +109,21 @@ def _node(
     )
 
 
+def test_provenance_identifiers_require_machine_names_and_stable_versions() -> None:
+    """Reject display names and prerelease versions in durable provenance."""
+
+    with pytest.raises(ValidationError):
+        StrategyIdentity(name="Display Name", version="1.0.0")
+    with pytest.raises(ValidationError):
+        StrategyIdentity(name="stable.name", version="1.0.0-rc.1")
+    with pytest.raises(ValidationError):
+        ResponseStyleSnapshot(
+            name="stable.style",
+            version="1.0.0-rc.1",
+            instruction="Respond naturally.",
+        )
+
+
 def test_graph_derives_selected_order_from_parents_and_omits_siblings() -> None:
     """Traverse parents rather than relying on a persisted sequence or depth."""
 

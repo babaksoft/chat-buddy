@@ -20,7 +20,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
     DbConversationRepository,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 
 
 def test_three_retries_create_selected_siblings_with_current_settings(
@@ -37,8 +37,8 @@ def test_three_retries_create_selected_siblings_with_current_settings(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
     repository = DbConversationRepository(factory)
     original_leaf_id = repository.selected_path(scope).selected_leaf_id
     assert original_leaf_id is not None
@@ -47,28 +47,30 @@ def test_three_retries_create_selected_siblings_with_current_settings(
         model="second",
         requested=GenerationConfiguration(temperature=0.4),
     )
-    app.configure(scope, settings)
+    app.configure(ongoing_target(scope), settings)
     selected_leaf_id = original_leaf_id
 
     for number in range(1, 4):
-        availability = app.retry_availability(scope)
+        availability = app.retry_availability(ongoing_target(scope))
         assert availability.successful_response_count == number
         assert availability.retries_remaining == 4 - number
         gateway.chunks = (f"Alternative {number}",)
-        attempt = app.retry_completed_response(scope)
+        attempt = app.retry_completed_response(ongoing_target(scope))
         assert repository.selected_path(scope).selected_leaf_id == selected_leaf_id
         assert attempt.generation.model.model == "second"
         assert attempt.generation.configuration.temperature == 0.4
-        assert list(app.stream(scope, attempt.id)) == [f"Alternative {number}"]
+        assert list(app.stream(ongoing_target(scope), attempt.id)) == [
+            f"Alternative {number}"
+        ]
         next_selected_leaf_id = repository.selected_path(scope).selected_leaf_id
         assert next_selected_leaf_id is not None
         selected_leaf_id = next_selected_leaf_id
 
-    availability = app.retry_availability(scope)
+    availability = app.retry_availability(ongoing_target(scope))
     assert availability.successful_response_count == 4
     assert availability.retries_remaining == 0
     with pytest.raises(RetryLimitError):
-        app.retry_completed_response(scope)
+        app.retry_completed_response(ongoing_target(scope))
 
     graph = repository.graph(scope)
     alternatives = repository.alternatives(scope, availability.user_message_id)
@@ -101,37 +103,37 @@ def test_failed_and_interrupted_retries_preserve_selection_and_allowance(
     scope = start(factory)
     gateway = FakeResponse()
     app = service(factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
     repository = DbConversationRepository(factory)
     selected = repository.selected_path(scope).selected_leaf_id
 
     gateway.chunks, gateway.fail = ("Partial",), True
-    failed = app.retry_completed_response(scope)
+    failed = app.retry_completed_response(ongoing_target(scope))
     with pytest.raises(ProviderInvocationError):
-        list(app.stream(scope, failed.id))
+        list(app.stream(ongoing_target(scope), failed.id))
     assert repository.selected_path(scope).selected_leaf_id == selected
-    assert app.retry_availability(scope).retries_remaining == 3
+    assert app.retry_availability(ongoing_target(scope)).retries_remaining == 3
 
     gateway.chunks, gateway.fail = ("Interrupted", " ignored"), False
-    interrupted = app.retry_completed_response(scope)
-    stream = app.stream(scope, interrupted.id)
+    interrupted = app.retry_completed_response(ongoing_target(scope))
+    stream = app.stream(ongoing_target(scope), interrupted.id)
     assert next(stream) == "Interrupted"
     stream.close()
     assert repository.selected_path(scope).selected_leaf_id == selected
-    assert app.retry_availability(scope).retries_remaining == 3
+    assert app.retry_availability(ongoing_target(scope)).retries_remaining == 3
 
     gateway.chunks = ("Committed",)
-    completed = app.retry_completed_response(scope)
-    list(app.stream(scope, completed.id))
-    saved = app.history(scope)
+    completed = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), completed.id))
+    saved = app.history(ongoing_target(scope))
     assert [attempt.status for attempt in saved.attempts] == [
         "completed",
         "failed",
         "interrupted",
         "completed",
     ]
-    assert app.retry_availability(scope).retries_remaining == 2
+    assert app.retry_availability(ongoing_target(scope)).retries_remaining == 2
 
 
 def test_retry_rejects_missing_foreign_stale_and_archived_targets(
@@ -149,21 +151,21 @@ def test_retry_rejects_missing_foreign_stale_and_archived_targets(
     gateway = FakeResponse()
     app = service(factory, gateway)
     with pytest.raises(IncompleteTurnError):
-        app.retry_completed_response(scope)
-    initial = app.send(scope, SubmittedInput(content="Question"))
+        app.retry_completed_response(ongoing_target(scope))
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
     with pytest.raises(AttemptConflictError):
-        app.retry_completed_response(scope)
-    list(app.stream(scope, initial.id))
-    original_response_id = app.history(scope).messages[-1].id
+        app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), initial.id))
+    original_response_id = app.history(ongoing_target(scope)).messages[-1].id
 
     forged = scope.model_copy(update={"identity_id": uuid4()})
     with pytest.raises(ConversationNotFoundError):
-        app.retry_completed_response(forged)
+        app.retry_completed_response(ongoing_target(forged))
 
     gateway.chunks = ("First alternative",)
-    first_retry = app.retry_completed_response(scope)
-    list(app.stream(scope, first_retry.id))
-    retry = app.retry_completed_response(scope)
+    first_retry = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), first_retry.id))
+    retry = app.retry_completed_response(ongoing_target(scope))
     repository = DbConversationRepository(factory)
     repository.claim(scope, retry.id)
     repository.append(scope, retry.id, "Late alternative")
@@ -178,7 +180,8 @@ def test_retry_rejects_missing_foreign_stale_and_archived_targets(
         scope.identity_id, scope.persona_id, scope.continuity_id
     )
     with pytest.raises(ArchivedContinuityError):
-        app.retry_completed_response(scope)
+        app.retry_completed_response(ongoing_target(scope))
     assert all(
-        message.content != "Late alternative" for message in app.history(scope).messages
+        message.content != "Late alternative"
+        for message in app.history(ongoing_target(scope)).messages
     )

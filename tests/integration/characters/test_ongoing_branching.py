@@ -20,7 +20,7 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 
 
 class _ContradictoryModeFacts:
@@ -73,22 +73,22 @@ def test_branch_and_exact_future_selection_preserve_every_saved_node(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    first = app.send(scope, SubmittedInput(content="First"))
-    list(app.stream(scope, first.id))
-    branch_point_id = app.history(scope).messages[-1].id
-    second = app.send(scope, SubmittedInput(content="Old future"))
-    list(app.stream(scope, second.id))
-    old_leaf_id = app.history(scope).messages[-1].id
-    original = app.inspect_graph(scope)
+    first = app.send(ongoing_target(scope), SubmittedInput(content="First"))
+    list(app.stream(ongoing_target(scope), first.id))
+    branch_point_id = app.history(ongoing_target(scope)).messages[-1].id
+    second = app.send(ongoing_target(scope), SubmittedInput(content="Old future"))
+    list(app.stream(ongoing_target(scope), second.id))
+    old_leaf_id = app.history(ongoing_target(scope)).messages[-1].id
+    original = app.inspect_graph(ongoing_target(scope))
 
-    branched = app.branch_from_here(scope, branch_point_id, old_leaf_id)
+    branched = app.branch_from_here(ongoing_target(scope), branch_point_id, old_leaf_id)
     assert branched.selected_leaf_id == branch_point_id
     gateway.chunks = ("New answer",)
-    replacement = app.send(scope, SubmittedInput(content="New future"))
-    list(app.stream(scope, replacement.id))
-    new_leaf_id = app.history(scope).messages[-1].id
+    replacement = app.send(ongoing_target(scope), SubmittedInput(content="New future"))
+    list(app.stream(ongoing_target(scope), replacement.id))
+    new_leaf_id = app.history(ongoing_target(scope)).messages[-1].id
 
-    graph = app.inspect_graph(scope)
+    graph = app.inspect_graph(ongoing_target(scope))
     assert graph.selected_leaf_id == new_leaf_id
     assert len(graph.nodes) == 6
     branch_point = next(
@@ -101,14 +101,14 @@ def test_branch_and_exact_future_selection_preserve_every_saved_node(
         is False
     )
 
-    restored = app.select_saved_future(scope, old_leaf_id, new_leaf_id)
+    restored = app.select_saved_future(ongoing_target(scope), old_leaf_id, new_leaf_id)
     assert [node.content for node in restored.messages] == [
         "First",
         "Hello there",
         "Old future",
         "Hello there",
     ]
-    final = app.inspect_graph(scope)
+    final = app.inspect_graph(ongoing_target(scope))
     assert tuple(node.message for node in final.nodes[:4]) == tuple(
         node.message for node in original.nodes
     )
@@ -130,15 +130,15 @@ def test_graph_view_exposes_alternatives_retries_and_selected_state(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
-    original_id = app.history(scope).messages[-1].id
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
+    original_id = app.history(ongoing_target(scope)).messages[-1].id
     gateway.chunks = ("Alternative",)
-    retry = app.retry_completed_response(scope)
-    list(app.stream(scope, retry.id))
-    selected_id = app.history(scope).messages[-1].id
+    retry = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), retry.id))
+    selected_id = app.history(ongoing_target(scope)).messages[-1].id
 
-    graph = app.inspect_graph(scope)
+    graph = app.inspect_graph(ongoing_target(scope))
     responses = tuple(node for node in graph.nodes if node.message.role == "persona")
     assert all(node.alternative_ids == (original_id, selected_id) for node in responses)
     assert all(node.retry_count == 1 for node in responses)
@@ -150,9 +150,9 @@ def test_graph_view_exposes_alternatives_retries_and_selected_state(
         node for node in responses if node.message.id == original_id
     ).selected
 
-    selected = app.select_alternative(scope, original_id, selected_id)
+    selected = app.select_alternative(ongoing_target(scope), original_id, selected_id)
     assert selected.selected_leaf_id == original_id
-    assert app.history(scope).messages[-1].id == original_id
+    assert app.history(ongoing_target(scope)).messages[-1].id == original_id
 
 
 def test_actions_reject_invalid_targets_stale_state_and_active_attempts(
@@ -168,34 +168,38 @@ def test_actions_reject_invalid_targets_stale_state_and_active_attempts(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
-    original_id = app.history(scope).messages[-1].id
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
+    original_id = app.history(ongoing_target(scope)).messages[-1].id
     gateway.chunks = ("Alternative",)
-    retry = app.retry_completed_response(scope)
-    list(app.stream(scope, retry.id))
-    alternative_id = app.history(scope).messages[-1].id
-    next_turn = app.send(scope, SubmittedInput(content="Continue"))
+    retry = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), retry.id))
+    alternative_id = app.history(ongoing_target(scope)).messages[-1].id
+    next_turn = app.send(ongoing_target(scope), SubmittedInput(content="Continue"))
 
     with pytest.raises(AttemptConflictError):
-        app.select_alternative(scope, original_id, next_turn.user_message_id)
+        app.select_alternative(
+            ongoing_target(scope), original_id, next_turn.user_message_id
+        )
     with pytest.raises(AttemptConflictError):
-        app.branch_from_here(scope, alternative_id, next_turn.user_message_id)
-    list(app.stream(scope, next_turn.id))
-    leaf_id = app.history(scope).messages[-1].id
+        app.branch_from_here(
+            ongoing_target(scope), alternative_id, next_turn.user_message_id
+        )
+    list(app.stream(ongoing_target(scope), next_turn.id))
+    leaf_id = app.history(ongoing_target(scope)).messages[-1].id
 
     with pytest.raises(StaleSelectionError):
-        app.branch_from_here(scope, alternative_id, uuid4())
+        app.branch_from_here(ongoing_target(scope), alternative_id, uuid4())
     with pytest.raises(InvalidParentError):
-        app.select_saved_future(scope, alternative_id, leaf_id)
+        app.select_saved_future(ongoing_target(scope), alternative_id, leaf_id)
     with pytest.raises(InvalidParentError):
-        app.select_saved_future(scope, uuid4(), leaf_id)
+        app.select_saved_future(ongoing_target(scope), uuid4(), leaf_id)
     with pytest.raises(InvalidParentError):
-        app.branch_from_here(scope, uuid4(), leaf_id)
+        app.branch_from_here(ongoing_target(scope), uuid4(), leaf_id)
 
     forged = scope.model_copy(update={"identity_id": uuid4()})
     with pytest.raises(ConversationNotFoundError):
-        app.branch_from_here(forged, alternative_id, leaf_id)
+        app.branch_from_here(ongoing_target(forged), alternative_id, leaf_id)
 
 
 def test_branch_from_any_persona_node_selects_its_exact_ancestry(
@@ -211,26 +215,30 @@ def test_branch_from_any_persona_node_selects_its_exact_ancestry(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
-    original_id = app.history(scope).messages[-1].id
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
+    original_id = app.history(ongoing_target(scope)).messages[-1].id
     gateway.chunks = ("Alternative",)
-    retry = app.retry_completed_response(scope)
-    list(app.stream(scope, retry.id))
-    alternative_id = app.history(scope).messages[-1].id
-    continuation = app.send(scope, SubmittedInput(content="Existing future"))
-    list(app.stream(scope, continuation.id))
-    saved_future_id = app.history(scope).messages[-1].id
+    retry = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), retry.id))
+    alternative_id = app.history(ongoing_target(scope)).messages[-1].id
+    continuation = app.send(
+        ongoing_target(scope), SubmittedInput(content="Existing future")
+    )
+    list(app.stream(ongoing_target(scope), continuation.id))
+    saved_future_id = app.history(ongoing_target(scope)).messages[-1].id
 
-    app.select_alternative(scope, original_id, saved_future_id)
-    branched = app.branch_from_here(scope, alternative_id, original_id)
+    app.select_alternative(ongoing_target(scope), original_id, saved_future_id)
+    branched = app.branch_from_here(ongoing_target(scope), alternative_id, original_id)
 
     assert branched.selected_leaf_id == alternative_id
     assert [message.content for message in branched.messages] == [
         "Question",
         "Alternative",
     ]
-    assert {node.message.id for node in app.inspect_graph(scope).nodes} >= {
+    assert {
+        node.message.id for node in app.inspect_graph(ongoing_target(scope)).nodes
+    } >= {
         original_id,
         alternative_id,
         saved_future_id,
@@ -250,23 +258,23 @@ def test_archived_conversation_rejects_selection_and_branching(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     app = service(characters_session_factory, gateway)
-    initial = app.send(scope, SubmittedInput(content="Question"))
-    list(app.stream(scope, initial.id))
-    original_id = app.history(scope).messages[-1].id
+    initial = app.send(ongoing_target(scope), SubmittedInput(content="Question"))
+    list(app.stream(ongoing_target(scope), initial.id))
+    original_id = app.history(ongoing_target(scope)).messages[-1].id
     gateway.chunks = ("Alternative",)
-    retry = app.retry_completed_response(scope)
-    list(app.stream(scope, retry.id))
-    selected_id = app.history(scope).messages[-1].id
+    retry = app.retry_completed_response(ongoing_target(scope))
+    list(app.stream(ongoing_target(scope), retry.id))
+    selected_id = app.history(ongoing_target(scope)).messages[-1].id
     DbContinuityRepository(characters_session_factory).archive(
         scope.identity_id, scope.persona_id, scope.continuity_id
     )
 
-    graph = app.inspect_graph(scope)
+    graph = app.inspect_graph(ongoing_target(scope))
     assert not any(node.branchable for node in graph.nodes)
     with pytest.raises(ArchivedContinuityError):
-        app.select_alternative(scope, original_id, selected_id)
+        app.select_alternative(ongoing_target(scope), original_id, selected_id)
     with pytest.raises(ArchivedContinuityError):
-        app.branch_from_here(scope, selected_id, selected_id)
+        app.branch_from_here(ongoing_target(scope), selected_id, selected_id)
 
 
 def test_contradictory_mode_facts_fail_before_branch_mutation(
@@ -282,15 +290,15 @@ def test_contradictory_mode_facts_fail_before_branch_mutation(
     scope = start(characters_session_factory)
     gateway = FakeResponse()
     setup = service(characters_session_factory, gateway)
-    first = setup.send(scope, SubmittedInput(content="First"))
-    list(setup.stream(scope, first.id))
+    first = setup.send(ongoing_target(scope), SubmittedInput(content="First"))
+    list(setup.stream(ongoing_target(scope), first.id))
     gateway.chunks = ("Alternative",)
-    retry = setup.retry_completed_response(scope)
-    list(setup.stream(scope, retry.id))
-    branch_point_id = setup.history(scope).messages[-1].id
-    second = setup.send(scope, SubmittedInput(content="Second"))
-    list(setup.stream(scope, second.id))
-    selected_leaf_id = setup.history(scope).messages[-1].id
+    retry = setup.retry_completed_response(ongoing_target(scope))
+    list(setup.stream(ongoing_target(scope), retry.id))
+    branch_point_id = setup.history(ongoing_target(scope)).messages[-1].id
+    second = setup.send(ongoing_target(scope), SubmittedInput(content="Second"))
+    list(setup.stream(ongoing_target(scope), second.id))
+    selected_leaf_id = setup.history(ongoing_target(scope)).messages[-1].id
 
     facts = _ContradictoryModeFacts()
     app = service(
@@ -298,15 +306,15 @@ def test_contradictory_mode_facts_fail_before_branch_mutation(
         gateway,
         branch_mode_facts=facts,
     )
-    original_graph = app.inspect_graph(scope)
-    original_history = app.history(scope)
+    original_graph = app.inspect_graph(ongoing_target(scope))
+    original_history = app.history(ongoing_target(scope))
 
     with pytest.raises(ForkRequiredError) as raised:
-        app.branch_from_here(scope, branch_point_id, selected_leaf_id)
+        app.branch_from_here(ongoing_target(scope), branch_point_id, selected_leaf_id)
     assert raised.value.decision.scope == scope
     assert raised.value.decision.source_message_id == branch_point_id
     assert raised.value.decision.reason == "missing_or_contradictory_mode_facts"
 
     assert facts.sources[-1:] == [branch_point_id]
-    assert app.history(scope) == original_history
-    assert app.inspect_graph(scope) == original_graph
+    assert app.history(ongoing_target(scope)) == original_history
+    assert app.inspect_graph(ongoing_target(scope)) == original_graph

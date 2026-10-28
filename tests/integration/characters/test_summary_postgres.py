@@ -15,7 +15,7 @@ from chat_buddy.characters.domain import (
     SummaryRevision,
 )
 from chat_buddy.characters.infrastructure.db.repositories import DbSummaryRepository
-from tests.characters_support import FakeResponse, start
+from tests.characters_support import FakeResponse, ongoing_target, start
 from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
@@ -56,13 +56,13 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
     scope = start(factory)
     app = _service(factory, FakeResponse(), FakeSummary())
     for content in ("First", "Second", "Third"):
-        attempt = app.send(scope, SubmittedInput(content=content))
-        list(app.stream(scope, attempt.id))
-    pending = app.send(scope, SubmittedInput(content="Fourth"))
+        attempt = app.send(ongoing_target(scope), SubmittedInput(content=content))
+        list(app.stream(ongoing_target(scope), attempt.id))
+    pending = app.send(ongoing_target(scope), SubmittedInput(content="Fourth"))
     repository = DbSummaryRepository(factory)
     active = repository.get_current(scope)
     assert active is not None and active.revision == 2
-    checkpoint = app.history(scope).messages[5]
+    checkpoint = app.history(ongoing_target(scope)).messages[5]
 
     def replace(label: str) -> SummaryRevision:
         """Attempt one successor from the same observed active revision.
@@ -108,7 +108,7 @@ def test_summary_migration_and_concurrent_replacement_preserve_chat(
         "summary_revisions", schema="characters"
     )
     assert all(item["referred_schema"] == "characters" for item in foreign_keys)
-    list(app.stream(scope, pending.id))
+    list(app.stream(ongoing_target(scope), pending.id))
     assert _chat_snapshot(engine) == before
 
     command.downgrade(configuration, PRIOR_HEAD)

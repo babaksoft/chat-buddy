@@ -19,7 +19,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
     DbPersonaRepository,
 )
-from tests.characters_support import FakeResponse, service, start
+from tests.characters_support import FakeResponse, ongoing_target, service, start
 
 
 class RecordingEvolutionStrategy:
@@ -86,11 +86,13 @@ def test_strategy_substitution_cannot_mutate_production_ongoing_state(
 
     strategy = RecordingEvolutionStrategy()
     app = service(factory, FakeResponse())
-    attempt = app.send(scope, SubmittedInput(content="I trust your judgment."))
-    list(app.stream(scope, attempt.id))
+    attempt = app.send(
+        ongoing_target(scope), SubmittedInput(content="I trust your judgment.")
+    )
+    list(app.stream(ongoing_target(scope), attempt.id))
     assert strategy.calls == 0
 
-    history = app.history(scope)
+    history = app.history(ongoing_target(scope))
     proposal = EvolutionEvaluator(strategy).evaluate(
         EvolutionInputs(
             scope=scope,

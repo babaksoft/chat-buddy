@@ -25,7 +25,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.ui import ongoing
-from tests.characters_support import FakeResponse, registry
+from tests.characters_support import FakeResponse, ongoing_target, registry
 
 
 def _render() -> None:
@@ -280,7 +280,7 @@ def test_send_stream_and_supported_configuration(
     app.chat_input[0].set_value("Hi").run()
     assert not app.exception
     service.send.assert_called_once_with(
-        service.resume.return_value.scope, SubmittedInput(content="Hi")
+        ongoing_target(service.resume.return_value.scope), SubmittedInput(content="Hi")
     )
     service.stream.assert_called_once()
 
@@ -321,7 +321,9 @@ def test_incomplete_output_and_recovery(
     assert button.disabled == (status in {"pending", "streaming"})
     if not button.disabled:
         button.click().run()
-        service.continue_incomplete_turn.assert_called_once_with(attempt.scope)
+        service.continue_incomplete_turn.assert_called_once_with(
+            ongoing_target(attempt.scope)
+        )
         service.send.assert_not_called()
 
 
@@ -506,7 +508,7 @@ def test_retry_and_alternative_selection_use_exact_observed_state(
         button for button in app.button if button.label == "Select alternative"
     ).click().run()
     service.select_saved_future.assert_called_once_with(
-        alternative.scope,
+        ongoing_target(alternative.scope),
         alternative.id,
         selected_leaf.id,
     )
@@ -516,9 +518,12 @@ def test_retry_and_alternative_selection_use_exact_observed_state(
     next(
         button for button in app.button if button.label == "Retry response"
     ).click().run()
-    service.retry_completed_response.assert_called_once_with(selected_leaf.scope)
+    service.retry_completed_response.assert_called_once_with(
+        ongoing_target(selected_leaf.scope)
+    )
     service.stream.assert_called_once_with(
-        selected_leaf.scope, service.retry_completed_response.return_value.id
+        ongoing_target(selected_leaf.scope),
+        service.retry_completed_response.return_value.id,
     )
 
 
@@ -582,7 +587,7 @@ def test_saved_divergent_future_remains_exactly_selectable(
     )
     select_buttons[-1].click().run()
     service.select_saved_future.assert_called_once_with(
-        future.scope,
+        ongoing_target(future.scope),
         future.id,
         selected_leaf.id,
     )
@@ -608,7 +613,7 @@ def test_branch_requires_confirmation_and_uses_exact_observed_state(
         button for button in app.button if button.label == "Branch from here"
     ).click().run()
     service.branch_from_here.assert_called_once_with(
-        branch_point.scope,
+        ongoing_target(branch_point.scope),
         branch_point.id,
         selected_leaf.id,
     )
@@ -647,7 +652,7 @@ def test_off_path_response_can_be_selected_as_branch_point(
     ).click().run()
 
     service.branch_from_here.assert_called_once_with(
-        alternative.scope,
+        ongoing_target(alternative.scope),
         alternative.id,
         selected_leaf.id,
     )
