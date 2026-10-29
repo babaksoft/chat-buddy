@@ -1,9 +1,12 @@
 """Replaceable, non-persistent evolution strategy providers."""
 
+from uuid import uuid4
+
 from chat_buddy.characters.domain import (
     EvolutionEvidenceReference,
-    EvolutionInputs,
     EvolutionProposal,
+    EvolutionProvenance,
+    EvolutionSnapshot,
     EvolutionStrategy,
     StrategyIdentity,
 )
@@ -13,6 +16,9 @@ class NoChangeEvolutionStrategy:
     """Baseline strategy that explicitly proposes no evolution."""
 
     _STRATEGY_ID = StrategyIdentity(name="baseline.no_change", version="1.0.0")
+    _SELECTOR_ID = StrategyIdentity(name="baseline.exact_evidence", version="1.0.0")
+    _POLICY_ID = StrategyIdentity(name="baseline.strict", version="1.0.0")
+    _SCHEMA_ID = StrategyIdentity(name="evolution.typed_commands", version="1.0.0")
 
     @property
     def strategy_id(self) -> StrategyIdentity:
@@ -24,18 +30,30 @@ class NoChangeEvolutionStrategy:
 
         return self._STRATEGY_ID
 
-    def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:
+    def propose(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
         """Return a versioned no-change proposal for the supplied scope.
 
         Args:
-            inputs:
+            snapshot:
                 Validated snapshots and eligible conversation evidence.
 
         Returns:
             Empty detached proposal with baseline provenance.
         """
 
-        return EvolutionProposal(strategy=self.strategy_id, scope=inputs.scope)
+        return EvolutionProposal(
+            id=uuid4(),
+            scope=snapshot.scope,
+            expected_relationship_revision=snapshot.relationship.revision,
+            expected_adaptation_revision=snapshot.persona_adaptations.revision,
+            source=snapshot.source,
+            provenance=EvolutionProvenance(
+                selector=self._SELECTOR_ID,
+                strategy=self.strategy_id,
+                policy=self._POLICY_ID,
+                schema_identity=self._SCHEMA_ID,
+            ),
+        )
 
 
 class EvolutionEvaluator:
@@ -51,14 +69,14 @@ class EvolutionEvaluator:
 
         self._strategy = strategy
 
-    def evaluate(self, inputs: EvolutionInputs) -> EvolutionProposal:
+    def evaluate(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
         """Evaluate inputs and reject foreign provenance or evidence references.
 
         This validates only the strategy seam. Future relationship transitions and
         durable state changes still require established domain validation.
 
         Args:
-            inputs:
+            snapshot:
                 Immutable scoped snapshots and eligible evidence.
 
         Returns:
@@ -69,29 +87,24 @@ class EvolutionEvaluator:
                 If the strategy mislabels its result or cites ineligible evidence.
         """
 
-        proposal = self._strategy.propose(inputs)
-        if proposal.strategy != self._strategy.strategy_id:
+        proposal = self._strategy.propose(snapshot)
+        if proposal.provenance.strategy != self._strategy.strategy_id:
             raise ValueError("Evolution proposal strategy provenance is invalid.")
-        if proposal.scope != inputs.scope:
+        if proposal.scope != snapshot.scope:
             raise ValueError("Evolution proposal scope does not match its inputs.")
+        if proposal.source != snapshot.source:
+            raise ValueError("Evolution proposal source does not match its inputs.")
+        if (
+            proposal.expected_relationship_revision != snapshot.relationship.revision
+            or proposal.expected_adaptation_revision
+            != snapshot.persona_adaptations.revision
+        ):
+            raise ValueError("Evolution proposal projection revision is stale.")
 
-        eligible = {
-            EvolutionEvidenceReference(
-                user_message_id=turn.user.id,
-                persona_message_id=turn.persona.id,
-            )
-            for turn in inputs.evidence
+        eligible: set[EvolutionEvidenceReference] = {
+            evidence.reference for evidence in snapshot.evidence
         }
-        cited = {
-            source
-            for change in proposal.persona_adaptations
-            for source in change.sources
-        }
-        cited.update(
-            source
-            for change in proposal.relationship_changes
-            for source in change.sources
-        )
+        cited = {source for command in proposal.commands for source in command.sources}
         if not cited.issubset(eligible):
             raise ValueError("Evolution proposal cites ineligible evidence.")
 

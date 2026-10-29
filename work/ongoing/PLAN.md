@@ -186,6 +186,8 @@ accepted definition.
 
 ### Slice 2 — Add executable evolution values
 
+Status: Complete
+
 Replace the current string-oriented proposal scaffold with frozen Pydantic values
 for:
 

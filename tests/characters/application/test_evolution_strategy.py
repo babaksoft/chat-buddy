@@ -1,6 +1,5 @@
 """Versioned, immutable, and scoped evolution strategy contract tests."""
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -11,58 +10,72 @@ from chat_buddy.characters.application import (
     NoChangeEvolutionStrategy,
 )
 from chat_buddy.characters.domain import (
-    CompletedTurn,
+    AdaptationFacet,
     ContinuityMode,
-    ConversationScope,
+    EvolutionEvidence,
+    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
-    EvolutionInputs,
     EvolutionProposal,
+    EvolutionProvenance,
+    EvolutionScope,
+    EvolutionSnapshot,
     Identity,
     IdentityDetails,
-    Message,
     Persona,
-    PersonaAdaptationProposal,
+    PersonaAdaptationProjection,
     PersonaCore,
-    RelationshipChangeProposal,
+    RelationshipAffection,
+    RelationshipDynamic,
     RelationshipIntent,
-    StartingOrigins,
-    StartingRelationship,
+    RelationshipProjection,
+    RelationshipRomanticStatus,
+    RelationshipSocialStatus,
+    RelationshipTrust,
+    SetPersonaAdaptationCommand,
+    SetTrustCommand,
     StrategyIdentity,
 )
 
 
-def _inputs() -> EvolutionInputs:
-    """Build one complete immutable evolution input.
+def _provenance(strategy: StrategyIdentity) -> EvolutionProvenance:
+    """Build complete versioned test provenance.
+
+    Args:
+        strategy:
+            Strategy identity to record.
 
     Returns:
-        Scoped profile snapshots and one eligible complete turn.
+        Complete local test provenance.
     """
 
-    scope = ConversationScope(
-        identity_id=uuid4(),
-        persona_id=uuid4(),
-        continuity_id=uuid4(),
-        conversation_id=uuid4(),
-    )
-    now = datetime.now(UTC)
-    user_message = Message(
-        id=uuid4(),
-        scope=scope,
-        sequence=1,
-        role="user",
-        content="I trust you.",
-        created_at=now,
-    )
-    persona_message = Message(
-        id=uuid4(),
-        scope=scope,
-        sequence=2,
-        role="persona",
-        content="I appreciate that.",
-        created_at=now,
+    return EvolutionProvenance(
+        selector=StrategyIdentity(name="test.selector", version="1.0.0"),
+        strategy=strategy,
+        policy=StrategyIdentity(name="test.policy", version="1.0.0"),
+        schema_identity=StrategyIdentity(name="test.schema", version="1.0.0"),
     )
 
-    return EvolutionInputs(
+
+def _snapshot() -> EvolutionSnapshot:
+    """Build one complete immutable Ongoing snapshot.
+
+    Returns:
+        Scoped state and one eligible exact evidence turn.
+    """
+
+    scope = EvolutionScope(
+        identity_id=uuid4(), persona_id=uuid4(), continuity_id=uuid4()
+    )
+    reference = EvolutionEvidenceReference(
+        scope=scope,
+        kind=EvolutionEvidenceKind.ONGOING_TURN,
+        conversation_id=uuid4(),
+        user_message_id=uuid4(),
+        user_sequence=1,
+        persona_message_id=uuid4(),
+        persona_sequence=2,
+    )
+    return EvolutionSnapshot(
         scope=scope,
         mode=ContinuityMode.ONGOING,
         identity=Identity(
@@ -76,24 +89,26 @@ def _inputs() -> EvolutionInputs:
             core=PersonaCore(name="Guide", definition="A thoughtful guide"),
             is_frozen=True,
         ),
-        starting_relationship=StartingRelationship(
-            intent=RelationshipIntent.PLATONIC,
-            social="stranger",
-            romantic="none",
-            dynamic="neutral",
-            trust="unknown",
-            affection="neutral",
-            boundaries=(),
-            origins=StartingOrigins(
-                social="default",
-                romantic="default",
-                dynamic="default",
-                trust="default",
-                affection="default",
-                boundaries="default",
+        relationship_intent=RelationshipIntent.PLATONIC,
+        boundaries=(),
+        relationship=RelationshipProjection(
+            scope=scope,
+            revision=0,
+            social=RelationshipSocialStatus.STRANGER,
+            romantic=RelationshipRomanticStatus.NONE,
+            dynamic=RelationshipDynamic.NEUTRAL,
+            trust=RelationshipTrust.UNKNOWN,
+            affection=RelationshipAffection.NEUTRAL,
+        ),
+        persona_adaptations=PersonaAdaptationProjection(scope=scope, revision=0),
+        evidence=(
+            EvolutionEvidence(
+                reference=reference,
+                user_content="I trust you.",
+                persona_content="I appreciate that.",
             ),
         ),
-        evidence=(CompletedTurn(user=user_message, persona=persona_message),),
+        source=reference,
     )
 
 
@@ -106,124 +121,122 @@ class TestEvolutionStrategy:
         """Initialize stable test provenance and input capture."""
 
         self.strategy_id = StrategyIdentity(name="test.relationship", version="2.1.0")
-        self.seen: EvolutionInputs | None = None
+        self.seen: EvolutionSnapshot | None = None
 
-    def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:
-        """Propose two traceable changes using only domain values.
+    def propose(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
+        """Propose two traceable typed changes.
 
         Args:
-            inputs:
-                Immutable snapshots and evidence.
+            snapshot:
+                Immutable state and evidence.
 
         Returns:
-            Detached structured proposal.
+            Detached bounded proposal.
         """
 
-        self.seen = inputs
-        turn = inputs.evidence[0]
-        source = EvolutionEvidenceReference(
-            user_message_id=turn.user.id,
-            persona_message_id=turn.persona.id,
-        )
-
+        self.seen = snapshot
         return EvolutionProposal(
-            strategy=self.strategy_id,
-            scope=inputs.scope,
-            persona_adaptations=(
-                PersonaAdaptationProposal(
-                    facet="openness",
-                    proposed_value="more candid",
-                    rationale="The user explicitly offered trust.",
-                    sources=(source,),
+            id=uuid4(),
+            scope=snapshot.scope,
+            expected_relationship_revision=snapshot.relationship.revision,
+            expected_adaptation_revision=snapshot.persona_adaptations.revision,
+            source=snapshot.source,
+            provenance=_provenance(self.strategy_id),
+            commands=(
+                SetPersonaAdaptationCommand(
+                    facet=AdaptationFacet.OPENNESS,
+                    value="more candid",
+                    rationale="The identity explicitly offered trust.",
+                    sources=(snapshot.source,),
                 ),
-            ),
-            relationship_changes=(
-                RelationshipChangeProposal(
-                    dimension="trust",
-                    proposed_value="trusting",
+                SetTrustCommand(
+                    expected=RelationshipTrust.UNKNOWN,
+                    value=RelationshipTrust.CAUTIOUS,
                     rationale="The exchange supplies direct trust evidence.",
-                    sources=(source,),
+                    sources=(snapshot.source,),
                 ),
             ),
         )
 
 
-def test_strategy_identity_inputs_and_outputs_are_frozen_and_versioned() -> None:
-    """Require immutable snapshots and semantic strategy provenance."""
+def test_strategy_inputs_and_outputs_are_frozen_typed_and_versioned() -> None:
+    """Require immutable snapshots, typed commands, and semantic provenance."""
 
-    inputs = _inputs()
-    result = EvolutionEvaluator(TestEvolutionStrategy()).evaluate(inputs)
-    assert result.strategy == StrategyIdentity(
+    snapshot = _snapshot()
+    result = EvolutionEvaluator(TestEvolutionStrategy()).evaluate(snapshot)
+    assert result.provenance.strategy == StrategyIdentity(
         name="test.relationship", version="2.1.0"
     )
-    assert result.scope == inputs.scope
-    assert result.relationship_changes[0].sources[0].user_message_id == (
-        inputs.evidence[0].user.id
-    )
+    assert result.scope == snapshot.scope
+    assert result.commands[1].sources == (snapshot.source,)
     with pytest.raises(ValidationError):
-        inputs.mode = ContinuityMode.TIMELINE
+        snapshot.boundaries = ()
     with pytest.raises(ValidationError):
-        result.relationship_changes = ()
+        result.commands = ()
     with pytest.raises(ValidationError):
         StrategyIdentity(name="Display Name", version="latest")
 
 
-def test_inputs_reject_foreign_or_non_chronological_evidence() -> None:
-    """Keep all strategy evidence within one ordered conversation scope."""
-
-    inputs = _inputs()
-    foreign_scope = inputs.scope.model_copy(update={"continuity_id": uuid4()})
-    foreign_user = inputs.evidence[0].user.model_copy(update={"scope": foreign_scope})
-    foreign_persona = inputs.evidence[0].persona.model_copy(
-        update={"scope": foreign_scope}
-    )
-    values = inputs.model_dump()
-    values["evidence"] = (CompletedTurn(user=foreign_user, persona=foreign_persona),)
-    with pytest.raises(ValidationError, match="supplied scope"):
-        EvolutionInputs.model_validate(values)
-
-
 def test_baseline_is_stable_and_explicitly_proposes_no_changes() -> None:
-    """Return a versioned empty result without consulting external components."""
+    """Return a versioned empty result without external components."""
 
-    inputs = _inputs()
+    snapshot = _snapshot()
     strategy = NoChangeEvolutionStrategy()
-    result = EvolutionEvaluator(strategy).evaluate(inputs)
+    result = EvolutionEvaluator(strategy).evaluate(snapshot)
     assert strategy.strategy_id == StrategyIdentity(
         name="baseline.no_change", version="1.0.0"
     )
-    assert result.persona_adaptations == ()
-    assert result.relationship_changes == ()
+    assert result.commands == ()
+    assert result.source == snapshot.source
 
 
 def test_evaluator_rejects_untraceable_strategy_output() -> None:
-    """Reject a proposal that cites a turn outside its eligible input."""
+    """Reject a proposal that cites a checkpoint outside its snapshot."""
 
     class ForeignEvidenceStrategy(TestEvolutionStrategy):
-        """Return one otherwise valid proposal with fabricated sources."""
+        """Return one otherwise valid proposal with fabricated evidence."""
 
-        def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:
-            """Replace the valid proposal source with foreign identifiers.
+        def propose(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
+            """Replace a command source with an ineligible same-owner reference.
 
             Args:
-                inputs:
-                    Immutable Characters inputs.
+                snapshot:
+                    Immutable Characters snapshot.
 
             Returns:
                 Proposal containing an ineligible source.
             """
 
-            result = super().propose(inputs)
-            change = result.relationship_changes[0].model_copy(
-                update={
-                    "sources": (
-                        EvolutionEvidenceReference(
-                            user_message_id=uuid4(), persona_message_id=uuid4()
-                        ),
-                    )
-                }
+            result = super().propose(snapshot)
+            source = snapshot.source.model_copy(
+                update={"user_message_id": uuid4(), "persona_message_id": uuid4()}
             )
-            return result.model_copy(update={"relationship_changes": (change,)})
+            command = result.commands[1].model_copy(update={"sources": (source,)})
+            return result.model_copy(update={"commands": (result.commands[0], command)})
 
     with pytest.raises(ValueError, match="ineligible evidence"):
-        EvolutionEvaluator(ForeignEvidenceStrategy()).evaluate(_inputs())
+        EvolutionEvaluator(ForeignEvidenceStrategy()).evaluate(_snapshot())
+
+
+def test_evaluator_rejects_stale_projection_revision() -> None:
+    """Reject output based on a different projection revision."""
+
+    class StaleStrategy(TestEvolutionStrategy):
+        """Return a proposal carrying stale optimistic state."""
+
+        def propose(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
+            """Alter the expected relationship revision.
+
+            Args:
+                snapshot:
+                    Immutable Characters snapshot.
+
+            Returns:
+                Proposal containing a stale revision.
+            """
+
+            result = super().propose(snapshot)
+            return result.model_copy(update={"expected_relationship_revision": 99})
+
+    with pytest.raises(ValueError, match="revision is stale"):
+        EvolutionEvaluator(StaleStrategy()).evaluate(_snapshot())

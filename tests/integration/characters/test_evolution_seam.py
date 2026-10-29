@@ -1,16 +1,28 @@
 """Evolution substitution and deliberate non-persistence integration coverage."""
 
+from uuid import uuid4
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
     EvolutionEvaluator,
 )
 from chat_buddy.characters.domain import (
-    CompletedTurn,
+    EvolutionEvidence,
+    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
-    EvolutionInputs,
     EvolutionProposal,
-    RelationshipChangeProposal,
+    EvolutionProvenance,
+    EvolutionScope,
+    EvolutionSnapshot,
+    PersonaAdaptationProjection,
+    RelationshipAffection,
+    RelationshipDynamic,
+    RelationshipProjection,
+    RelationshipRomanticStatus,
+    RelationshipSocialStatus,
+    RelationshipTrust,
+    SetTrustCommand,
     StrategyIdentity,
     SubmittedInput,
 )
@@ -31,11 +43,11 @@ class RecordingEvolutionStrategy:
         self.strategy_id = StrategyIdentity(name="test.integration", version="1.0.0")
         self.calls = 0
 
-    def propose(self, inputs: EvolutionInputs) -> EvolutionProposal:
+    def propose(self, snapshot: EvolutionSnapshot) -> EvolutionProposal:
         """Return one traceable detached relationship proposal.
 
         Args:
-            inputs:
+            snapshot:
                 Real Characters snapshots and committed evidence.
 
         Returns:
@@ -43,21 +55,24 @@ class RecordingEvolutionStrategy:
         """
 
         self.calls += 1
-        turn = inputs.evidence[-1]
         return EvolutionProposal(
-            strategy=self.strategy_id,
-            scope=inputs.scope,
-            relationship_changes=(
-                RelationshipChangeProposal(
-                    dimension="trust",
-                    proposed_value="trusting",
+            id=uuid4(),
+            scope=snapshot.scope,
+            expected_relationship_revision=snapshot.relationship.revision,
+            expected_adaptation_revision=snapshot.persona_adaptations.revision,
+            source=snapshot.source,
+            provenance=EvolutionProvenance(
+                selector=StrategyIdentity(name="test.selector", version="1.0.0"),
+                strategy=self.strategy_id,
+                policy=StrategyIdentity(name="test.policy", version="1.0.0"),
+                schema_identity=StrategyIdentity(name="test.schema", version="1.0.0"),
+            ),
+            commands=(
+                SetTrustCommand(
+                    expected=snapshot.relationship.trust,
+                    value=RelationshipTrust.TRUSTING,
                     rationale="The completed exchange supports a future review.",
-                    sources=(
-                        EvolutionEvidenceReference(
-                            user_message_id=turn.user.id,
-                            persona_message_id=turn.persona.id,
-                        ),
-                    ),
+                    sources=(snapshot.source,),
                 ),
             ),
         )
@@ -93,20 +108,59 @@ def test_strategy_substitution_cannot_mutate_production_ongoing_state(
     assert strategy.calls == 0
 
     history = app.history(ongoing_target(scope))
+    evolution_scope = EvolutionScope(
+        identity_id=scope.identity_id,
+        persona_id=scope.persona_id,
+        continuity_id=scope.continuity_id,
+    )
+    source = EvolutionEvidenceReference(
+        scope=evolution_scope,
+        kind=EvolutionEvidenceKind.ONGOING_TURN,
+        conversation_id=scope.conversation_id,
+        user_message_id=history.messages[0].id,
+        user_sequence=history.messages[0].sequence,
+        persona_message_id=history.messages[1].id,
+        persona_sequence=history.messages[1].sequence,
+    )
     proposal = EvolutionEvaluator(strategy).evaluate(
-        EvolutionInputs(
-            scope=scope,
+        EvolutionSnapshot(
+            scope=evolution_scope,
             mode=original_continuity.mode,
             identity=original_identity,
             persona=original_persona,
-            starting_relationship=original_continuity.relationship,
-            evidence=(
-                CompletedTurn(user=history.messages[0], persona=history.messages[1]),
+            relationship_intent=original_continuity.relationship.intent,
+            boundaries=original_continuity.relationship.boundaries,
+            relationship=RelationshipProjection(
+                scope=evolution_scope,
+                revision=0,
+                social=RelationshipSocialStatus(
+                    original_continuity.relationship.social
+                ),
+                romantic=RelationshipRomanticStatus(
+                    original_continuity.relationship.romantic
+                ),
+                dynamic=RelationshipDynamic(original_continuity.relationship.dynamic),
+                trust=RelationshipTrust(original_continuity.relationship.trust),
+                affection=RelationshipAffection(
+                    original_continuity.relationship.affection
+                ),
             ),
+            persona_adaptations=PersonaAdaptationProjection(
+                scope=evolution_scope, revision=0
+            ),
+            evidence=(
+                EvolutionEvidence(
+                    reference=source,
+                    user_content=history.messages[0].content,
+                    persona_content=history.messages[1].content,
+                ),
+            ),
+            source=source,
         )
     )
     assert strategy.calls == 1
-    assert proposal.relationship_changes[0].proposed_value == "trusting"
+    assert isinstance(proposal.commands[0], SetTrustCommand)
+    assert proposal.commands[0].value == "trusting"
     assert identities.get(scope.identity_id) == original_identity
     assert personas.get(scope.persona_id) == original_persona
     assert (
