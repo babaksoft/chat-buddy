@@ -23,6 +23,9 @@ from chat_buddy.characters.application.evolution import (
     NoOpEvolutionExperimentReporter,
     StrictBaselineEvolutionThresholdPolicy,
 )
+from chat_buddy.characters.application.evolution_snapshot import (
+    BaselineEvolutionSnapshotSelector,
+)
 from chat_buddy.characters.application.identity_service import (
     IdentityService,
 )
@@ -57,6 +60,7 @@ from chat_buddy.characters.application.storyline_fork_service import (
 from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
+    "BaselineEvolutionSnapshotSelector",
     "BaselineMemoryContextSelector",
     "BaselineResponseMemorySelector",
     "ContinuityService",

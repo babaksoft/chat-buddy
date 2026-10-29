@@ -302,6 +302,8 @@ idempotency and projection consistency.
 
 ### Slice 6 — Build evolution snapshots
 
+Status: Complete
+
 Create a dedicated-budget selector that assembles:
 
 1. Identity and persona core.

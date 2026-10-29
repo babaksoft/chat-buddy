@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 6 — build immutable, budgeted evolution
-snapshots.
+Next delivery focus: Stage 7, Slice 7 — validate typed proposals and baseline
+transitions.
 
 Deferred engineering:
 

@@ -245,6 +245,80 @@ class EvolutionEvidence(BaseModel):
     )
 
 
+class EvolutionMemory(BaseModel):
+    """One eligible continuity memory with exact turn provenance.
+
+    Attributes:
+        id:
+            Stable logical-memory identifier.
+        subject:
+            Concise normalized memory subject.
+        content:
+            Current eligible memory interpretation.
+        sources:
+            Selected exact turns supporting the interpretation.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(description="Stable logical-memory identifier.")
+    subject: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Normalized memory subject.",
+    )
+    content: str = Field(
+        min_length=1,
+        max_length=4096,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Current eligible memory interpretation.",
+    )
+    sources: tuple[EvolutionEvidenceReference, ...] = Field(
+        min_length=1,
+        description="Selected exact turns supporting the memory.",
+    )
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> Self:
+        """Require unique, chronological, single-continuity provenance.
+
+        Returns:
+            Validated memory context.
+
+        Raises:
+            ValueError:
+                If provenance is duplicated, reordered, or crosses ownership.
+        """
+
+        if len(set(self.sources)) != len(self.sources):
+            raise ValueError("Evolution memory sources must be unique.")
+        if len({source.scope for source in self.sources}) != 1:
+            raise ValueError("Evolution memory sources must share one owner.")
+        positions = tuple(_evidence_position(source) for source in self.sources)
+        if positions != tuple(sorted(positions)):
+            raise ValueError("Evolution memory sources must be chronological.")
+        return self
+
+
+class EvolutionSnapshotBudget(BaseModel):
+    """Dedicated capacity for one evolution strategy input.
+
+    Attributes:
+        input_tokens:
+            Maximum complete estimated strategy input.
+        fixed_overhead_tokens:
+            Reserved strategy framing and structured-output overhead.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    input_tokens: int = Field(gt=0, description="Maximum strategy input tokens.")
+    fixed_overhead_tokens: int = Field(
+        default=0, ge=0, description="Reserved non-snapshot framing tokens."
+    )
+
+
 class RelationshipProjection(BaseModel):
     """Rebuildable current qualitative relationship view.
 
@@ -376,10 +450,18 @@ class EvolutionSnapshot(BaseModel):
             Current relationship projection.
         persona_adaptations:
             Current adaptation projection.
+        memories:
+            Eligible budgeted continuity memories with exact provenance.
+        summary_context:
+            Optional compatible interpretation context that is never evidence.
         evidence:
             Unique chronological exact evidence.
         source:
             New persona checkpoint whose effect is being evaluated.
+        token_count:
+            Complete deterministic selection estimate when budgeted.
+        budget:
+            Dedicated selection capacity when built by a selector.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -400,11 +482,25 @@ class EvolutionSnapshot(BaseModel):
     persona_adaptations: PersonaAdaptationProjection = Field(
         description="Current persona-adaptation projection."
     )
+    memories: tuple[EvolutionMemory, ...] = Field(
+        default=(), description="Eligible budgeted continuity memories."
+    )
+    summary_context: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Compatible non-citable summary interpretation context.",
+    )
     evidence: tuple[EvolutionEvidence, ...] = Field(
         min_length=1, description="Chronological exact evidence."
     )
     source: EvolutionEvidenceReference = Field(
         description="New source checkpoint being evaluated."
+    )
+    token_count: int | None = Field(
+        default=None, ge=0, description="Complete budgeted selection estimate."
+    )
+    budget: EvolutionSnapshotBudget | None = Field(
+        default=None, description="Dedicated snapshot selection capacity."
     )
 
     @model_validator(mode="after")
@@ -454,6 +550,25 @@ class EvolutionSnapshot(BaseModel):
             raise ValueError("Evolution evidence must be chronological.")
         if self.source != references[-1]:
             raise ValueError("Evolution source must be the latest exact evidence.")
+        reference_set = set(references)
+        if len({memory.id for memory in self.memories}) != len(self.memories):
+            raise ValueError("Evolution snapshot memories must be unique.")
+        if any(
+            source.scope != self.scope or source not in reference_set
+            for memory in self.memories
+            for source in memory.sources
+        ):
+            raise ValueError(
+                "Evolution memory provenance must be exact snapshot evidence."
+            )
+        if (self.budget is None) != (self.token_count is None):
+            raise ValueError("Evolution snapshot budget accounting must be complete.")
+        if (
+            self.budget is not None
+            and self.token_count is not None
+            and self.token_count > self.budget.input_tokens
+        ):
+            raise ValueError("Evolution snapshot exceeds its dedicated budget.")
         return self
 
 
