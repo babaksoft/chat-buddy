@@ -1,7 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 2 — add executable relationship and persona
-evolution values.
+Next delivery focus: Stage 7, Slice 4 — define replaceable evolution seams.
 
 Deferred engineering:
 

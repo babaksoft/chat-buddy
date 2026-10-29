@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 ## Outcome
 
@@ -214,6 +214,8 @@ Complete when invalid values, foreign evidence, duplicate sources, malformed
 transitions, and unbounded proposals fail at the domain boundary.
 
 ### Slice 3 — Ship the native evaluation harness
+
+Status: Complete
 
 Add a development-only evaluation area, preferably `evaluations/characters/`,
 with:
