@@ -16,8 +16,12 @@ from chat_buddy.characters.application.conversation_service import (
     ConversationService,
 )
 from chat_buddy.characters.application.evolution import (
+    ContinuityStableEvolutionConfigurationResolver,
+    DeterministicFixtureEvolutionStrategy,
     EvolutionEvaluator,
     NoChangeEvolutionStrategy,
+    NoOpEvolutionExperimentReporter,
+    StrictBaselineEvolutionThresholdPolicy,
 )
 from chat_buddy.characters.application.identity_service import (
     IdentityService,
@@ -56,11 +60,14 @@ __all__ = [
     "BaselineMemoryContextSelector",
     "BaselineResponseMemorySelector",
     "ContinuityService",
+    "ContinuityStableEvolutionConfigurationResolver",
     "ConversationService",
     "DeferredBranchModeFactsResolver",
+    "DeterministicFixtureEvolutionStrategy",
     "EvolutionEvaluator",
     "IdentityService",
     "NoChangeEvolutionStrategy",
+    "NoOpEvolutionExperimentReporter",
     "OngoingContextBudgeter",
     "OngoingContextEligibility",
     "PersonaService",
@@ -75,6 +82,7 @@ __all__ = [
     "StorylineMemoryService",
     "StorylineResponseMemoryService",
     "StorylineService",
+    "StrictBaselineEvolutionThresholdPolicy",
     "decide_branch_mode",
     "resolve_starting_relationship",
 ]

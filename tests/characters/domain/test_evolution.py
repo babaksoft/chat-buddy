@@ -1,5 +1,6 @@
 """Executable relationship and persona-evolution value tests."""
 
+import inspect
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -16,11 +17,15 @@ from chat_buddy.characters.domain import (
     EvolutionEvidence,
     EvolutionEvidenceKind,
     EvolutionEvidenceReference,
+    EvolutionExperimentReporter,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionRejectionReason,
     EvolutionScope,
     EvolutionSnapshot,
+    EvolutionSnapshotSelector,
+    EvolutionStrategy,
+    EvolutionThresholdPolicy,
     Identity,
     IdentityDetails,
     Persona,
@@ -41,6 +46,19 @@ from chat_buddy.characters.domain import (
     SetTrustCommand,
     StrategyIdentity,
 )
+
+
+def test_evolution_component_seams_are_narrow_characters_protocols() -> None:
+    """Expose independently substitutable selector, strategy, policy, and reporter."""
+
+    assert EvolutionSnapshotSelector._is_protocol  # type: ignore[attr-defined]
+    assert EvolutionStrategy._is_protocol  # type: ignore[attr-defined]
+    assert EvolutionThresholdPolicy._is_protocol  # type: ignore[attr-defined]
+    assert EvolutionExperimentReporter._is_protocol  # type: ignore[attr-defined]
+    assert "select" in dict(inspect.getmembers(EvolutionSnapshotSelector))
+    assert "propose" in dict(inspect.getmembers(EvolutionStrategy))
+    assert "assess" in dict(inspect.getmembers(EvolutionThresholdPolicy))
+    assert "report" in dict(inspect.getmembers(EvolutionExperimentReporter))
 
 
 def _reference(

@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 4 — define replaceable evolution seams.
+Next delivery focus: Stage 7, Slice 5 — persist evolution history and projections.
 
 Deferred engineering:
 

@@ -6,15 +6,22 @@ import pytest
 from pydantic import ValidationError
 
 from chat_buddy.characters.application import (
+    ContinuityStableEvolutionConfigurationResolver,
+    DeterministicFixtureEvolutionStrategy,
     EvolutionEvaluator,
     NoChangeEvolutionStrategy,
+    NoOpEvolutionExperimentReporter,
+    StrictBaselineEvolutionThresholdPolicy,
 )
 from chat_buddy.characters.domain import (
     AdaptationFacet,
     ContinuityMode,
+    EvolutionConfiguration,
     EvolutionEvidence,
     EvolutionEvidenceKind,
     EvolutionEvidenceReference,
+    EvolutionExperimentMetric,
+    EvolutionExperimentResult,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionScope,
@@ -31,6 +38,7 @@ from chat_buddy.characters.domain import (
     RelationshipRomanticStatus,
     RelationshipSocialStatus,
     RelationshipTrust,
+    SetDynamicCommand,
     SetPersonaAdaptationCommand,
     SetTrustCommand,
     StrategyIdentity,
@@ -52,6 +60,25 @@ def _provenance(strategy: StrategyIdentity) -> EvolutionProvenance:
         selector=StrategyIdentity(name="test.selector", version="1.0.0"),
         strategy=strategy,
         policy=StrategyIdentity(name="test.policy", version="1.0.0"),
+        schema_identity=StrategyIdentity(name="test.schema", version="1.0.0"),
+    )
+
+
+def _configuration(strategy: str) -> EvolutionConfiguration:
+    """Build one complete replaceable evolution configuration.
+
+    Args:
+        strategy:
+            Strategy identity name.
+
+    Returns:
+        Immutable configuration for seam tests.
+    """
+
+    return EvolutionConfiguration(
+        selector=StrategyIdentity(name="test.selector", version="1.0.0"),
+        strategy=StrategyIdentity(name=strategy, version="1.0.0"),
+        threshold_policy=StrategyIdentity(name="baseline.strict", version="1.0.0"),
         schema_identity=StrategyIdentity(name="test.schema", version="1.0.0"),
     )
 
@@ -188,6 +215,83 @@ def test_baseline_is_stable_and_explicitly_proposes_no_changes() -> None:
     )
     assert result.commands == ()
     assert result.source == snapshot.source
+
+
+def test_configuration_is_stable_per_continuity_and_supports_explicit_assignment() -> (
+    None
+):
+    """Resolve deterministic message-boundary configuration with an override."""
+
+    baseline = _configuration("baseline.no_change")
+    fixture = _configuration("fixture.deterministic")
+    first_id = uuid4()
+    overridden_id = uuid4()
+    resolver = ContinuityStableEvolutionConfigurationResolver(
+        (baseline, fixture), assignments={overridden_id: fixture}
+    )
+    assert resolver.resolve(first_id) == resolver.resolve(first_id)
+    assert resolver.resolve(overridden_id) == fixture
+    assert fixture.provenance().policy == fixture.threshold_policy
+
+
+def test_fixture_strategy_and_configuration_provenance_are_independently_bound() -> (
+    None
+):
+    """Return deterministic commands and enforce the resolved configuration."""
+
+    snapshot = _snapshot()
+    command = SetDynamicCommand(
+        expected=RelationshipDynamic.NEUTRAL,
+        value=RelationshipDynamic.COMFORTABLE,
+        rationale="The exchange is immediately comfortable.",
+        sources=(snapshot.source,),
+    )
+    configuration = _configuration("fixture.deterministic")
+    strategy = DeterministicFixtureEvolutionStrategy(
+        {snapshot.scope.continuity_id: (command,)}, configuration
+    )
+    first = EvolutionEvaluator(strategy, configuration).evaluate(snapshot)
+    second = EvolutionEvaluator(strategy, configuration).evaluate(snapshot)
+    assert first == second
+    assert first.provenance == configuration.provenance()
+    assert first.commands == (command,)
+
+
+def test_strict_threshold_policy_counts_gradual_and_immediate_changes() -> None:
+    """Require two distinct turns for gradual changes and one for dynamics."""
+
+    snapshot = _snapshot()
+    policy = StrictBaselineEvolutionThresholdPolicy()
+    gradual = SetTrustCommand(
+        expected=RelationshipTrust.UNKNOWN,
+        value=RelationshipTrust.CAUTIOUS,
+        rationale="One compatible turn is insufficient.",
+        sources=(snapshot.source,),
+    )
+    immediate = SetDynamicCommand(
+        expected=RelationshipDynamic.NEUTRAL,
+        value=RelationshipDynamic.COMFORTABLE,
+        rationale="One explicit exchange changes the current dynamic.",
+        sources=(snapshot.source,),
+    )
+    assert not policy.assess(snapshot, gradual).satisfied
+    assert policy.assess(snapshot, gradual).required_distinct_turns == 2
+    assert policy.assess(snapshot, immediate).satisfied
+    assert policy.policy_id == StrategyIdentity(name="baseline.strict", version="1.0.0")
+
+
+def test_no_op_reporter_accepts_framework_neutral_results() -> None:
+    """Keep ordinary execution independent of an experiment backend."""
+
+    result = EvolutionExperimentResult(
+        run_id=uuid4(),
+        dataset="characters.evolution.curated",
+        dataset_version="1.0.0",
+        configuration=_configuration("baseline.no_change"),
+        scenario_count=11,
+        metrics=(EvolutionExperimentMetric(name="pass_rate", value=1.0),),
+    )
+    NoOpEvolutionExperimentReporter().report(result)
 
 
 def test_evaluator_rejects_untraceable_strategy_output() -> None:

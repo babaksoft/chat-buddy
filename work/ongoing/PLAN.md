@@ -246,6 +246,8 @@ using the same dataset without a database, provider, or Phoenix instance.
 
 ### Slice 4 — Define the replaceable evolution seams
 
+Status: Complete
+
 Introduce narrow Characters-owned protocols for:
 
 - Selecting an immutable evolution snapshot.

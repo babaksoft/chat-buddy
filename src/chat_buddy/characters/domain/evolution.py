@@ -496,6 +496,74 @@ class EvolutionProvenance(BaseModel):
         return self
 
 
+class EvolutionConfiguration(BaseModel):
+    """Immutable identities resolved for one evolution message boundary.
+
+    Attributes:
+        selector:
+            Snapshot selector identity.
+        strategy:
+            Proposal strategy identity.
+        threshold_policy:
+            Gradual-change threshold-policy identity.
+        schema_identity:
+            Typed proposal schema identity.
+        provider:
+            Optional external provider key.
+        model:
+            Optional external model identifier.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    selector: StrategyIdentity = Field(description="Snapshot selector identity.")
+    strategy: StrategyIdentity = Field(description="Proposal strategy identity.")
+    threshold_policy: StrategyIdentity = Field(
+        description="Gradual-change threshold-policy identity."
+    )
+    schema_identity: StrategyIdentity = Field(description="Proposal schema identity.")
+    provider: str | None = Field(
+        default=None, min_length=1, max_length=64, description="Provider key."
+    )
+    model: str | None = Field(
+        default=None, min_length=1, max_length=256, description="Model identifier."
+    )
+
+    @model_validator(mode="after")
+    def validate_provider_pair(self) -> Self:
+        """Require provider and model identities together.
+
+        Returns:
+            Validated evolution configuration.
+
+        Raises:
+            ValueError:
+                If only one external generation identity is present.
+        """
+
+        if (self.provider is None) != (self.model is None):
+            raise ValueError(
+                "Evolution provider and model must be configured together."
+            )
+        return self
+
+    def provenance(self) -> EvolutionProvenance:
+        """Build the exact provenance persisted with proposals and effects.
+
+        Returns:
+            Proposal-compatible immutable provenance.
+        """
+
+        return EvolutionProvenance(
+            selector=self.selector,
+            strategy=self.strategy,
+            policy=self.threshold_policy,
+            schema_identity=self.schema_identity,
+            provider=self.provider,
+            model=self.model,
+        )
+
+
 class _EvidenceBasedCommand(BaseModel):
     """Shared bounded evidence and rationale for one atomic command.
 
@@ -830,8 +898,128 @@ type EvolutionCommand = Annotated[
 ]
 
 
+class EvolutionThresholdAssessment(BaseModel):
+    """Versioned gradual-change threshold result for one typed command.
+
+    Attributes:
+        satisfied:
+            Whether the command meets the experimental evidence threshold.
+        required_distinct_turns:
+            Minimum compatible source turns required by the policy.
+        observed_distinct_turns:
+            Distinct source turns cited by the command.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    satisfied: bool = Field(description="Whether the threshold is satisfied.")
+    required_distinct_turns: int = Field(
+        ge=1, description="Minimum compatible source turns required."
+    )
+    observed_distinct_turns: int = Field(
+        ge=0, description="Distinct cited source turns observed."
+    )
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        """Keep the decision consistent with the recorded counts.
+
+        Returns:
+            Validated threshold assessment.
+
+        Raises:
+            ValueError:
+                If the boolean result contradicts the source counts.
+        """
+
+        expected = self.observed_distinct_turns >= self.required_distinct_turns
+        if self.satisfied != expected:
+            raise ValueError("Evolution threshold result contradicts its counts.")
+        return self
+
+
+class EvolutionExperimentMetric(BaseModel):
+    """One framework-neutral deterministic experiment metric.
+
+    Attributes:
+        name:
+            Stable machine-readable metric name.
+        value:
+            Numeric metric value.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Stable metric name.",
+    )
+    value: float = Field(description="Numeric metric value.")
+
+
+class EvolutionExperimentResult(BaseModel):
+    """Portable result passed to an optional experiment reporter.
+
+    Attributes:
+        run_id:
+            Unique evaluation run identifier.
+        dataset:
+            Stable dataset name.
+        dataset_version:
+            Semantic dataset version.
+        configuration:
+            Exact evaluated evolution configuration.
+        scenario_count:
+            Number of evaluated scenarios.
+        metrics:
+            Deterministic aggregate metrics.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: UUID = Field(description="Unique evaluation run identifier.")
+    dataset: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Stable dataset name.",
+    )
+    dataset_version: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Dataset version.",
+    )
+    configuration: EvolutionConfiguration = Field(
+        description="Exact evaluated evolution configuration."
+    )
+    scenario_count: int = Field(ge=0, description="Evaluated scenario count.")
+    metrics: tuple[EvolutionExperimentMetric, ...] = Field(
+        default=(), description="Deterministic aggregate metrics."
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_metrics(self) -> Self:
+        """Require one value for each metric identity.
+
+        Returns:
+            Validated experiment result.
+
+        Raises:
+            ValueError:
+                If a metric name is repeated.
+        """
+
+        names = tuple(metric.name for metric in self.metrics)
+        if len(set(names)) != len(names):
+            raise ValueError("Evolution experiment metric names must be unique.")
+        return self
+
+
 class EvolutionProposal(BaseModel):
-    """Bounded atomic strategy output without durable-state authority.
+    """Bounded atomic strategy output.
 
     Attributes:
         id:
@@ -1029,6 +1217,102 @@ class EvolutionStrategy(Protocol):
 
         Returns:
             Bounded typed proposal carrying exact provenance.
+        """
+
+        ...
+
+
+class EvolutionSnapshotSelector(Protocol):
+    """Replaceable selector of one immutable continuity-safe snapshot."""
+
+    @property
+    def selector_id(self) -> StrategyIdentity:
+        """Return the stable selector name and behavior version.
+
+        Returns:
+            Selector identity recorded in configuration provenance.
+        """
+
+        ...
+
+    def select(
+        self, scope: EvolutionScope, source: EvolutionEvidenceReference
+    ) -> EvolutionSnapshot:
+        """Build the immutable strategy input for one source checkpoint.
+
+        Args:
+            scope:
+                Expected continuity ownership.
+            source:
+                Exact new persona checkpoint at the message boundary.
+
+        Returns:
+            Bounded immutable snapshot containing eligible selected history.
+        """
+
+        ...
+
+
+class EvolutionThresholdPolicy(Protocol):
+    """Replaceable calibration policy for gradual evidence thresholds."""
+
+    @property
+    def policy_id(self) -> StrategyIdentity:
+        """Return the stable policy name and behavior version.
+
+        Returns:
+            Policy identity recorded in configuration provenance.
+        """
+
+        ...
+
+    def assess(
+        self, snapshot: EvolutionSnapshot, command: EvolutionCommand
+    ) -> EvolutionThresholdAssessment:
+        """Assess only the command's versioned gradual evidence threshold.
+
+        Hard ownership, intent, boundary, transition, and persona-core validation
+        remains outside this replaceable policy.
+
+        Args:
+            snapshot:
+                Immutable eligible state and evidence.
+            command:
+                Typed command whose evidence count is being calibrated.
+
+        Returns:
+            Counted threshold assessment.
+        """
+
+        ...
+
+
+class EvolutionExperimentReporter(Protocol):
+    """Optional sink for framework-neutral evolution experiment results."""
+
+    def report(self, result: EvolutionExperimentResult) -> None:
+        """Report one complete experiment result.
+
+        Args:
+            result:
+                Immutable configuration and deterministic aggregate metrics.
+        """
+
+        ...
+
+
+class EvolutionConfigurationResolver(Protocol):
+    """Resolve one continuity-stable configuration at a message boundary."""
+
+    def resolve(self, continuity_id: UUID) -> EvolutionConfiguration:
+        """Resolve the configuration assigned to a continuity.
+
+        Args:
+            continuity_id:
+                Continuity whose stable experimental assignment is required.
+
+        Returns:
+            Exact immutable configuration for the next evolution effect.
         """
 
         ...
