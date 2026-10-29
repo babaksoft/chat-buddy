@@ -104,6 +104,15 @@ class EvolutionDecisionOutcome(StrEnum):
     REJECTED = "rejected"
 
 
+class EvolutionEffectState(StrEnum):
+    """Durable processing lifecycle for one source persona checkpoint."""
+
+    RESERVED = "reserved"
+    NO_CHANGE = "no_change"
+    APPLIED = "applied"
+    REJECTED = "rejected"
+
+
 class EvolutionRejectionReason(StrEnum):
     """Stable categories used when an atomic proposal is rejected."""
 
@@ -1192,6 +1201,133 @@ class EvolutionDecision(BaseModel):
             raise ValueError("No-change evolution cannot carry events.")
         if any(event.proposal_id != self.proposal_id for event in self.events):
             raise ValueError("Evolution decision contains a foreign event.")
+        return self
+
+
+class EvolutionEffect(BaseModel):
+    """Durable audit record for one source persona checkpoint.
+
+    Attributes:
+        id:
+            Stable effect identifier.
+        source:
+            Exact persona checkpoint uniquely owning the effect.
+        state:
+            Reserved or terminal processing state.
+        provenance:
+            Configuration fixed when processing is reserved.
+        proposal:
+            Bounded strategy output after processing completes.
+        decision:
+            Terminal application result after processing completes.
+        created_at:
+            Reservation timestamp.
+        completed_at:
+            Terminal commit timestamp.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: UUID = Field(description="Stable effect identifier.")
+    source: EvolutionEvidenceReference = Field(
+        description="Unique source persona checkpoint."
+    )
+    state: EvolutionEffectState = Field(description="Durable processing state.")
+    provenance: EvolutionProvenance = Field(
+        description="Configuration fixed at reservation."
+    )
+    proposal: EvolutionProposal | None = Field(
+        default=None, description="Terminal bounded proposal audit data."
+    )
+    decision: EvolutionDecision | None = Field(
+        default=None, description="Terminal application decision."
+    )
+    created_at: datetime = Field(description="Reservation timestamp.")
+    completed_at: datetime | None = Field(
+        default=None, description="Terminal commit timestamp."
+    )
+
+    @model_validator(mode="after")
+    def validate_lifecycle(self) -> Self:
+        """Require complete and internally consistent terminal audit data.
+
+        Returns:
+            Validated effect snapshot.
+
+        Raises:
+            ValueError:
+                If lifecycle, proposal, decision, or ownership disagree.
+        """
+
+        if self.state == EvolutionEffectState.RESERVED:
+            if (
+                self.proposal is not None
+                or self.decision is not None
+                or self.completed_at is not None
+            ):
+                raise ValueError("Reserved evolution effects cannot be terminal.")
+
+            return self
+
+        if self.proposal is None or self.decision is None or self.completed_at is None:
+            raise ValueError("Terminal evolution effects require complete audit data.")
+        if self.proposal.source != self.source:
+            raise ValueError("Evolution effect proposal has a different source.")
+        if self.proposal.provenance != self.provenance:
+            raise ValueError("Evolution effect proposal has different provenance.")
+        if self.decision.proposal_id != self.proposal.id:
+            raise ValueError("Evolution effect decision has a different proposal.")
+        if self.state.value != self.decision.outcome.value:
+            raise ValueError("Evolution effect state disagrees with its decision.")
+        return self
+
+
+class EvolutionProjectionState(BaseModel):
+    """Current rebuildable relationship and adaptation cache state.
+
+    Attributes:
+        relationship:
+            Current relationship projection.
+        persona_adaptations:
+            Current persona-adaptation projection.
+        relationship_checkpoint_id:
+            Last event represented by the relationship cache.
+        adaptation_checkpoint_id:
+            Last event represented by the adaptation cache.
+        updated_at:
+            Latest atomic cache update timestamp.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relationship: RelationshipProjection = Field(
+        description="Current relationship projection."
+    )
+    persona_adaptations: PersonaAdaptationProjection = Field(
+        description="Current persona-adaptation projection."
+    )
+    relationship_checkpoint_id: UUID | None = Field(
+        default=None, description="Last relationship event represented."
+    )
+    adaptation_checkpoint_id: UUID | None = Field(
+        default=None, description="Last adaptation event represented."
+    )
+    updated_at: datetime = Field(description="Latest cache update timestamp.")
+
+    @model_validator(mode="after")
+    def validate_ownership(self) -> Self:
+        """Require both caches to belong to one continuity.
+
+        Returns:
+            Validated paired cache state.
+
+        Raises:
+            ValueError:
+                If the cache owners differ.
+        """
+
+        if self.relationship.scope != self.persona_adaptations.scope:
+            raise ValueError("Evolution projection caches have different owners.")
         return self
 
 

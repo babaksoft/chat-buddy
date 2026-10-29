@@ -6,6 +6,9 @@ from chat_buddy.characters.infrastructure.db.repositories.continuity_repository 
 from chat_buddy.characters.infrastructure.db.repositories.conversation_repository import (
     DbConversationRepository,
 )
+from chat_buddy.characters.infrastructure.db.repositories.evolution_repository import (
+    DbEvolutionRepository,
+)
 from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
     DbIdentityRepository,
 )
@@ -32,6 +35,7 @@ from chat_buddy.characters.infrastructure.db.repositories.summary_repository imp
 __all__ = [
     "DbContinuityRepository",
     "DbConversationRepository",
+    "DbEvolutionRepository",
     "DbIdentityRepository",
     "DbMemoryExtractionRepository",
     "DbPersonaRepository",

@@ -274,6 +274,8 @@ repository, SDK, or Chat dependencies.
 
 ### Slice 5 — Persist evolution history and projections
 
+Status: Complete
+
 Add a Characters migration and repositories for:
 
 - One evolution effect per source persona checkpoint.

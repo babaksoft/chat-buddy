@@ -24,6 +24,18 @@ from chat_buddy.characters.domain.conversation import (
     Message,
     SubmittedInput,
 )
+from chat_buddy.characters.domain.evolution import (
+    EvolutionDecision,
+    EvolutionEffect,
+    EvolutionEvent,
+    EvolutionEvidenceReference,
+    EvolutionProjectionState,
+    EvolutionProposal,
+    EvolutionProvenance,
+    EvolutionScope,
+    PersonaAdaptationProjection,
+    RelationshipProjection,
+)
 from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.memory import (
@@ -1172,6 +1184,117 @@ class SummaryRepository(Protocol):
 
         Returns:
             Persisted active revision.
+        """
+
+        ...
+
+
+class EvolutionRepository(Protocol):
+    """Persist one effect per checkpoint and rebuildable current projections."""
+
+    def initialize(
+        self,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+    ) -> EvolutionProjectionState:
+        """Create the paired revision-zero projection caches idempotently.
+
+        Args:
+            relationship:
+                Starting relationship projection.
+            persona_adaptations:
+                Starting empty adaptation projection.
+
+        Returns:
+            Persisted paired cache state.
+        """
+
+        ...
+
+    def get_projections(self, scope: EvolutionScope) -> EvolutionProjectionState:
+        """Read both current caches under complete continuity ownership.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Detached paired projection state.
+        """
+
+        ...
+
+    def reserve(
+        self, source: EvolutionEvidenceReference, provenance: EvolutionProvenance
+    ) -> EvolutionEffect:
+        """Reserve or resume the unique effect for a source checkpoint.
+
+        Args:
+            source:
+                Exact selected persona checkpoint.
+            provenance:
+                Configuration fixed for the effect.
+
+        Returns:
+            Existing identical effect or a new reservation.
+        """
+
+        ...
+
+    def get_effect(
+        self, scope: EvolutionScope, source_persona_message_id: UUID
+    ) -> EvolutionEffect:
+        """Read one effect under complete continuity ownership.
+
+        Args:
+            scope:
+                Required evolution ownership.
+            source_persona_message_id:
+                Unique source checkpoint identifier.
+
+        Returns:
+            Detached effect audit record.
+        """
+
+        ...
+
+    def complete(
+        self,
+        effect_id: UUID,
+        proposal: EvolutionProposal,
+        decision: EvolutionDecision,
+        relationship: RelationshipProjection | None = None,
+        persona_adaptations: PersonaAdaptationProjection | None = None,
+    ) -> EvolutionEffect:
+        """Atomically commit a terminal decision, events, and updated caches.
+
+        Args:
+            effect_id:
+                Reserved effect identifier.
+            proposal:
+                Exact bounded proposal audit data.
+            decision:
+                Terminal validation result.
+            relationship:
+                Updated relationship cache for an applied decision.
+            persona_adaptations:
+                Updated adaptation cache for an applied decision.
+
+        Returns:
+            Terminal detached effect.
+        """
+
+        ...
+
+    def list_events(self, scope: EvolutionScope) -> tuple[EvolutionEvent, ...]:
+        """Read authoritative events in deterministic append order.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Immutable accepted event snapshots.
         """
 
         ...

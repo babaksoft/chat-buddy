@@ -152,6 +152,14 @@ class ExtractionEffectConflictError(ValueError):
     """An extraction effect is terminal, ineligible, or reserved inconsistently."""
 
 
+class EvolutionEffectConflictError(ValueError):
+    """An evolution effect is terminal or reserved with different audit data."""
+
+
+class EvolutionProjectionConflictError(ValueError):
+    """Evolution projections are absent, foreign, or changed concurrently."""
+
+
 class InvalidParentError(ValueError):
     """A message parent is absent, foreign, cyclic, or has an invalid role."""
 
