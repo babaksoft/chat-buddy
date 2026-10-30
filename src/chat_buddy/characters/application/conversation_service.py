@@ -86,6 +86,27 @@ class _StorylineExtractionProcessor(Protocol):
         ...
 
 
+class _EvolutionEffectProcessor(Protocol):
+    """Post-completion selected-turn evolution seam."""
+
+    def process(
+        self, target: ConversationTarget, source_persona_message_id: UUID
+    ) -> object:
+        """Process one committed selected persona response.
+
+        Args:
+            target:
+                Exact Ongoing or Storyline target.
+            source_persona_message_id:
+                Newly committed persona response.
+
+        Returns:
+            Durable evolution effect outcome.
+        """
+
+        ...
+
+
 class _StorylineResponseMemoryProvider(Protocol):
     """Read and select eligible memory for one Storyline response."""
 
@@ -127,6 +148,7 @@ class ConversationService:
         storyline_adapter: StorylineConversationAdapter | None = None,
         memory_extraction: _StorylineExtractionProcessor | None = None,
         response_memories: _StorylineResponseMemoryProvider | None = None,
+        evolution: _EvolutionEffectProcessor | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -151,6 +173,8 @@ class ConversationService:
                 Optional post-completion Storyline memory workflow.
             response_memories:
                 Optional branch-aware Storyline response-memory workflow.
+            evolution:
+                Optional post-completion selected-turn evolution workflow.
         """
 
         self._conversations = conversations
@@ -161,6 +185,7 @@ class ConversationService:
         self._storyline_adapter = storyline_adapter
         self._memory_extraction = memory_extraction
         self._response_memories = response_memories
+        self._evolution = evolution
         self._branch_mode_facts = (
             branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
         )
@@ -578,6 +603,15 @@ class ConversationService:
                     logger.exception(
                         "Storyline memory extraction did not reach a terminal "
                         "outcome for persona message %s.",
+                        message.id,
+                    )
+            if self._evolution is not None:
+                try:
+                    self._evolution.process(target, message.id)
+                except Exception:
+                    logger.exception(
+                        "Evolution did not reach a terminal outcome for persona "
+                        "message %s.",
                         message.id,
                     )
         except Exception:

@@ -16,6 +16,7 @@ from chat_buddy.characters.application.conversation_service import (
     ConversationService,
 )
 from chat_buddy.characters.application.evolution import (
+    BASELINE_EVOLUTION_CONFIGURATION,
     ContinuityStableEvolutionConfigurationResolver,
     DeterministicFixtureEvolutionStrategy,
     EvolutionEvaluator,
@@ -24,6 +25,9 @@ from chat_buddy.characters.application.evolution import (
     NoChangeEvolutionStrategy,
     NoOpEvolutionExperimentReporter,
     StrictBaselineEvolutionThresholdPolicy,
+)
+from chat_buddy.characters.application.evolution_effect_service import (
+    EvolutionEffectService,
 )
 from chat_buddy.characters.application.evolution_snapshot import (
     BaselineEvolutionSnapshotSelector,
@@ -62,6 +66,7 @@ from chat_buddy.characters.application.storyline_fork_service import (
 from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
+    "BASELINE_EVOLUTION_CONFIGURATION",
     "BaselineEvolutionSnapshotSelector",
     "BaselineMemoryContextSelector",
     "BaselineResponseMemorySelector",
@@ -70,6 +75,7 @@ __all__ = [
     "ConversationService",
     "DeferredBranchModeFactsResolver",
     "DeterministicFixtureEvolutionStrategy",
+    "EvolutionEffectService",
     "EvolutionEvaluator",
     "EvolutionProposalValidator",
     "EvolutionValidationResult",

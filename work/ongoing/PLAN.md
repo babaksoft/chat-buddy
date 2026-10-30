@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## Outcome
 
@@ -348,6 +348,8 @@ Complete when arbitrary strategy output cannot bypass product invariants and all
 rejection reasons are deterministic.
 
 ### Slice 8 — Orchestrate idempotent evolution effects
+
+Status: Complete
 
 After a complete selected persona turn:
 

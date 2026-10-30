@@ -3,16 +3,26 @@
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
+    BASELINE_EVOLUTION_CONFIGURATION,
+    BaselineEvolutionSnapshotSelector,
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
+    ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
+    EvolutionEffectService,
+    NoChangeEvolutionStrategy,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
     StorylineMemoryExtractionService,
     StorylineResponseMemoryService,
+    StrictBaselineEvolutionThresholdPolicy,
 )
-from chat_buddy.characters.domain import ExtractionBudget, ResponseMemoryBudget
+from chat_buddy.characters.domain import (
+    EvolutionSnapshotBudget,
+    ExtractionBudget,
+    ResponseMemoryBudget,
+)
 from chat_buddy.characters.infrastructure.llm import (
     ContextualMemoryDeltaExtractor,
     create_model_registry,
@@ -20,6 +30,7 @@ from chat_buddy.characters.infrastructure.llm import (
 
 _EXTRACTION_FIXED_OVERHEAD_TOKENS = 512
 _RESPONSE_MEMORY_BUDGET_TOKENS = 1024
+_EVOLUTION_FIXED_OVERHEAD_TOKENS = 512
 
 
 def create_conversation_service(
@@ -39,6 +50,7 @@ def create_conversation_service(
     from chat_buddy.characters.infrastructure.db.repositories import (
         DbContinuityRepository,
         DbConversationRepository,
+        DbEvolutionRepository,
         DbIdentityRepository,
         DbMemoryExtractionRepository,
         DbPersonaRepository,
@@ -59,7 +71,9 @@ def create_conversation_service(
     summaries = DbSummaryRepository(session_factory)
     memories = DbStorylineMemoryRepository(session_factory)
     effects = DbMemoryExtractionRepository(session_factory)
+    evolution_repository = DbEvolutionRepository(session_factory)
     models = create_model_registry()
+    response_generation = models.resolve_default("response")
     response_memories = StorylineResponseMemoryService(
         scenes,
         conversations,
@@ -99,6 +113,37 @@ def create_conversation_service(
                 ),
             ),
         )
+    evolution = EvolutionEffectService(
+        conversations,
+        DbContinuityRepository(session_factory),
+        storylines,
+        scenes,
+        evolution_repository,
+        BaselineEvolutionSnapshotSelector(
+            identities,
+            personas,
+            DbContinuityRepository(session_factory),
+            storylines,
+            scenes,
+            conversations,
+            summaries,
+            memories,
+            evolution_repository,
+            models.token_counter(response_generation.model.provider),
+            EvolutionSnapshotBudget(
+                input_tokens=response_generation.input_tokens,
+                fixed_overhead_tokens=min(
+                    _EVOLUTION_FIXED_OVERHEAD_TOKENS,
+                    response_generation.input_tokens - 1,
+                ),
+            ),
+        ),
+        ContinuityStableEvolutionConfigurationResolver(
+            (BASELINE_EVOLUTION_CONFIGURATION,)
+        ),
+        NoChangeEvolutionStrategy(BASELINE_EVOLUTION_CONFIGURATION),
+        StrictBaselineEvolutionThresholdPolicy(),
+    )
     return ConversationService(
         conversations,
         DbContinuityRepository(session_factory),
@@ -109,4 +154,5 @@ def create_conversation_service(
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         memory_extraction=extraction,
         response_memories=response_memories,
+        evolution=evolution,
     )

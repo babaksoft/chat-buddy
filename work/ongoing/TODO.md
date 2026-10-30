@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 8 — orchestrate idempotent evolution effects
-after eligible completed turns.
+Next delivery focus: Stage 7, Slice 9 — rebuild evolution projections and support
+user corrections.
 
 Deferred engineering:
 
