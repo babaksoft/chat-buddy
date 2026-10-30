@@ -28,6 +28,7 @@ def create_model_registry() -> ConfiguredModelRegistry:
     memory_model = os.environ.get(
         "CHARACTERS_MEMORY_EXTRACTION_MODEL", "gpt-oss:20b-cloud"
     )
+    evolution_model = os.environ.get("CHARACTERS_EVOLUTION_MODEL", "gpt-oss:20b-cloud")
     context = int(os.environ.get("CHARACTERS_CONTEXT_TOKENS", "32768"))
     output = int(os.environ.get("CHARACTERS_OUTPUT_TOKENS", "4096"))
 
@@ -35,6 +36,7 @@ def create_model_registry() -> ConfiguredModelRegistry:
     model_capabilities.setdefault(response_model, set()).add("response")
     model_capabilities.setdefault(summary_model, set()).add("summary")
     model_capabilities.setdefault(memory_model, set()).add("memory_extraction")
+    model_capabilities.setdefault(evolution_model, set()).add("evolution")
     models = tuple(
         ModelDescriptor(
             provider="ollama",
@@ -56,10 +58,12 @@ def create_model_registry() -> ConfiguredModelRegistry:
         responses={"ollama": gateway},
         summaries={"ollama": gateway},
         memory_extractions={"ollama": gateway},
+        evolutions={"ollama": gateway},
         counters={"ollama": OllamaTokenCounter()},
         defaults={
             "response": ("ollama", response_model),
             "summary": ("ollama", summary_model),
             "memory_extraction": ("ollama", memory_model),
+            "evolution": ("ollama", evolution_model),
         },
     )

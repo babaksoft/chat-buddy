@@ -480,7 +480,7 @@ def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflig
 def test_lazy_composition_uses_replaceable_characters_capabilities(
     characters_session_factory: sessionmaker[Session],
 ) -> None:
-    """Compose production repositories with an injected response-only registry.
+    """Compose production repositories with injected provider capabilities.
 
     Args:
         characters_session_factory:
@@ -497,7 +497,7 @@ def test_lazy_composition_uses_replaceable_characters_capabilities(
     gateway = FakeResponse()
     with patch(
         "chat_buddy.characters.infrastructure.conversation_factory.create_model_registry",
-        return_value=registry(gateway),
+        return_value=registry(gateway, evolution=True),
     ):
         app = create_conversation_service(factory)
     attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))

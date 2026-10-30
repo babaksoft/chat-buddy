@@ -3,14 +3,15 @@
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
-    BASELINE_EVOLUTION_CONFIGURATION,
+    BASELINE_EVOLUTION_SCHEMA,
+    BASELINE_PROVIDER_EVOLUTION_STRATEGY,
     BaselineEvolutionSnapshotSelector,
+    BaselineEvolutionStrategy,
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
     ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
     EvolutionEffectService,
-    NoChangeEvolutionStrategy,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
@@ -19,9 +20,12 @@ from chat_buddy.characters.application import (
     StrictBaselineEvolutionThresholdPolicy,
 )
 from chat_buddy.characters.domain import (
+    EvolutionConfiguration,
     EvolutionSnapshotBudget,
     ExtractionBudget,
+    GenerationConfiguration,
     ResponseMemoryBudget,
+    StrategyIdentity,
 )
 from chat_buddy.characters.infrastructure.llm import (
     ContextualMemoryDeltaExtractor,
@@ -73,7 +77,17 @@ def create_conversation_service(
     effects = DbMemoryExtractionRepository(session_factory)
     evolution_repository = DbEvolutionRepository(session_factory)
     models = create_model_registry()
-    response_generation = models.resolve_default("response")
+    evolution_generation = models.resolve_default(
+        "evolution", GenerationConfiguration(temperature=0, seed=0)
+    )
+    evolution_configuration = EvolutionConfiguration(
+        selector=StrategyIdentity(name="baseline.exact_evidence", version="1.0.0"),
+        strategy=BASELINE_PROVIDER_EVOLUTION_STRATEGY,
+        threshold_policy=StrategyIdentity(name="baseline.strict", version="1.0.0"),
+        schema_identity=BASELINE_EVOLUTION_SCHEMA,
+        provider=evolution_generation.model.provider,
+        model=evolution_generation.model.model,
+    )
     response_memories = StorylineResponseMemoryService(
         scenes,
         conversations,
@@ -129,19 +143,21 @@ def create_conversation_service(
             summaries,
             memories,
             evolution_repository,
-            models.token_counter(response_generation.model.provider),
+            models.token_counter(evolution_generation.model.provider),
             EvolutionSnapshotBudget(
-                input_tokens=response_generation.input_tokens,
+                input_tokens=evolution_generation.input_tokens,
                 fixed_overhead_tokens=min(
                     _EVOLUTION_FIXED_OVERHEAD_TOKENS,
-                    response_generation.input_tokens - 1,
+                    evolution_generation.input_tokens - 1,
                 ),
             ),
         ),
-        ContinuityStableEvolutionConfigurationResolver(
-            (BASELINE_EVOLUTION_CONFIGURATION,)
+        ContinuityStableEvolutionConfigurationResolver((evolution_configuration,)),
+        BaselineEvolutionStrategy(
+            models.evolution_gateway(evolution_generation.model.provider),
+            evolution_generation,
+            evolution_configuration,
         ),
-        NoChangeEvolutionStrategy(BASELINE_EVOLUTION_CONFIGURATION),
         StrictBaselineEvolutionThresholdPolicy(),
     )
     return ConversationService(

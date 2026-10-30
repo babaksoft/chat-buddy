@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
     EffectiveGeneration,
+    EvolutionGateway,
     GenerationCapability,
     GenerationConfiguration,
     MemoryExtractionGateway,
@@ -27,6 +28,7 @@ class ConfiguredModelRegistry:
         counters: dict[str, TokenCounter],
         memory_extractions: dict[str, MemoryExtractionGateway] | None = None,
         defaults: dict[GenerationCapability, tuple[str, str]] | None = None,
+        evolutions: dict[str, EvolutionGateway] | None = None,
     ) -> None:
         """Capture configured models and separate capability implementations.
 
@@ -43,6 +45,8 @@ class ConfiguredModelRegistry:
                 Token estimators keyed by provider identifier.
             defaults:
                 Independently selected default model for each operation.
+            evolutions:
+                Evolution proposal providers keyed by provider identifier.
 
         Raises:
             ValueError:
@@ -53,6 +57,7 @@ class ConfiguredModelRegistry:
         self._responses = dict(responses)
         self._summaries = dict(summaries)
         self._memory_extractions = dict(memory_extractions or {})
+        self._evolutions = dict(evolutions or {})
         self._counters = dict(counters)
         self._defaults = dict(defaults or {})
 
@@ -67,11 +72,20 @@ class ConfiguredModelRegistry:
                     "memory_extraction" in item.capabilities
                     and item.provider not in self._memory_extractions
                 )
+                or (
+                    "evolution" in item.capabilities
+                    and item.provider not in self._evolutions
+                )
             ):
                 raise ValueError("Missing model capability binding.")
 
         for capability in self._defaults:
-            if capability not in {"response", "summary", "memory_extraction"}:
+            if capability not in {
+                "response",
+                "summary",
+                "memory_extraction",
+                "evolution",
+            }:
                 raise ValueError("Unknown default capability.")
 
             self.resolve_default(capability)
@@ -243,6 +257,25 @@ class ConfiguredModelRegistry:
             raise ModelResolutionError("Unknown token counter provider.")
 
         return self._counters[provider]
+
+    def evolution_gateway(self, provider: str) -> EvolutionGateway:
+        """Select a structured evolution implementation.
+
+        Args:
+            provider:
+                Configured provider key.
+
+        Returns:
+            Structured evolution adapter.
+
+        Raises:
+            UnsupportedGenerationError:
+                If no evolution adapter is configured.
+        """
+
+        if provider not in self._evolutions:
+            raise UnsupportedGenerationError("Evolution capability is unavailable.")
+        return self._evolutions[provider]
 
     def _get_model(self, provider: str, model: str) -> ModelDescriptor:
         """Look up an exact configured provider/model pair.

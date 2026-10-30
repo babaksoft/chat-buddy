@@ -1,5 +1,10 @@
 """Application services for the Characters area."""
 
+from chat_buddy.characters.application.baseline_evolution_strategy import (
+    BASELINE_EVOLUTION_SCHEMA,
+    BASELINE_PROVIDER_EVOLUTION_STRATEGY,
+    BaselineEvolutionStrategy,
+)
 from chat_buddy.characters.application.branch_policy import (
     DeferredBranchModeFactsResolver,
     decide_branch_mode,
@@ -70,7 +75,10 @@ from chat_buddy.characters.application.storyline_service import StorylineService
 
 __all__ = [
     "BASELINE_EVOLUTION_CONFIGURATION",
+    "BASELINE_EVOLUTION_SCHEMA",
+    "BASELINE_PROVIDER_EVOLUTION_STRATEGY",
     "BaselineEvolutionSnapshotSelector",
+    "BaselineEvolutionStrategy",
     "BaselineMemoryContextSelector",
     "BaselineResponseMemorySelector",
     "ContinuityService",

@@ -1,7 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 10 — Implement the baseline strategy
-user corrections.
+Next delivery focus: Stage 7, Slice 11 — Feed projections into future responses.
 
 Deferred engineering:
 

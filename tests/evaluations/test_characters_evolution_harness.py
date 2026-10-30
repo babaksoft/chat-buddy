@@ -10,9 +10,16 @@ from uuid import uuid5
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from chat_buddy.characters.application import NoChangeEvolutionStrategy
+from chat_buddy.characters.application import (
+    BASELINE_EVOLUTION_SCHEMA,
+    BASELINE_PROVIDER_EVOLUTION_STRATEGY,
+    BaselineEvolutionStrategy,
+    NoChangeEvolutionStrategy,
+)
 from chat_buddy.characters.domain import (
+    EffectiveGeneration,
     EvolutionCommand,
+    EvolutionConfiguration,
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionEvent,
@@ -20,8 +27,11 @@ from chat_buddy.characters.domain import (
     EvolutionProvenance,
     EvolutionRejectionReason,
     EvolutionSnapshot,
+    GenerationConfiguration,
+    ModelDescriptor,
     PersonaAdaptation,
     PersonaAdaptationProjection,
+    PromptMessage,
     RelationshipProjection,
     StrategyIdentity,
 )
@@ -161,6 +171,62 @@ class DatasetFixturePolicy:
         )
 
 
+class DatasetFakeEvolutionGateway:
+    """Return curated provider syntax for each immutable scenario snapshot."""
+
+    def __init__(self, scenarios: tuple[EvolutionScenario, ...]) -> None:
+        """Index curated response JSON by exact source checkpoint.
+
+        Args:
+            scenarios:
+                Complete curated dataset.
+        """
+
+        self._responses: dict[object, str] = {}
+        for scenario in scenarios:
+            snapshot = scenario.build_snapshot()
+            expectations = scenario.required_proposals
+            if scenario.expected_outcome == EvolutionDecisionOutcome.REJECTED:
+                expectations += scenario.forbidden_proposals
+            commands = [
+                {
+                    **expectation.model_dump(exclude_none=True),
+                    "rationale": "Deterministic fake-provider evaluation.",
+                }
+                for expectation in expectations
+            ]
+            self._responses[snapshot.source.persona_message_id] = json.dumps(
+                {"commands": commands}
+            )
+
+    def propose_evolution(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Select a response by the source ID embedded in the immutable prompt.
+
+        Args:
+            messages:
+                Provider prompt containing one source checkpoint.
+            generation:
+                Effective fake generation.
+            schema:
+                Structured-output schema.
+
+        Returns:
+            Curated response for the prompt's source.
+        """
+
+        del generation, schema
+        content = messages[-1].content
+        source_id = next(
+            source_id for source_id in self._responses if str(source_id) in content
+        )
+        return self._responses[source_id]
+
+
 def test_curated_dataset_loads_all_planned_behavioral_scenarios() -> None:
     """Validate the versioned inventory and its required behavioral coverage."""
 
@@ -257,6 +323,51 @@ def test_runner_reports_all_curated_baseline_validator_outcomes() -> None:
         EvolutionRejectionReason.USER_BOUNDARY,
         EvolutionRejectionReason.PERSONA_CORE,
     }
+
+
+def test_provider_baseline_passes_every_curated_hard_gate_with_fake_provider() -> None:
+    """Promote the provider strategy only after the complete deterministic dataset."""
+
+    scenarios = load_scenarios(DATASET)
+    generation_configuration = GenerationConfiguration(
+        max_output_tokens=512, temperature=0, seed=0
+    )
+    generation = EffectiveGeneration(
+        model=ModelDescriptor(
+            provider="fake",
+            model="curated-baseline",
+            context_tokens=8192,
+            output_tokens=512,
+            capabilities=frozenset({"evolution"}),
+            parameters=frozenset({"temperature", "seed"}),
+        ),
+        configuration=generation_configuration,
+        capability="evolution",
+        input_tokens=7680,
+    )
+    configuration = EvolutionConfiguration(
+        selector=StrategyIdentity(name="baseline.exact_evidence", version="1.0.0"),
+        strategy=BASELINE_PROVIDER_EVOLUTION_STRATEGY,
+        threshold_policy=StrategyIdentity(name="baseline.strict", version="1.0.0"),
+        schema_identity=BASELINE_EVOLUTION_SCHEMA,
+        provider="fake",
+        model="curated-baseline",
+    )
+    strategy = BaselineEvolutionStrategy(
+        DatasetFakeEvolutionGateway(scenarios), generation, configuration
+    )
+
+    run = EvolutionEvaluationRunner().run(
+        scenarios, strategy, BaselineEvolutionEvaluationPolicy()
+    )
+
+    assert run.metrics.scenario_count == 11
+    assert run.metrics.pass_rate == 1.0
+    assert run.metrics.schema_validity == 1.0
+    assert run.metrics.ownership_evidence_validity == 1.0
+    assert run.metrics.hard_invariant_violation_rate == 0.0
+    assert run.metrics.projection_replay_correctness == 1.0
+    assert run.metrics.duplicate_effect_rate == 0.0
 
 
 def test_run_serializes_complete_machine_readable_results() -> None:

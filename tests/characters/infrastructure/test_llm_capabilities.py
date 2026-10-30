@@ -69,7 +69,7 @@ def model(provider: str = "ollama", name: str = "local") -> ModelDescriptor:
         context_tokens=256,
         output_tokens=32,
         capabilities=frozenset(
-            {"response", "summary", "memory_extraction"}
+            {"response", "summary", "memory_extraction", "evolution"}
             if provider == "ollama"
             else {"response"}
         ),
@@ -95,6 +95,7 @@ def _registry(gateway: OllamaGateway) -> ConfiguredModelRegistry:
         {"ollama": gateway},
         {"ollama": Utf8TokenCounter(), "fake": Utf8TokenCounter()},
         {"ollama": gateway},
+        evolutions={"ollama": gateway},
     )
 
 
@@ -294,6 +295,26 @@ def test_memory_extraction_uses_strict_schema_and_separate_capability() -> None:
     assert client.chat.call_args.kwargs["stream"] is False
 
 
+def test_evolution_uses_strict_schema_and_separate_capability() -> None:
+    """Pass structured output schema only through evolution generation."""
+
+    client = MagicMock()
+    client.chat.return_value = {"message": {"content": ' {"commands":[]} '}}
+    registry = _registry(OllamaGateway("unused", client))
+    selected = registry.resolve(
+        "ollama", "local", "evolution", GenerationConfiguration()
+    )
+    schema: dict[str, object] = {"type": "object"}
+
+    content = registry.evolution_gateway("ollama").propose_evolution(
+        PROMPT, selected, schema
+    )
+
+    assert content == '{"commands":[]}'
+    assert client.chat.call_args.kwargs["format"] == schema
+    assert client.chat.call_args.kwargs["stream"] is False
+
+
 def test_call_failures_and_malformed_stream_are_normalized() -> None:
     """Connection failures and invalid chunks expose safe domain errors."""
 
@@ -376,6 +397,7 @@ def test_composition_reads_characters_settings_lazily(
     monkeypatch.setenv("CHARACTERS_RESPONSE_MODEL", "response-local")
     monkeypatch.setenv("CHARACTERS_SUMMARY_MODEL", "summary-local")
     monkeypatch.setenv("CHARACTERS_MEMORY_EXTRACTION_MODEL", "memory-local")
+    monkeypatch.setenv("CHARACTERS_EVOLUTION_MODEL", "evolution-local")
     monkeypatch.setenv("CHARACTERS_OLLAMA_ENDPOINT_URL", "http://characters:11434")
     with patch(
         "chat_buddy.characters.infrastructure.llm.ollama_gateway.Client"
@@ -385,12 +407,14 @@ def test_composition_reads_characters_settings_lazily(
             "response-local",
             "summary-local",
             "memory-local",
+            "evolution-local",
         ]
         assert registry.resolve_default("response").model.model == "response-local"
         assert registry.resolve_default("summary").model.model == "summary-local"
         assert (
             registry.resolve_default("memory_extraction").model.model == "memory-local"
         )
+        assert registry.resolve_default("evolution").model.model == "evolution-local"
         assert isinstance(registry.token_counter("ollama"), OllamaTokenCounter)
         client.assert_called_once_with(host="http://characters:11434")
         client.return_value.chat.assert_not_called()

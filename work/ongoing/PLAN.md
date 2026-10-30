@@ -394,6 +394,8 @@ as incremental application.
 
 ### Slice 10 — Implement the baseline strategy
 
+Status: Complete
+
 Add a provider-backed baseline strategy that:
 
 - Receives only the immutable snapshot.

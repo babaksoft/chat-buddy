@@ -145,6 +145,7 @@ from chat_buddy.characters.domain.identity import (
 )
 from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
+    EvolutionGateway,
     GenerationCapability,
     GenerationConfiguration,
     MemoryExtractionGateway,
@@ -297,6 +298,7 @@ __all__ = [
     "EvolutionExperimentMetric",
     "EvolutionExperimentReporter",
     "EvolutionExperimentResult",
+    "EvolutionGateway",
     "EvolutionMemory",
     "EvolutionProjectionConflictError",
     "EvolutionProjectionState",

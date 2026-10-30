@@ -167,6 +167,53 @@ class OllamaGateway:
         except Exception:  # noqa: BLE001
             raise ProviderInvocationError("Memory extraction failed.") from None
 
+    def propose_evolution(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Generate one schema-constrained evolution proposal.
+
+        Args:
+            messages:
+                Application-assembled evolution prompt.
+            generation:
+                Effective evolution settings.
+            schema:
+                Strict JSON schema passed to Ollama structured output.
+
+        Returns:
+            Exact nonempty provider text for application validation.
+
+        Raises:
+            UnsupportedGenerationError:
+                If this is not an Ollama evolution request.
+            InvalidProviderResponseError:
+                If provider text is malformed or empty.
+            ProviderInvocationError:
+                If the local provider fails.
+        """
+
+        self._validate(generation, "evolution")
+        try:
+            response = self._client.chat(
+                model=generation.model.model,
+                messages=[message.model_dump() for message in messages],
+                options=self._options(generation),
+                format=schema,
+                stream=False,
+            )
+            content = self._content(response).strip()
+            if not content:
+                raise InvalidProviderResponseError("Evolution output was empty.")
+
+            return content
+        except InvalidProviderResponseError:
+            raise
+        except Exception:  # noqa: BLE001
+            raise ProviderInvocationError("Evolution generation failed.") from None
+
     def _validate(self, generation: EffectiveGeneration, capability: str) -> None:
         """Reject selections intended for another adapter or operation.
 

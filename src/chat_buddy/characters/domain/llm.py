@@ -5,7 +5,9 @@ from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-type GenerationCapability = Literal["response", "summary", "memory_extraction"]
+type GenerationCapability = Literal[
+    "response", "summary", "memory_extraction", "evolution"
+]
 
 
 class PromptMessage(BaseModel):
@@ -224,6 +226,32 @@ class MemoryExtractionGateway(Protocol):
 
         Returns:
             Provider response text without parsing or business authorization.
+        """
+
+        ...
+
+
+class EvolutionGateway(Protocol):
+    """Generate one schema-constrained relationship-evolution payload."""
+
+    def propose_evolution(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Return exact provider JSON for application-layer validation.
+
+        Args:
+            messages:
+                Ordered evolution prompt containing one immutable snapshot.
+            generation:
+                Resolved evolution model and settings.
+            schema:
+                Strict JSON schema for the bounded provider envelope.
+
+        Returns:
+            Provider response text without parsing or persistence access.
         """
 
         ...

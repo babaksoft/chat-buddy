@@ -34,7 +34,7 @@ from chat_buddy.characters.infrastructure.llm import (
 
 
 class FakeResponse:
-    """Capture exact inputs and simulate successful, failed, or canceled streams."""
+    """Capture responses and provide deterministic no-change evolution output."""
 
     def __init__(self) -> None:
         """Initialize successful output and capture state."""
@@ -73,18 +73,45 @@ class FakeResponse:
         finally:
             self.closed = True
 
+    def propose_evolution(
+        self,
+        messages: tuple[PromptMessage, ...],
+        generation: EffectiveGeneration,
+        schema: dict[str, object],
+    ) -> str:
+        """Return a deterministic empty structured evolution proposal.
 
-def registry(gateway: FakeResponse, context: int = 8192) -> ConfiguredModelRegistry:
-    """Build a response-only registry with two interchangeable models.
+        Args:
+            messages:
+                Complete immutable evolution prompt.
+            generation:
+                Effective evolution model selection.
+            schema:
+                Structured-output schema.
+
+        Returns:
+            Valid no-change provider JSON.
+        """
+
+        del messages, generation, schema
+        return '{"commands":[]}'
+
+
+def registry(
+    gateway: FakeResponse, context: int = 8192, *, evolution: bool = False
+) -> ConfiguredModelRegistry:
+    """Build a registry with replaceable response and evolution capabilities.
 
     Args:
         gateway:
             Capturing fake response capability.
         context:
             Deterministic model context window.
+        evolution:
+            Whether production-composition tests need the evolution capability.
 
     Returns:
-        Replaceable Characters registry without summary capability.
+        Replaceable Characters registry without summary or memory capability.
     """
 
     return ConfiguredModelRegistry(
@@ -94,15 +121,23 @@ def registry(gateway: FakeResponse, context: int = 8192) -> ConfiguredModelRegis
                 model=name,
                 context_tokens=context,
                 output_tokens=128,
-                capabilities=frozenset({"response"}),
-                parameters=frozenset({"temperature"}),
+                capabilities=frozenset(
+                    {"response", "evolution"}
+                    if evolution and name == "first"
+                    else {"response"}
+                ),
+                parameters=frozenset({"temperature", "seed"}),
             )
             for name in ("first", "second")
         ),
         responses={"fake": gateway},
         summaries={},
+        evolutions={"fake": gateway} if evolution else None,
         counters={"fake": Utf8TokenCounter()},
-        defaults={"response": ("fake", "first")},
+        defaults={
+            "response": ("fake", "first"),
+            **({"evolution": ("fake", "first")} if evolution else {}),
+        },
     )
 
 
