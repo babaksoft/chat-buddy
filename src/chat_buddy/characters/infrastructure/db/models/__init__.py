@@ -8,6 +8,7 @@ from chat_buddy.characters.infrastructure.db.models.continuity import (
     StorylineModel,
 )
 from chat_buddy.characters.infrastructure.db.models.evolution import (
+    EvolutionCorrectionEventModel,
     EvolutionEffectModel,
     EvolutionEventModel,
     PersonaAdaptationProjectionModel,
@@ -31,6 +32,7 @@ from chat_buddy.characters.infrastructure.db.models.summary import SummaryRevisi
 __all__ = [
     "ContinuityModel",
     "ConversationModel",
+    "EvolutionCorrectionEventModel",
     "EvolutionEffectModel",
     "EvolutionEventModel",
     "GenerationAttemptModel",

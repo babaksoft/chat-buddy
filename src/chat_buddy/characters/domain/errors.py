@@ -160,6 +160,10 @@ class EvolutionProjectionConflictError(ValueError):
     """Evolution projections are absent, foreign, or changed concurrently."""
 
 
+class EvolutionCorrectionConflictError(ValueError):
+    """An evolution correction is stale, foreign, or targets an invalid event."""
+
+
 class InvalidParentError(ValueError):
     """A message parent is absent, foreign, cyclic, or has an invalid role."""
 

@@ -25,6 +25,7 @@ from chat_buddy.characters.domain.conversation import (
     SubmittedInput,
 )
 from chat_buddy.characters.domain.evolution import (
+    EvolutionCorrectionEvent,
     EvolutionDecision,
     EvolutionEffect,
     EvolutionEvent,
@@ -1295,6 +1296,74 @@ class EvolutionRepository(Protocol):
 
         Returns:
             Immutable accepted event snapshots.
+        """
+
+        ...
+
+    def list_corrections(
+        self, scope: EvolutionScope
+    ) -> tuple[EvolutionCorrectionEvent, ...]:
+        """Read user correction events in deterministic append order.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Immutable user correction snapshots.
+        """
+
+        ...
+
+    def append_correction(
+        self,
+        correction: EvolutionCorrectionEvent,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+    ) -> EvolutionProjectionState:
+        """Append a guarded correction and atomically replace both caches.
+
+        Args:
+            correction:
+                User-authored correction with observed and resulting revisions.
+            relationship:
+                Fully replayed relationship cache.
+            persona_adaptations:
+                Fully replayed adaptation cache.
+
+        Returns:
+            Persisted paired cache state.
+        """
+
+        ...
+
+    def rebuild_projections(
+        self,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+        relationship_checkpoint_id: UUID | None,
+        adaptation_checkpoint_id: UUID | None,
+        expected_relationship_revision: int | None = None,
+        expected_adaptation_revision: int | None = None,
+    ) -> EvolutionProjectionState:
+        """Replace or recreate disposable caches from authoritative history.
+
+        Args:
+            relationship:
+                Fully replayed relationship cache.
+            persona_adaptations:
+                Fully replayed adaptation cache.
+            relationship_checkpoint_id:
+                Last inferred relationship event represented.
+            adaptation_checkpoint_id:
+                Last inferred adaptation event represented.
+            expected_relationship_revision:
+                Optional observed relationship revision for guarded replacement.
+            expected_adaptation_revision:
+                Optional observed adaptation revision for guarded replacement.
+
+        Returns:
+            Persisted paired cache state.
         """
 
         ...

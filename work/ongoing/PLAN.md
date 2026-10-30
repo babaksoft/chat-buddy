@@ -368,6 +368,8 @@ duplicate an event or lose a committed response.
 
 ### Slice 9 — Rebuild projections and support corrections
 
+Status: Complete
+
 Implement deterministic replay from:
 
 - Starting relationship.

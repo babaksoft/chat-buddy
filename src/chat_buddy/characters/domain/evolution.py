@@ -113,6 +113,14 @@ class EvolutionEffectState(StrEnum):
     REJECTED = "rejected"
 
 
+class EvolutionCorrectionAction(StrEnum):
+    """User-authored operations over one immutable inferred event."""
+
+    EXCLUDE = "exclude"
+    REPLACE = "replace"
+    RESTORE = "restore"
+
+
 class EvolutionRejectionReason(StrEnum):
     """Stable categories used when an atomic proposal is rejected."""
 
@@ -1263,6 +1271,86 @@ class EvolutionEvent(BaseModel):
 
         if any(source.scope != self.scope for source in self.command.sources):
             raise ValueError("Evolution event evidence is foreign.")
+        return self
+
+
+class EvolutionCorrectionEvent(BaseModel):
+    """One append-only user correction of an inferred evolution event.
+
+    Attributes:
+        id:
+            Stable correction event identifier.
+        scope:
+            Continuity ownership.
+        target_event_id:
+            Immutable inferred event being interpreted.
+        action:
+            Exclude, replace, or restore operation.
+        replacement:
+            User-authored replacement command when replacing.
+        note:
+            Concise user-authored correction provenance.
+        expected_relationship_revision:
+            Relationship revision observed by the user.
+        expected_adaptation_revision:
+            Adaptation revision observed by the user.
+        relationship_revision:
+            Relationship revision after appending the correction.
+        adaptation_revision:
+            Adaptation revision after appending the correction.
+        created_at:
+            Correction creation timestamp.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(description="Stable correction event identifier.")
+    scope: EvolutionScope = Field(description="Continuity ownership.")
+    target_event_id: UUID = Field(description="Corrected inferred event identifier.")
+    action: EvolutionCorrectionAction = Field(description="Correction operation.")
+    replacement: EvolutionCommand | None = Field(
+        default=None, description="User-authored replacement command."
+    )
+    note: str = Field(
+        min_length=1,
+        max_length=1024,
+        pattern=NON_BLANK_TEXT_PATTERN,
+        description="Concise user-authored correction provenance.",
+    )
+    expected_relationship_revision: int = Field(
+        ge=0, description="Observed relationship projection revision."
+    )
+    expected_adaptation_revision: int = Field(
+        ge=0, description="Observed adaptation projection revision."
+    )
+    relationship_revision: int = Field(
+        ge=0, description="Relationship revision after this correction."
+    )
+    adaptation_revision: int = Field(
+        ge=0, description="Adaptation revision after this correction."
+    )
+    created_at: datetime = Field(description="Correction creation timestamp.")
+
+    @model_validator(mode="after")
+    def validate_correction_shape(self) -> Self:
+        """Require action-consistent replacement and owned provenance.
+
+        Returns:
+            Validated user correction event.
+
+        Raises:
+            ValueError:
+                If the replacement contradicts the action or crosses ownership.
+        """
+
+        if (self.action == EvolutionCorrectionAction.REPLACE) != (
+            self.replacement is not None
+        ):
+            raise ValueError("Only replacement corrections require a command.")
+        if self.replacement is not None and any(
+            source.scope != self.scope for source in self.replacement.sources
+        ):
+            raise ValueError("Evolution correction evidence is foreign.")
         return self
 
 

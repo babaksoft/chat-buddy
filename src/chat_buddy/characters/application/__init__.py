@@ -29,6 +29,9 @@ from chat_buddy.characters.application.evolution import (
 from chat_buddy.characters.application.evolution_effect_service import (
     EvolutionEffectService,
 )
+from chat_buddy.characters.application.evolution_projection_service import (
+    EvolutionProjectionService,
+)
 from chat_buddy.characters.application.evolution_snapshot import (
     BaselineEvolutionSnapshotSelector,
 )
@@ -77,6 +80,7 @@ __all__ = [
     "DeterministicFixtureEvolutionStrategy",
     "EvolutionEffectService",
     "EvolutionEvaluator",
+    "EvolutionProjectionService",
     "EvolutionProposalValidator",
     "EvolutionValidationResult",
     "IdentityService",

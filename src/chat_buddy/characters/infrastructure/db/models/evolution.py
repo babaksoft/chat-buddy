@@ -146,6 +146,84 @@ class EvolutionEventModel(CharactersBase):
     )
 
 
+class EvolutionCorrectionEventModel(CharactersBase):
+    """Store one append-only user interpretation of an inferred event."""
+
+    __tablename__ = "evolution_correction_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "id", "continuity_id", name="uq_evolution_correction_ownership"
+        ),
+        UniqueConstraint(
+            "continuity_id",
+            "relationship_revision",
+            "adaptation_revision",
+            name="uq_evolution_correction_replay_position",
+        ),
+        ForeignKeyConstraint(
+            ["continuity_id", "identity_id", "persona_id"],
+            [
+                "characters.continuities.id",
+                "characters.continuities.identity_id",
+                "characters.continuities.persona_id",
+            ],
+            name="fk_evolution_correction_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["target_event_id", "continuity_id"],
+            [
+                "characters.evolution_events.id",
+                "characters.evolution_events.continuity_id",
+            ],
+            name="fk_evolution_correction_target",
+        ),
+        CheckConstraint(
+            "action IN ('exclude', 'replace', 'restore')",
+            name="ck_evolution_correction_action",
+        ),
+        CheckConstraint(
+            "(action = 'replace' AND replacement IS NOT NULL) OR "
+            "(action <> 'replace' AND replacement IS NULL)",
+            name="ck_evolution_correction_replacement",
+        ),
+        CheckConstraint(
+            "expected_relationship_revision >= 0 AND "
+            "expected_adaptation_revision >= 0 AND "
+            "relationship_revision >= 0 AND adaptation_revision >= 0",
+            name="ck_evolution_correction_revisions",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, doc="Stable event ID.")
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
+    identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
+    persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
+    target_event_id: Mapped[UUID] = mapped_column(Uuid, doc="Corrected inferred event.")
+    action: Mapped[str] = mapped_column(String(16), doc="Correction operation.")
+    replacement: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True), doc="User-authored replacement command."
+    )
+    note: Mapped[str] = mapped_column(
+        String(1024), doc="User-authored correction provenance."
+    )
+    expected_relationship_revision: Mapped[int] = mapped_column(
+        Integer, doc="Observed relationship projection revision."
+    )
+    expected_adaptation_revision: Mapped[int] = mapped_column(
+        Integer, doc="Observed adaptation projection revision."
+    )
+    relationship_revision: Mapped[int] = mapped_column(
+        Integer, doc="Relationship revision after this correction."
+    )
+    adaptation_revision: Mapped[int] = mapped_column(
+        Integer, doc="Adaptation revision after this correction."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), doc="UTC correction timestamp."
+    )
+
+
 class RelationshipProjectionModel(CharactersBase):
     """Cache the current relationship projection for one continuity."""
 

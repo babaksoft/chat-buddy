@@ -3,11 +3,16 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    EvolutionCommand,
+    EvolutionCorrectionAction,
+    EvolutionCorrectionConflictError,
+    EvolutionCorrectionEvent,
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionEffect,
@@ -28,12 +33,17 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ConversationModel,
+    EvolutionCorrectionEventModel,
     EvolutionEffectModel,
     EvolutionEventModel,
     MessageModel,
     PersonaAdaptationProjectionModel,
     RelationshipProjectionModel,
     SceneModel,
+)
+
+_EVOLUTION_COMMAND_ADAPTER: TypeAdapter[EvolutionCommand] = TypeAdapter(
+    EvolutionCommand
 )
 
 
@@ -359,11 +369,343 @@ class DbEvolutionRepository:
                 )
                 .order_by(
                     EvolutionEventModel.relationship_revision
-                    + EvolutionEventModel.adaptation_revision
+                    + EvolutionEventModel.adaptation_revision,
+                    EvolutionEventModel.relationship_revision,
+                    EvolutionEventModel.adaptation_revision,
+                    EvolutionEventModel.id,
                 )
             )
 
             return tuple(self._event_snapshot(row) for row in rows)
+
+    def list_corrections(
+        self, scope: EvolutionScope
+    ) -> tuple[EvolutionCorrectionEvent, ...]:
+        """Read append-only user corrections in replay order.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Immutable user correction snapshots.
+        """
+
+        with self._factory() as session:
+            rows = session.scalars(
+                select(EvolutionCorrectionEventModel)
+                .where(
+                    EvolutionCorrectionEventModel.continuity_id == scope.continuity_id,
+                    EvolutionCorrectionEventModel.identity_id == scope.identity_id,
+                    EvolutionCorrectionEventModel.persona_id == scope.persona_id,
+                )
+                .order_by(
+                    EvolutionCorrectionEventModel.relationship_revision
+                    + EvolutionCorrectionEventModel.adaptation_revision,
+                    EvolutionCorrectionEventModel.relationship_revision,
+                    EvolutionCorrectionEventModel.adaptation_revision,
+                    EvolutionCorrectionEventModel.id,
+                )
+            )
+
+            return tuple(self._correction_snapshot(row) for row in rows)
+
+    def append_correction(
+        self,
+        correction: EvolutionCorrectionEvent,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+    ) -> EvolutionProjectionState:
+        """Append one guarded correction and commit replayed caches atomically.
+
+        Args:
+            correction:
+                User-authored correction event.
+            relationship:
+                Fully replayed relationship projection.
+            persona_adaptations:
+                Fully replayed adaptation projection.
+
+        Returns:
+            Persisted paired cache state.
+
+        Raises:
+            EvolutionCorrectionConflictError:
+                If ownership, target, or observed revisions conflict.
+        """
+
+        now = datetime.now(UTC)
+        try:
+            with self._factory() as session, session.begin():
+                rows = self._projection_rows(session, correction.scope, lock=True)
+                if rows is None:
+                    raise EvolutionCorrectionConflictError(
+                        "Evolution projection caches are not initialized"
+                    )
+
+                relationship_row, adaptation_row = rows
+                if (
+                    relationship_row.revision
+                    != correction.expected_relationship_revision
+                    or adaptation_row.revision
+                    != correction.expected_adaptation_revision
+                ):
+                    raise EvolutionCorrectionConflictError(
+                        "Evolution correction used stale projection revisions"
+                    )
+
+                target = session.scalar(
+                    select(EvolutionEventModel).where(
+                        EvolutionEventModel.id == correction.target_event_id,
+                        EvolutionEventModel.continuity_id
+                        == correction.scope.continuity_id,
+                        EvolutionEventModel.identity_id == correction.scope.identity_id,
+                        EvolutionEventModel.persona_id == correction.scope.persona_id,
+                    )
+                )
+                if target is None:
+                    raise EvolutionCorrectionConflictError(
+                        "Evolution correction target does not exist"
+                    )
+
+                target_event = self._event_snapshot(target)
+                adaptation_target = isinstance(
+                    target_event.command,
+                    (SetPersonaAdaptationCommand, RemovePersonaAdaptationCommand),
+                )
+                if (
+                    correction.relationship_revision
+                    != correction.expected_relationship_revision
+                    + (not adaptation_target)
+                    or correction.adaptation_revision
+                    != correction.expected_adaptation_revision + adaptation_target
+                ):
+                    raise EvolutionCorrectionConflictError(
+                        "Evolution correction revisions are not contiguous"
+                    )
+
+                if correction.replacement is not None and (
+                    isinstance(
+                        correction.replacement,
+                        (
+                            SetPersonaAdaptationCommand,
+                            RemovePersonaAdaptationCommand,
+                        ),
+                    )
+                    != adaptation_target
+                ):
+                    raise EvolutionCorrectionConflictError(
+                        "Evolution replacement changed projection type"
+                    )
+
+                if correction.replacement is not None:
+                    changed_target = (
+                        correction.replacement.kind != target_event.command.kind
+                        or correction.replacement.sources
+                        != target_event.command.sources
+                    )
+                    if isinstance(
+                        correction.replacement,
+                        (
+                            SetPersonaAdaptationCommand,
+                            RemovePersonaAdaptationCommand,
+                        ),
+                    ) and isinstance(
+                        target_event.command,
+                        (
+                            SetPersonaAdaptationCommand,
+                            RemovePersonaAdaptationCommand,
+                        ),
+                    ):
+                        changed_target = (
+                            changed_target
+                            or correction.replacement.facet
+                            != target_event.command.facet
+                        )
+                    if changed_target:
+                        raise EvolutionCorrectionConflictError(
+                            "Evolution replacement changed its inferred target"
+                        )
+
+                if correction.action == EvolutionCorrectionAction.RESTORE:
+                    prior = session.scalar(
+                        select(EvolutionCorrectionEventModel)
+                        .where(
+                            EvolutionCorrectionEventModel.continuity_id
+                            == correction.scope.continuity_id,
+                            EvolutionCorrectionEventModel.target_event_id
+                            == correction.target_event_id,
+                        )
+                        .order_by(
+                            (
+                                EvolutionCorrectionEventModel.relationship_revision
+                                + EvolutionCorrectionEventModel.adaptation_revision
+                            ).desc()
+                        )
+                        .limit(1)
+                    )
+                    if (
+                        prior is None
+                        or prior.action == EvolutionCorrectionAction.RESTORE
+                    ):
+                        raise EvolutionCorrectionConflictError(
+                            "Only a corrected interpretation can be restored"
+                        )
+
+                if (
+                    relationship.scope != correction.scope
+                    or persona_adaptations.scope != correction.scope
+                    or relationship.revision != correction.relationship_revision
+                    or persona_adaptations.revision != correction.adaptation_revision
+                ):
+                    raise EvolutionCorrectionConflictError(
+                        "Replayed correction projections are inconsistent"
+                    )
+
+                session.add(
+                    EvolutionCorrectionEventModel(
+                        id=correction.id,
+                        continuity_id=correction.scope.continuity_id,
+                        identity_id=correction.scope.identity_id,
+                        persona_id=correction.scope.persona_id,
+                        target_event_id=correction.target_event_id,
+                        action=correction.action.value,
+                        replacement=(
+                            correction.replacement.model_dump(mode="json")
+                            if correction.replacement is not None
+                            else None
+                        ),
+                        note=correction.note,
+                        expected_relationship_revision=correction.expected_relationship_revision,
+                        expected_adaptation_revision=correction.expected_adaptation_revision,
+                        relationship_revision=correction.relationship_revision,
+                        adaptation_revision=correction.adaptation_revision,
+                        created_at=correction.created_at,
+                    )
+                )
+                self._replace_projection_rows(
+                    relationship_row,
+                    adaptation_row,
+                    relationship,
+                    persona_adaptations,
+                    relationship_row.rebuild_checkpoint_id,
+                    adaptation_row.rebuild_checkpoint_id,
+                    now,
+                )
+                session.flush()
+
+                return self._projection_snapshot(relationship_row, adaptation_row)
+        except IntegrityError as error:
+            raise EvolutionCorrectionConflictError(
+                "Evolution correction changed concurrently"
+            ) from error
+
+    def rebuild_projections(
+        self,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+        relationship_checkpoint_id: UUID | None,
+        adaptation_checkpoint_id: UUID | None,
+        expected_relationship_revision: int | None = None,
+        expected_adaptation_revision: int | None = None,
+    ) -> EvolutionProjectionState:
+        """Replace or recreate disposable projections from authoritative history.
+
+        Args:
+            relationship:
+                Fully replayed relationship projection.
+            persona_adaptations:
+                Fully replayed adaptation projection.
+            relationship_checkpoint_id:
+                Last inferred relationship event represented.
+            adaptation_checkpoint_id:
+                Last inferred adaptation event represented.
+            expected_relationship_revision:
+                Optional observed relationship revision.
+            expected_adaptation_revision:
+                Optional observed adaptation revision.
+
+        Returns:
+            Persisted paired projection state.
+
+        Raises:
+            EvolutionProjectionConflictError:
+                If ownership or an optimistic revision guard conflicts.
+        """
+
+        if relationship.scope != persona_adaptations.scope:
+            raise EvolutionProjectionConflictError(
+                "Evolution projection owners must match"
+            )
+        if (expected_relationship_revision is None) != (
+            expected_adaptation_revision is None
+        ):
+            raise EvolutionProjectionConflictError(
+                "Evolution rebuild requires both observed revisions"
+            )
+
+        now = datetime.now(UTC)
+        scope = relationship.scope
+        try:
+            with self._factory() as session, session.begin():
+                rows = self._projection_rows(session, scope, lock=True)
+                if rows is None:
+                    if (
+                        expected_relationship_revision is not None
+                        or expected_adaptation_revision is not None
+                    ):
+                        raise EvolutionProjectionConflictError(
+                            "Evolution projection caches were deleted concurrently"
+                        )
+
+                    relationship_row = RelationshipProjectionModel(
+                        continuity_id=scope.continuity_id,
+                        identity_id=scope.identity_id,
+                        persona_id=scope.persona_id,
+                        revision=relationship.revision,
+                        rebuild_checkpoint_id=relationship_checkpoint_id,
+                        snapshot=relationship.model_dump(mode="json"),
+                        updated_at=now,
+                    )
+                    adaptation_row = PersonaAdaptationProjectionModel(
+                        continuity_id=scope.continuity_id,
+                        identity_id=scope.identity_id,
+                        persona_id=scope.persona_id,
+                        revision=persona_adaptations.revision,
+                        rebuild_checkpoint_id=adaptation_checkpoint_id,
+                        snapshot=persona_adaptations.model_dump(mode="json"),
+                        updated_at=now,
+                    )
+                    session.add_all([relationship_row, adaptation_row])
+                else:
+                    relationship_row, adaptation_row = rows
+                    if (
+                        expected_relationship_revision is not None
+                        and relationship_row.revision != expected_relationship_revision
+                    ) or (
+                        expected_adaptation_revision is not None
+                        and adaptation_row.revision != expected_adaptation_revision
+                    ):
+                        raise EvolutionProjectionConflictError(
+                            "Evolution projections changed before rebuild"
+                        )
+
+                    self._replace_projection_rows(
+                        relationship_row,
+                        adaptation_row,
+                        relationship,
+                        persona_adaptations,
+                        relationship_checkpoint_id,
+                        adaptation_checkpoint_id,
+                        now,
+                    )
+                session.flush()
+
+                return self._projection_snapshot(relationship_row, adaptation_row)
+        except IntegrityError as error:
+            raise EvolutionProjectionConflictError(
+                "Evolution projections changed concurrently while rebuilding"
+            ) from error
 
     def _apply(
         self,
@@ -629,6 +971,27 @@ class DbEvolutionRepository:
         )
 
     @staticmethod
+    def _replace_projection_rows(
+        relationship_row: RelationshipProjectionModel,
+        adaptation_row: PersonaAdaptationProjectionModel,
+        relationship: RelationshipProjection,
+        persona_adaptations: PersonaAdaptationProjection,
+        relationship_checkpoint_id: UUID | None,
+        adaptation_checkpoint_id: UUID | None,
+        updated_at: datetime,
+    ) -> None:
+        """Replace paired cache rows with one fully replayed state."""
+
+        relationship_row.revision = relationship.revision
+        relationship_row.rebuild_checkpoint_id = relationship_checkpoint_id
+        relationship_row.snapshot = relationship.model_dump(mode="json")
+        relationship_row.updated_at = updated_at
+        adaptation_row.revision = persona_adaptations.revision
+        adaptation_row.rebuild_checkpoint_id = adaptation_checkpoint_id
+        adaptation_row.snapshot = persona_adaptations.model_dump(mode="json")
+        adaptation_row.updated_at = updated_at
+
+    @staticmethod
     def _effect_snapshot(row: EvolutionEffectModel) -> EvolutionEffect:
         """Convert an effect persistence row to a detached domain snapshot."""
 
@@ -657,21 +1020,47 @@ class DbEvolutionRepository:
     def _event_snapshot(row: EvolutionEventModel) -> EvolutionEvent:
         """Convert an event persistence row to a detached domain snapshot."""
 
-        return EvolutionEvent.model_validate(
-            {
-                "id": row.id,
-                "proposal_id": row.proposal_id,
-                "scope": {
-                    "identity_id": row.identity_id,
-                    "persona_id": row.persona_id,
-                    "continuity_id": row.continuity_id,
-                },
-                "command": row.command,
-                "relationship_revision": row.relationship_revision,
-                "adaptation_revision": row.adaptation_revision,
-                "provenance": row.provenance,
-                "created_at": _utc(row.created_at),
-            }
+        return EvolutionEvent(
+            id=row.id,
+            proposal_id=row.proposal_id,
+            scope=EvolutionScope(
+                identity_id=row.identity_id,
+                persona_id=row.persona_id,
+                continuity_id=row.continuity_id,
+            ),
+            command=_EVOLUTION_COMMAND_ADAPTER.validate_python(row.command),
+            relationship_revision=row.relationship_revision,
+            adaptation_revision=row.adaptation_revision,
+            provenance=EvolutionProvenance.model_validate(row.provenance),
+            created_at=_utc(row.created_at),
+        )
+
+    @staticmethod
+    def _correction_snapshot(
+        row: EvolutionCorrectionEventModel,
+    ) -> EvolutionCorrectionEvent:
+        """Convert a user correction row to a detached domain snapshot."""
+
+        return EvolutionCorrectionEvent(
+            id=row.id,
+            scope=EvolutionScope(
+                identity_id=row.identity_id,
+                persona_id=row.persona_id,
+                continuity_id=row.continuity_id,
+            ),
+            target_event_id=row.target_event_id,
+            action=EvolutionCorrectionAction(row.action),
+            replacement=(
+                _EVOLUTION_COMMAND_ADAPTER.validate_python(row.replacement)
+                if row.replacement is not None
+                else None
+            ),
+            note=row.note,
+            expected_relationship_revision=row.expected_relationship_revision,
+            expected_adaptation_revision=row.expected_adaptation_revision,
+            relationship_revision=row.relationship_revision,
+            adaptation_revision=row.adaptation_revision,
+            created_at=_utc(row.created_at),
         )
 
 
