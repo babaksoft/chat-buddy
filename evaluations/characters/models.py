@@ -66,7 +66,7 @@ class EvidenceTurn(BaseModel):
 
 
 class RelationshipState(BaseModel):
-    """Portable relationship state without scenario-generated ownership.
+    """Portable relationship state.
 
     Attributes:
         revision:
@@ -279,8 +279,10 @@ class EvolutionScenario(BaseModel):
 
         if self.mode == ContinuityMode.TIMELINE:
             raise ValueError("Timeline evolution scenarios are deferred.")
+
         if not any(turn.selected for turn in self.evidence):
             raise ValueError("An evolution scenario requires selected evidence.")
+
         selected_count = sum(turn.selected for turn in self.evidence)
         expectations = (
             self.required_proposals
@@ -293,11 +295,13 @@ class EvolutionScenario(BaseModel):
             for position in item.evidence
         ):
             raise ValueError("Command expectations cite unavailable selected evidence.")
+
         if self.expected_outcome == EvolutionDecisionOutcome.REJECTED:
             if self.expected_reason is None:
                 raise ValueError("Rejected scenarios require a reason.")
         elif self.expected_reason is not None:
             raise ValueError("Only rejected scenarios may declare a reason.")
+
         return self
 
     def build_snapshot(self) -> EvolutionSnapshot:
@@ -427,6 +431,10 @@ class ScenarioResult(BaseModel):
             Whether expected and actual no-change behavior agree.
         policy_decision_correct:
             Whether outcome and reason match the scenario.
+        actual_outcome:
+            Terminal outcome returned by proposal validation.
+        rejection_reason:
+            Stable validator category when the proposal was rejected.
         projection_replay_correct:
             Whether both resulting projections match expected state.
         duplicate_effect_rate:
@@ -452,6 +460,12 @@ class ScenarioResult(BaseModel):
     hard_invariant_violations: int = Field(ge=0, description="Hard violation count.")
     no_change_correct: bool = Field(description="No-change correctness.")
     policy_decision_correct: bool = Field(description="Decision correctness.")
+    actual_outcome: EvolutionDecisionOutcome | None = Field(
+        default=None, description="Actual terminal validator outcome."
+    )
+    rejection_reason: EvolutionRejectionReason | None = Field(
+        default=None, description="Actual stable rejection category."
+    )
     projection_replay_correct: bool = Field(description="Replay correctness.")
     duplicate_effect_rate: float = Field(ge=0.0, le=1.0, description="Duplicate rate.")
     passed: bool = Field(description="Promotion-gate result.")

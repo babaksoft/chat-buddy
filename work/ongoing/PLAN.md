@@ -324,6 +324,8 @@ and usable across Storyline scenes.
 
 ### Slice 7 — Implement validation and transition policy
 
+Status: Complete
+
 Validate proposals against:
 
 - Expected current projection revision and values.

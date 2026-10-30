@@ -1,5 +1,9 @@
-"""Minimal policies for exercising the native runner itself."""
+"""Policies for exercising native evolution evaluation scenarios."""
 
+from chat_buddy.characters.application import (
+    EvolutionProposalValidator,
+    StrictBaselineEvolutionThresholdPolicy,
+)
 from chat_buddy.characters.domain import (
     EvolutionDecision,
     EvolutionDecisionOutcome,
@@ -33,6 +37,7 @@ class NoChangeEvaluationPolicy:
 
         if proposal.commands:
             raise ValueError("NoChangeEvaluationPolicy accepts only empty proposals.")
+
         return PolicyEvaluation(
             decision=EvolutionDecision(
                 proposal_id=proposal.id,
@@ -40,4 +45,37 @@ class NoChangeEvaluationPolicy:
             ),
             relationship=snapshot.relationship,
             persona_adaptations=snapshot.persona_adaptations,
+        )
+
+
+class BaselineEvolutionEvaluationPolicy:
+    """Expose production proposal validation through the evaluation seam."""
+
+    def __init__(self) -> None:
+        """Create the strict baseline validator without external dependencies."""
+
+        self._validator = EvolutionProposalValidator(
+            StrictBaselineEvolutionThresholdPolicy()
+        )
+
+    def evaluate(
+        self, snapshot: EvolutionSnapshot, proposal: EvolutionProposal
+    ) -> PolicyEvaluation:
+        """Validate one scenario proposal and return portable replay output.
+
+        Args:
+            snapshot:
+                Immutable evaluation state and evidence.
+            proposal:
+                Candidate typed strategy output.
+
+        Returns:
+            Deterministic decision and resulting projections.
+        """
+
+        result = self._validator.evaluate(snapshot, proposal)
+        return PolicyEvaluation(
+            decision=result.decision,
+            relationship=result.relationship,
+            persona_adaptations=result.persona_adaptations,
         )

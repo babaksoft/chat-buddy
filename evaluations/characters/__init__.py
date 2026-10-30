@@ -9,10 +9,12 @@ from evaluations.characters.models import (
     ScenarioResult,
     load_scenarios,
 )
+from evaluations.characters.policies import BaselineEvolutionEvaluationPolicy
 from evaluations.characters.runner import EvolutionEvaluationRunner
 
 __all__ = [
     "AggregateMetrics",
+    "BaselineEvolutionEvaluationPolicy",
     "EvaluationRun",
     "EvolutionEvaluationPolicy",
     "EvolutionEvaluationRunner",

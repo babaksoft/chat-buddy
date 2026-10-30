@@ -34,6 +34,7 @@ def main() -> int:
         arguments.json_output.write_text(
             run.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
+
     print(
         f"{run.strategy}: {run.metrics.passed_count}/{run.metrics.scenario_count} "
         f"scenarios passed; required recall "
@@ -43,6 +44,7 @@ def main() -> int:
     for result in run.results:
         marker = "PASS" if result.passed else "FAIL"
         print(f"{marker:4} {result.name}")
+
     return 0
 
 

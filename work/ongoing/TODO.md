@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 7 — validate typed proposals and baseline
-transitions.
+Next delivery focus: Stage 7, Slice 8 — orchestrate idempotent evolution effects
+after eligible completed turns.
 
 Deferred engineering:
 

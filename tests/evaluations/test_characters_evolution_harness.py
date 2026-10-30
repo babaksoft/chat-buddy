@@ -18,6 +18,7 @@ from chat_buddy.characters.domain import (
     EvolutionEvent,
     EvolutionProposal,
     EvolutionProvenance,
+    EvolutionRejectionReason,
     EvolutionSnapshot,
     PersonaAdaptation,
     PersonaAdaptationProjection,
@@ -25,6 +26,7 @@ from chat_buddy.characters.domain import (
     StrategyIdentity,
 )
 from evaluations.characters import (
+    BaselineEvolutionEvaluationPolicy,
     EvolutionEvaluationRunner,
     EvolutionScenario,
     PolicyEvaluation,
@@ -81,7 +83,7 @@ class DatasetFixtureStrategy:
             provenance=EvolutionProvenance(
                 selector=StrategyIdentity(name="test.selector", version="1.0.0"),
                 strategy=self.strategy_id,
-                policy=StrategyIdentity(name="test.policy", version="1.0.0"),
+                policy=StrategyIdentity(name="baseline.strict", version="1.0.0"),
                 schema_identity=StrategyIdentity(name="test.schema", version="1.0.0"),
             ),
             commands=tuple(
@@ -233,6 +235,28 @@ def test_runner_compares_no_change_and_fixture_strategies_on_one_dataset() -> No
     assert fixture.metrics.correction_correctness == 1.0
     assert fixture.metrics.duplicate_effect_rate == 0.0
     assert fixture.metrics.state_oscillation_correctness == 1.0
+
+
+def test_runner_reports_all_curated_baseline_validator_outcomes() -> None:
+    """Exercise applied, no-change, and rejected baseline validation in the harness."""
+
+    scenarios = load_scenarios(DATASET)
+    run = EvolutionEvaluationRunner().run(
+        scenarios,
+        DatasetFixtureStrategy(scenarios),
+        BaselineEvolutionEvaluationPolicy(),
+    )
+
+    assert run.metrics.scenario_count == 11
+    assert run.metrics.policy_acceptance_correctness == 1.0
+    assert run.metrics.projection_replay_correctness == 1.0
+    assert run.metrics.pass_rate == 1.0
+    assert {result.rejection_reason for result in run.results} == {
+        None,
+        EvolutionRejectionReason.TRANSITION,
+        EvolutionRejectionReason.USER_BOUNDARY,
+        EvolutionRejectionReason.PERSONA_CORE,
+    }
 
 
 def test_run_serializes_complete_machine_readable_results() -> None:
