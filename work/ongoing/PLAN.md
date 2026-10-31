@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-30
+Last updated: 2026-10-31
 
 ## Outcome
 
@@ -438,6 +438,8 @@ Complete when an accepted or corrected event affects the next response context
 without rewriting prior prompts.
 
 ### Slice 12 — Rebuild after retry selection and branching
+
+Status: Complete
 
 When an alternative becomes selected:
 

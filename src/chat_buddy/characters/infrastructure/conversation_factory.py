@@ -12,6 +12,7 @@ from chat_buddy.characters.application import (
     ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
     EvolutionEffectService,
+    EvolutionProjectionService,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
@@ -160,6 +161,11 @@ def create_conversation_service(
         ),
         StrictBaselineEvolutionThresholdPolicy(),
     )
+    evolution_rebuilder = EvolutionProjectionService(
+        evolution_repository,
+        DbContinuityRepository(session_factory),
+        conversations,
+    )
     return ConversationService(
         conversations,
         DbContinuityRepository(session_factory),
@@ -172,4 +178,5 @@ def create_conversation_service(
         response_memories=response_memories,
         evolution=evolution,
         evolution_projections=evolution_repository,
+        evolution_rebuilder=evolution_rebuilder,
     )

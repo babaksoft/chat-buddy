@@ -7,9 +7,13 @@ import pytest
 from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import EvolutionProjectionService
+from chat_buddy.characters.application import (
+    ConversationService,
+    EvolutionProjectionService,
+)
 from chat_buddy.characters.domain import (
     AdaptationFacet,
+    ConversationTarget,
     EvolutionCommand,
     EvolutionCorrectionAction,
     EvolutionCorrectionConflictError,
@@ -40,9 +44,19 @@ from chat_buddy.characters.infrastructure.db.models import (
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
+    DbConversationRepository,
     DbEvolutionRepository,
+    DbIdentityRepository,
+    DbPersonaRepository,
+    DbSummaryRepository,
 )
-from tests.characters_support import FakeResponse, ongoing_target, service, start
+from tests.characters_support import (
+    FakeResponse,
+    ongoing_target,
+    registry,
+    service,
+    start,
+)
 
 
 def test_exclusion_rebuilds_dependent_state_and_restore_reapplies_it(
@@ -80,7 +94,7 @@ def test_exclusion_rebuilds_dependent_state_and_restore_reapplies_it(
         repository, sources[1], provenance, second, relationship, adaptations
     )
     projection_service = EvolutionProjectionService(
-        repository, DbContinuityRepository(factory)
+        repository, DbContinuityRepository(factory), DbConversationRepository(factory)
     )
 
     excluded = projection_service.exclude(
@@ -155,7 +169,7 @@ def test_replacement_updates_persona_adaptation_without_editing_inference(
         }
     )
     projection_service = EvolutionProjectionService(
-        repository, DbContinuityRepository(factory)
+        repository, DbContinuityRepository(factory), DbConversationRepository(factory)
     )
 
     corrected = projection_service.replace(
@@ -221,13 +235,159 @@ def test_deleted_projection_caches_rebuild_to_the_same_state(
         )
 
     rebuilt = EvolutionProjectionService(
-        repository, DbContinuityRepository(factory)
+        repository, DbContinuityRepository(factory), DbConversationRepository(factory)
     ).rebuild(scope)
 
     assert rebuilt.relationship == expected.relationship
     assert rebuilt.persona_adaptations == expected.persona_adaptations
     assert rebuilt.relationship_checkpoint_id == event.id
     assert rebuilt.adaptation_checkpoint_id is None
+
+
+def test_branch_replay_deactivates_and_restores_relationship_and_adaptation_events(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Follow exact selected evidence without deleting off-path events.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters sessions.
+    """
+
+    factory = characters_session_factory
+    conversation_scope = start(factory)
+    target = ongoing_target(conversation_scope)
+    gateway = FakeResponse()
+    scope = EvolutionScope(
+        identity_id=conversation_scope.identity_id,
+        persona_id=conversation_scope.persona_id,
+        continuity_id=conversation_scope.continuity_id,
+    )
+    repository = DbEvolutionRepository(factory)
+    relationship, adaptations = _starting(scope)
+    repository.initialize(relationship, adaptations)
+    projection_service = EvolutionProjectionService(
+        repository, DbContinuityRepository(factory), DbConversationRepository(factory)
+    )
+    app = ConversationService(
+        DbConversationRepository(factory),
+        DbContinuityRepository(factory),
+        DbIdentityRepository(factory),
+        DbPersonaRepository(factory),
+        DbSummaryRepository(factory),
+        registry(gateway),
+        evolution_rebuilder=projection_service,
+    )
+    first_attempt = app.send(target, SubmittedInput(content="First evidence."))
+    list(app.stream(target, first_attempt.id))
+    original_first = app.history(target).messages[-1]
+    original_source = _source(scope, target, 1, 2, app)
+    relationship_event, relationship, adaptations = _append(
+        repository,
+        original_source,
+        _provenance(),
+        SetSocialStatusCommand(
+            expected=RelationshipSocialStatus.STRANGER,
+            value=RelationshipSocialStatus.ACQUAINTANCE,
+            rationale="The original response establishes an acquaintance.",
+            sources=(original_source,),
+        ),
+        relationship,
+        adaptations,
+    )
+
+    gateway.chunks = ("Alternative first response",)
+    retry = app.retry_completed_response(target)
+    list(app.stream(target, retry.id))
+    alternative_first = app.history(target).messages[-1]
+    after_retry = repository.get_projections(scope)
+    assert after_retry.relationship.social == RelationshipSocialStatus.STRANGER
+    assert repository.list_events(scope) == (relationship_event,)
+
+    app.select_alternative(target, original_first.id, alternative_first.id)
+    after_original_selection = repository.get_projections(scope)
+    assert (
+        after_original_selection.relationship.social
+        == RelationshipSocialStatus.ACQUAINTANCE
+    )
+    second_attempt = app.send(target, SubmittedInput(content="Second evidence."))
+    list(app.stream(target, second_attempt.id))
+    old_future_leaf = app.history(target).messages[-1]
+    second_source = _source(scope, target, 3, 4, app)
+    adaptation_event, _, _ = _append(
+        repository,
+        second_source,
+        _provenance(),
+        SetPersonaAdaptationCommand(
+            facet=AdaptationFacet.COMMUNICATION_STYLE,
+            expected=None,
+            value="Uses concise reassurance.",
+            rationale="The selected future supports concise reassurance.",
+            sources=(second_source,),
+        ),
+        relationship,
+        adaptations,
+    )
+    app.branch_from_here(target, alternative_first.id, old_future_leaf.id)
+    inactive = repository.get_projections(scope)
+
+    assert inactive.relationship.social == RelationshipSocialStatus.STRANGER
+    assert inactive.persona_adaptations.adaptations == ()
+    assert inactive.relationship_checkpoint_id is None
+    assert inactive.adaptation_checkpoint_id is None
+    assert repository.list_events(scope) == (relationship_event, adaptation_event)
+
+    app.select_saved_future(target, old_future_leaf.id, alternative_first.id)
+    restored = repository.get_projections(scope)
+
+    assert restored.relationship.social == RelationshipSocialStatus.ACQUAINTANCE
+    assert restored.persona_adaptations.adaptations == (
+        PersonaAdaptation(
+            facet=AdaptationFacet.COMMUNICATION_STYLE,
+            value="Uses concise reassurance.",
+        ),
+    )
+    assert restored.relationship_checkpoint_id == relationship_event.id
+    assert restored.adaptation_checkpoint_id == adaptation_event.id
+
+
+def _source(
+    scope: EvolutionScope,
+    target: ConversationTarget,
+    user_sequence: int,
+    persona_sequence: int,
+    app: ConversationService,
+) -> EvolutionEvidenceReference:
+    """Build an exact source from the currently selected test history.
+
+    Args:
+        scope:
+            Complete evolution ownership.
+        target:
+            Exact Ongoing conversation target.
+        user_sequence:
+            Selected user message sequence.
+        persona_sequence:
+            Selected persona message sequence.
+        app:
+            Conversation service exposing selected history.
+
+    Returns:
+        Exact selected evidence reference.
+    """
+
+    messages = app.history(target).messages
+    user = messages[user_sequence - 1]
+    persona = messages[persona_sequence - 1]
+    return EvolutionEvidenceReference(
+        scope=scope,
+        kind=EvolutionEvidenceKind.ONGOING_TURN,
+        conversation_id=target.scope.conversation_id,
+        user_message_id=user.id,
+        user_sequence=user_sequence,
+        persona_message_id=persona.id,
+        persona_sequence=persona_sequence,
+    )
 
 
 def _prepared_sources(

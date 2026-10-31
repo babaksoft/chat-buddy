@@ -9,6 +9,8 @@ from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     ContinuityLifecycle,
     ContinuityRepository,
+    ConversationGraphRepository,
+    ConversationScope,
     EvolutionCommand,
     EvolutionCorrectionAction,
     EvolutionCorrectionConflictError,
@@ -44,6 +46,7 @@ class EvolutionProjectionService:
         self,
         evolution_repository: EvolutionRepository,
         continuity_repository: ContinuityRepository,
+        conversation_repository: ConversationGraphRepository,
     ) -> None:
         """Initialize the replay service.
 
@@ -52,10 +55,13 @@ class EvolutionProjectionService:
                 Authoritative events, corrections, and disposable caches.
             continuity_repository:
                 Continuity owner and reviewed starting relationship.
+            conversation_repository:
+                Selected conversation ancestry used to determine active evidence.
         """
 
         self._evolution_repository = evolution_repository
         self._continuity_repository = continuity_repository
+        self._conversation_repository = conversation_repository
 
     def rebuild(
         self,
@@ -314,6 +320,9 @@ class EvolutionProjectionService:
         adaptation_checkpoint: UUID | None = None
 
         for event in inferred:
+            if not self._event_is_selected(event):
+                continue
+
             command = dispositions.get(event.id, event.command)
             if _is_adaptation(event.command):
                 adaptation_checkpoint = event.id
@@ -351,6 +360,62 @@ class EvolutionProjectionService:
             relationship_checkpoint,
             adaptation_checkpoint,
         )
+
+    def _event_is_selected(self, event: EvolutionEvent) -> bool:
+        """Return whether every exact source remains on selected ancestry.
+
+        Args:
+            event:
+                Immutable inferred event with exact evidence provenance.
+
+        Returns:
+            Whether all cited turns remain selected and adjacent.
+        """
+
+        selected_turns_by_conversation: dict[UUID, set[tuple[UUID, int, UUID, int]]] = (
+            {}
+        )
+
+        for source in event.command.sources:
+            selected_turns = selected_turns_by_conversation.get(source.conversation_id)
+            if selected_turns is None:
+                path = self._conversation_repository.selected_path(
+                    ConversationScope(
+                        identity_id=event.scope.identity_id,
+                        persona_id=event.scope.persona_id,
+                        continuity_id=event.scope.continuity_id,
+                        conversation_id=source.conversation_id,
+                    )
+                )
+                selected_turns = {
+                    (
+                        user.id,
+                        position * 2 + 1,
+                        persona.id,
+                        position * 2 + 2,
+                    )
+                    for position, (user, persona) in enumerate(
+                        zip(
+                            path.messages[0::2],
+                            path.messages[1::2],
+                            strict=False,
+                        )
+                    )
+                    if user.role == "user"
+                    and persona.role == "persona"
+                    and persona.parent_id == user.id
+                }
+                selected_turns_by_conversation[source.conversation_id] = selected_turns
+
+            if (
+                source.user_message_id,
+                source.user_sequence,
+                source.persona_message_id,
+                source.persona_sequence,
+            ) not in selected_turns:
+                return False
+
+        return True
 
     @staticmethod
     def _validate_replacement(

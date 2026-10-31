@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 12 — Rebuild after retry selection and branching.
+Next delivery focus: Stage 7, Slice 13 — Preserve evolution through Storyline forks.
 
 Deferred engineering:
 

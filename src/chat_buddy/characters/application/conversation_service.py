@@ -111,6 +111,23 @@ class _EvolutionEffectProcessor(Protocol):
         ...
 
 
+class _EvolutionProjectionRebuilder(Protocol):
+    """Rebuild current evolution state from selected conversation ancestry."""
+
+    def rebuild(self, scope: EvolutionScope) -> EvolutionProjectionState:
+        """Rebuild both projections for the currently selected history.
+
+        Args:
+            scope:
+                Complete continuity ownership.
+
+        Returns:
+            Fully replayed current projections.
+        """
+
+        ...
+
+
 class _StorylineResponseMemoryProvider(Protocol):
     """Read and select eligible memory for one Storyline response."""
 
@@ -154,6 +171,7 @@ class ConversationService:
         response_memories: _StorylineResponseMemoryProvider | None = None,
         evolution: _EvolutionEffectProcessor | None = None,
         evolution_projections: EvolutionRepository | None = None,
+        evolution_rebuilder: _EvolutionProjectionRebuilder | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -182,6 +200,8 @@ class ConversationService:
                 Optional post-completion selected-turn evolution workflow.
             evolution_projections:
                 Optional current evolution projection reader for response context.
+            evolution_rebuilder:
+                Optional selected-ancestry projection replay workflow.
         """
 
         self._conversations = conversations
@@ -194,6 +214,7 @@ class ConversationService:
         self._response_memories = response_memories
         self._evolution = evolution
         self._evolution_projections = evolution_projections
+        self._evolution_rebuilder = evolution_rebuilder
         self._branch_mode_facts = (
             branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
         )
@@ -324,7 +345,7 @@ class ConversationService:
 
         scope = target.scope
         self._validate_write_target(target, self._conversations.history(scope))
-        return self._conversations.apply_action(
+        selected = self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
                 action=GraphAction.ALTERNATIVE_SELECTION,
@@ -332,6 +353,8 @@ class ConversationService:
                 target_message_id=message_id,
             )
         )
+        self._rebuild_evolution(target)
+        return selected
 
     def select_saved_future(
         self,
@@ -385,7 +408,7 @@ class ConversationService:
         if storyline is not None and storyline.lifecycle != "active":
             raise ArchivedContinuityError("Archived Storylines are read-only")
         self._authorize_mode_action(target, message_id)
-        return self._conversations.apply_action(
+        selected = self._conversations.apply_action(
             GraphActionRequest(
                 scope=scope,
                 action=GraphAction.BRANCH_FROM_HERE,
@@ -393,6 +416,8 @@ class ConversationService:
                 target_message_id=message_id,
             )
         )
+        self._rebuild_evolution(target)
+        return selected
 
     def resume(self, target: ConversationTarget) -> ConversationHistory:
         """Reconcile attempts without progress for five minutes, then reload.
@@ -601,6 +626,7 @@ class ConversationService:
                 yield chunk
             message = self._conversations.complete(scope, attempt_id)
             completed = True
+            self._rebuild_evolution(target)
             if (
                 self._memory_extraction is not None
                 and target.mode == ContinuityMode.STORYLINE
@@ -633,6 +659,25 @@ class ConversationService:
             finally:
                 if not completed:
                     self._conversations.stop(scope, attempt_id, "interrupted")
+
+    def _rebuild_evolution(self, target: ConversationTarget) -> None:
+        """Replay evolution after a selected-path mutation.
+
+        Args:
+            target:
+                Mode-owned target whose selected ancestry changed.
+        """
+
+        if self._evolution_rebuilder is None:
+            return
+
+        self._evolution_rebuilder.rebuild(
+            EvolutionScope(
+                identity_id=target.scope.identity_id,
+                persona_id=target.scope.persona_id,
+                continuity_id=target.scope.continuity_id,
+            )
+        )
 
     def _prepare(
         self,
