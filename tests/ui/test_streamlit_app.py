@@ -210,6 +210,8 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             "create_ongoing_services",
             return_value=(identities, personas, continuities),
         ),
+        patch.object(characters_ongoing_page, "create_evolution_inspection_service"),
+        patch.object(characters_ongoing_page, "render_evolution_inspection"),
         patch.object(
             characters_new_storyline_page,
             "create_storyline_services",
@@ -221,6 +223,8 @@ def character_services() -> Generator[tuple[Mock, Mock, Mock], None, None]:
             "create_storyline_services",
             return_value=(identities, personas, storylines),
         ),
+        patch.object(characters_storylines_page, "create_evolution_inspection_service"),
+        patch.object(characters_storylines_page, "render_evolution_inspection"),
     ):
         yield identities, personas, continuities
 

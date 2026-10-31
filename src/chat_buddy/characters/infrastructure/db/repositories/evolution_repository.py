@@ -261,6 +261,33 @@ class DbEvolutionRepository:
 
             return self._effect_snapshot(row)
 
+    def list_effects(self, scope: EvolutionScope) -> tuple[EvolutionEffect, ...]:
+        """Read all effect audit records in deterministic source order.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Immutable effect snapshots, including rejected proposals.
+        """
+
+        with self._factory() as session:
+            rows = session.scalars(
+                select(EvolutionEffectModel)
+                .where(
+                    EvolutionEffectModel.continuity_id == scope.continuity_id,
+                    EvolutionEffectModel.identity_id == scope.identity_id,
+                    EvolutionEffectModel.persona_id == scope.persona_id,
+                )
+                .order_by(
+                    EvolutionEffectModel.created_at,
+                    EvolutionEffectModel.id,
+                )
+            )
+
+            return tuple(self._effect_snapshot(row) for row in rows)
+
     def complete(
         self,
         effect_id: UUID,

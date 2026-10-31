@@ -13,10 +13,17 @@ from chat_buddy.characters.domain import (
     Continuity,
     ContinuityGroup,
     ContinuityLifecycle,
+    EvolutionScope,
     Identity,
     Persona,
 )
-from chat_buddy.characters.infrastructure import create_ongoing_services
+from chat_buddy.characters.infrastructure import (
+    create_evolution_inspection_service,
+    create_ongoing_services,
+)
+from chat_buddy.characters.ui.evolution_inspection import (
+    render_evolution_inspection,
+)
 from chat_buddy.characters.ui.new_ongoing_page import render_new_ongoing
 from chat_buddy.characters.ui.ongoing import render_ongoing
 
@@ -84,6 +91,16 @@ def _render_page(
         st.rerun()
 
     render_ongoing(selected)
+    render_evolution_inspection(
+        create_evolution_inspection_service(),
+        EvolutionScope(
+            identity_id=selected.identity_id,
+            persona_id=selected.persona_id,
+            continuity_id=selected.id,
+        ),
+        selected.relationship,
+        selected.lifecycle,
+    )
 
 
 def _render_hierarchy(

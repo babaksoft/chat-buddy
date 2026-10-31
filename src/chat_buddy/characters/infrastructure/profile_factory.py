@@ -2,6 +2,8 @@
 
 from chat_buddy.characters.application import (
     ContinuityService,
+    EvolutionInspectionService,
+    EvolutionProjectionService,
     IdentityService,
     PersonaService,
     StorylineForkService,
@@ -146,3 +148,29 @@ def create_storyline_memory_service() -> StorylineMemoryService:
         DbStorylineMemoryRepository(CharactersSessionLocal),
         DbMemoryExtractionRepository(CharactersSessionLocal),
     )
+
+
+def create_evolution_inspection_service() -> EvolutionInspectionService:
+    """Build shared evolution inspection and correction operations.
+
+    Returns:
+        Lazily configured continuity-scoped evolution operations.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityRepository,
+        DbConversationRepository,
+        DbEvolutionRepository,
+        DbStorylineRepository,
+    )
+
+    evolution = DbEvolutionRepository(CharactersSessionLocal)
+    conversations = DbConversationRepository(CharactersSessionLocal)
+    projections = EvolutionProjectionService(
+        evolution,
+        DbContinuityRepository(CharactersSessionLocal),
+        conversations,
+        DbStorylineRepository(CharactersSessionLocal),
+    )
+    return EvolutionInspectionService(evolution, conversations, projections)

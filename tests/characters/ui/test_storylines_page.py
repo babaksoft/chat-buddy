@@ -93,9 +93,11 @@ def services() -> Generator[tuple[Mock, Mock, Mock, list[SceneSequence]], None, 
         ),
         patch.object(storylines_page, "render_conversation"),
         patch.object(storylines_page, "create_conversation_service"),
+        patch.object(storylines_page, "create_evolution_inspection_service"),
         patch.object(storylines_page, "create_storyline_fork_service"),
         patch.object(storylines_page, "create_storyline_memory_service") as memories,
         patch.object(storylines_page, "render_storyline_memory"),
+        patch.object(storylines_page, "render_evolution_inspection"),
         patch.object(storylines_page, "_navigate_to_new_storyline") as navigate,
     ):
         memories.return_value = Mock()

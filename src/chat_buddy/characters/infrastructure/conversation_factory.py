@@ -165,6 +165,7 @@ def create_conversation_service(
         evolution_repository,
         DbContinuityRepository(session_factory),
         conversations,
+        storylines,
     )
     return ConversationService(
         conversations,

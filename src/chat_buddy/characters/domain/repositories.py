@@ -1259,6 +1259,19 @@ class EvolutionRepository(Protocol):
 
         ...
 
+    def list_effects(self, scope: EvolutionScope) -> tuple[EvolutionEffect, ...]:
+        """Read all effect audit records in deterministic source order.
+
+        Args:
+            scope:
+                Required evolution ownership.
+
+        Returns:
+            Immutable effect snapshots, including rejected proposals.
+        """
+
+        ...
+
     def complete(
         self,
         effect_id: UUID,

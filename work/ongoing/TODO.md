@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 14 — Add inspection and correction UI.
+Next delivery focus: Stage 7, Slice 15 — Add observability and experiment reporting.
 
 Deferred engineering:
 

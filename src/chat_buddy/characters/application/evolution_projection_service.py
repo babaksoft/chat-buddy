@@ -7,7 +7,9 @@ from uuid import UUID, uuid4
 
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
+    Continuity,
     ContinuityLifecycle,
+    ContinuityNotFoundError,
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationScope,
@@ -30,6 +32,8 @@ from chat_buddy.characters.domain import (
     RelationshipTrust,
     RemovePersonaAdaptationCommand,
     SetPersonaAdaptationCommand,
+    Storyline,
+    StorylineRepository,
     apply_evolution_command,
     is_adaptation_command,
 )
@@ -43,6 +47,7 @@ class EvolutionProjectionService:
         evolution_repository: EvolutionRepository,
         continuity_repository: ContinuityRepository,
         conversation_repository: ConversationGraphRepository,
+        storyline_repository: StorylineRepository | None = None,
     ) -> None:
         """Initialize the replay service.
 
@@ -53,11 +58,14 @@ class EvolutionProjectionService:
                 Continuity owner and reviewed starting relationship.
             conversation_repository:
                 Selected conversation ancestry used to determine active evidence.
+            storyline_repository:
+                Optional Storyline owner resolver for shared correction workflows.
         """
 
         self._evolution_repository = evolution_repository
         self._continuity_repository = continuity_repository
         self._conversation_repository = conversation_repository
+        self._storyline_repository = storyline_repository
 
     def rebuild(
         self,
@@ -219,9 +227,7 @@ class EvolutionProjectionService:
     ) -> EvolutionProjectionState:
         """Validate, append, and replay one user-authored correction."""
 
-        continuity = self._continuity_repository.get(
-            scope.identity_id, scope.persona_id, scope.continuity_id
-        )
+        continuity = self._owner(scope)
         if continuity.lifecycle == ContinuityLifecycle.ARCHIVED:
             raise ArchivedContinuityError("Archived continuities cannot be corrected")
 
@@ -280,9 +286,7 @@ class EvolutionProjectionService:
     ) -> tuple[EvolutionProjectionState, UUID | None, UUID | None]:
         """Derive both projections and inferred checkpoints from history."""
 
-        continuity = self._continuity_repository.get(
-            scope.identity_id, scope.persona_id, scope.continuity_id
-        )
+        continuity = self._owner(scope)
         inferred = (
             self._evolution_repository.list_events(scope) if events is None else events
         )
@@ -356,6 +360,29 @@ class EvolutionProjectionService:
             relationship_checkpoint,
             adaptation_checkpoint,
         )
+
+    def _owner(self, scope: EvolutionScope) -> Continuity | Storyline:
+        """Resolve an Ongoing or Storyline owner for replay and correction.
+
+        Args:
+            scope:
+                Complete expected continuity ownership.
+
+        Returns:
+            Owned Ongoing or Storyline snapshot.
+        """
+
+        try:
+            return self._continuity_repository.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
+        except ContinuityNotFoundError:
+            if self._storyline_repository is None:
+                raise
+
+            return self._storyline_repository.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
 
     def _event_is_selected(self, event: EvolutionEvent) -> bool:
         """Return whether every exact source remains on selected ancestry.

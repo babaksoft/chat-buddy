@@ -475,6 +475,8 @@ point.
 
 ### Slice 14 — Add inspection and correction UI
 
+Status: Complete
+
 Show qualitative state rather than progress bars:
 
 - Current relationship dimensions.

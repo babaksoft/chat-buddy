@@ -17,6 +17,7 @@ from chat_buddy.characters.domain import (
     ContinuityMode,
     ConversationGraphView,
     ConversationTarget,
+    EvolutionScope,
     GraphNodeView,
     Identity,
     IncompleteLatestSceneError,
@@ -36,9 +37,13 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure import (
     create_conversation_service,
+    create_evolution_inspection_service,
     create_storyline_fork_service,
     create_storyline_memory_service,
     create_storyline_services,
+)
+from chat_buddy.characters.ui.evolution_inspection import (
+    render_evolution_inspection,
 )
 from chat_buddy.characters.ui.new_storyline_page import render_new_storyline
 from chat_buddy.characters.ui.ongoing import render_conversation
@@ -264,6 +269,16 @@ def _render_storyline(
     selected_leaf_id = _render_scene(selected, sequence, service)
     render_storyline_memory(
         create_storyline_memory_service(), storyline, selected_leaf_id
+    )
+    render_evolution_inspection(
+        create_evolution_inspection_service(),
+        EvolutionScope(
+            identity_id=storyline.identity_id,
+            persona_id=storyline.persona_id,
+            continuity_id=storyline.id,
+        ),
+        storyline.relationship,
+        storyline.lifecycle,
     )
 
 
