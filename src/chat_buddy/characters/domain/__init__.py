@@ -138,6 +138,8 @@ from chat_buddy.characters.domain.evolution import (
     SetRomanticStatusCommand,
     SetSocialStatusCommand,
     SetTrustCommand,
+    apply_evolution_command,
+    is_adaptation_command,
 )
 from chat_buddy.characters.domain.identity import (
     Identity,
@@ -444,4 +446,6 @@ __all__ = [
     "Trust",
     "UnsupportedContinuityModeError",
     "UnsupportedGenerationError",
+    "apply_evolution_command",
+    "is_adaptation_command",
 ]

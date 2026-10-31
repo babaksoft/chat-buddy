@@ -20,7 +20,6 @@ from chat_buddy.characters.domain import (
     EvolutionProjectionState,
     EvolutionRepository,
     EvolutionScope,
-    PersonaAdaptation,
     PersonaAdaptationProjection,
     RecordRelationshipMilestoneCommand,
     RelationshipAffection,
@@ -30,12 +29,9 @@ from chat_buddy.characters.domain import (
     RelationshipSocialStatus,
     RelationshipTrust,
     RemovePersonaAdaptationCommand,
-    SetAffectionCommand,
-    SetDynamicCommand,
     SetPersonaAdaptationCommand,
-    SetRomanticStatusCommand,
-    SetSocialStatusCommand,
-    SetTrustCommand,
+    apply_evolution_command,
+    is_adaptation_command,
 )
 
 
@@ -252,7 +248,7 @@ class EvolutionProjectionService:
                 "Only an excluded or replaced interpretation can be restored"
             )
 
-        adaptation_target = _is_adaptation(target.command)
+        adaptation_target = is_adaptation_command(target.command)
         correction = EvolutionCorrectionEvent(
             id=uuid4(),
             scope=scope,
@@ -324,13 +320,13 @@ class EvolutionProjectionService:
                 continue
 
             command = dispositions.get(event.id, event.command)
-            if _is_adaptation(event.command):
+            if is_adaptation_command(event.command):
                 adaptation_checkpoint = event.id
             else:
                 relationship_checkpoint = event.id
             if command is None:
                 continue
-            relationship, adaptations = _apply_command(
+            relationship, adaptations = apply_evolution_command(
                 relationship, adaptations, command
             )
 
@@ -435,74 +431,6 @@ class EvolutionProjectionService:
             raise EvolutionCorrectionConflictError(
                 "Evolution replacement must retain exact source provenance"
             )
-
-
-def _apply_command(
-    relationship: RelationshipProjection,
-    adaptations: PersonaAdaptationProjection,
-    command: EvolutionCommand,
-) -> tuple[RelationshipProjection, PersonaAdaptationProjection]:
-    """Apply one replay-eligible command when its expected state still matches."""
-
-    if isinstance(command, SetSocialStatusCommand):
-        if relationship.social == command.expected:
-            relationship = relationship.model_copy(update={"social": command.value})
-    elif isinstance(command, SetRomanticStatusCommand):
-        if relationship.romantic == command.expected:
-            relationship = relationship.model_copy(update={"romantic": command.value})
-    elif isinstance(command, SetDynamicCommand):
-        if relationship.dynamic == command.expected:
-            relationship = relationship.model_copy(update={"dynamic": command.value})
-    elif isinstance(command, SetTrustCommand):
-        if relationship.trust == command.expected:
-            relationship = relationship.model_copy(update={"trust": command.value})
-    elif isinstance(command, SetAffectionCommand):
-        if relationship.affection == command.expected:
-            relationship = relationship.model_copy(update={"affection": command.value})
-    elif isinstance(command, RecordRelationshipMilestoneCommand):
-        if relationship.romantic == command.expected:
-            milestones = relationship.milestones
-            if command.milestone not in milestones:
-                milestones = (*milestones, command.milestone)
-            relationship = relationship.model_copy(
-                update={"romantic": command.value, "milestones": milestones}
-            )
-    elif isinstance(command, SetPersonaAdaptationCommand):
-        current = {item.facet: item for item in adaptations.adaptations}
-        observed = current.get(command.facet)
-        if (observed.value if observed is not None else None) == command.expected:
-            current[command.facet] = PersonaAdaptation(
-                facet=command.facet, value=command.value
-            )
-            adaptations = adaptations.model_copy(
-                update={
-                    "adaptations": tuple(
-                        current[facet] for facet in sorted(current, key=str)
-                    )
-                }
-            )
-    elif isinstance(command, RemovePersonaAdaptationCommand):
-        current = {item.facet: item for item in adaptations.adaptations}
-        observed = current.get(command.facet)
-        if observed is not None and observed.value == command.expected:
-            current.pop(command.facet)
-            adaptations = adaptations.model_copy(
-                update={
-                    "adaptations": tuple(
-                        current[facet] for facet in sorted(current, key=str)
-                    )
-                }
-            )
-
-    return relationship, adaptations
-
-
-def _is_adaptation(command: EvolutionCommand) -> bool:
-    """Return whether a command targets persona adaptation state."""
-
-    return isinstance(
-        command, (SetPersonaAdaptationCommand, RemovePersonaAdaptationCommand)
-    )
 
 
 def _command_target(command: EvolutionCommand) -> tuple[str, object | None]:

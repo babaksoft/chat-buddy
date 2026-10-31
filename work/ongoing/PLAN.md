@@ -457,6 +457,8 @@ in context.
 
 ### Slice 13 — Preserve evolution through Storyline forks
 
+Status: Complete
+
 Extend the reviewed Storyline fork to:
 
 - Copy only evolution events supported by copied histories.

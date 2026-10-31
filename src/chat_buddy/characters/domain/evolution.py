@@ -1030,6 +1030,94 @@ type EvolutionCommand = Annotated[
 ]
 
 
+def apply_evolution_command(
+    relationship: RelationshipProjection,
+    adaptations: PersonaAdaptationProjection,
+    command: EvolutionCommand,
+) -> tuple[RelationshipProjection, PersonaAdaptationProjection]:
+    """Apply one replay-eligible command when its expected state matches.
+
+    Args:
+        relationship:
+            Current relationship projection.
+        adaptations:
+            Current persona-adaptation projection.
+        command:
+            Typed evolution command to replay.
+
+    Returns:
+        Updated relationship and persona-adaptation projections.
+    """
+
+    if isinstance(command, SetSocialStatusCommand):
+        if relationship.social == command.expected:
+            relationship = relationship.model_copy(update={"social": command.value})
+    elif isinstance(command, SetRomanticStatusCommand):
+        if relationship.romantic == command.expected:
+            relationship = relationship.model_copy(update={"romantic": command.value})
+    elif isinstance(command, SetDynamicCommand):
+        if relationship.dynamic == command.expected:
+            relationship = relationship.model_copy(update={"dynamic": command.value})
+    elif isinstance(command, SetTrustCommand):
+        if relationship.trust == command.expected:
+            relationship = relationship.model_copy(update={"trust": command.value})
+    elif isinstance(command, SetAffectionCommand):
+        if relationship.affection == command.expected:
+            relationship = relationship.model_copy(update={"affection": command.value})
+    elif isinstance(command, RecordRelationshipMilestoneCommand):
+        if relationship.romantic == command.expected:
+            milestones = relationship.milestones
+            if command.milestone not in milestones:
+                milestones = (*milestones, command.milestone)
+            relationship = relationship.model_copy(
+                update={"romantic": command.value, "milestones": milestones}
+            )
+    elif isinstance(command, SetPersonaAdaptationCommand):
+        current = {item.facet: item for item in adaptations.adaptations}
+        observed = current.get(command.facet)
+        if (observed.value if observed is not None else None) == command.expected:
+            current[command.facet] = PersonaAdaptation(
+                facet=command.facet, value=command.value
+            )
+            adaptations = adaptations.model_copy(
+                update={
+                    "adaptations": tuple(
+                        current[facet] for facet in sorted(current, key=str)
+                    )
+                }
+            )
+    elif isinstance(command, RemovePersonaAdaptationCommand):
+        current = {item.facet: item for item in adaptations.adaptations}
+        observed = current.get(command.facet)
+        if observed is not None and observed.value == command.expected:
+            current.pop(command.facet)
+            adaptations = adaptations.model_copy(
+                update={
+                    "adaptations": tuple(
+                        current[facet] for facet in sorted(current, key=str)
+                    )
+                }
+            )
+
+    return relationship, adaptations
+
+
+def is_adaptation_command(command: EvolutionCommand) -> bool:
+    """Return whether a command targets persona-adaptation state.
+
+    Args:
+        command:
+            Typed evolution command.
+
+    Returns:
+        Whether the command changes a persona-adaptation facet.
+    """
+
+    return isinstance(
+        command, (SetPersonaAdaptationCommand, RemovePersonaAdaptationCommand)
+    )
+
+
 class EvolutionThresholdAssessment(BaseModel):
     """Versioned gradual-change threshold result for one typed command.
 

@@ -12,15 +12,24 @@ from chat_buddy.characters.application import (
     StorylineService,
 )
 from chat_buddy.characters.domain import (
+    AdaptationFacet,
     ChangeMemoryStateCommand,
     ConversationTarget,
     CorrectMemoryCommand,
     CreateMemoryCommand,
     EffectiveGeneration,
+    EvolutionCorrectionAction,
+    EvolutionCorrectionEvent,
+    EvolutionEvidenceKind,
+    EvolutionEvidenceReference,
+    EvolutionScope,
     IdentityDetails,
     MemoryDelta,
     ReinforceMemoryCommand,
+    RelationshipSocialStatus,
     Scene,
+    SetPersonaAdaptationCommand,
+    SetSocialStatusCommand,
     Storyline,
     StorylineForkConflictError,
     SubmittedInput,
@@ -28,6 +37,7 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
+    DbEvolutionRepository,
     DbIdentityRepository,
     DbMemoryExtractionRepository,
     DbPersonaRepository,
@@ -38,6 +48,15 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbSummaryRepository,
 )
 from tests.characters_support import FakeResponse
+from tests.integration.characters.test_evolution_projection_replay import (
+    _append as _append_evolution,
+)
+from tests.integration.characters.test_evolution_projection_replay import (
+    _provenance as _evolution_provenance,
+)
+from tests.integration.characters.test_evolution_projection_replay import (
+    _starting as _starting_evolution,
+)
 from tests.integration.characters.test_storyline_conversations import (
     _service,
     _target,
@@ -449,6 +468,193 @@ def test_fork_copies_active_memory_with_remapped_provenance(
     )
     assert changed_copy.current.content != corrected.current.content
     assert memories.get(source_storyline.id, corrected.id) == corrected
+
+
+def test_fork_replays_only_copied_evolution_and_remaps_corrections(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Preserve branch-point evolution without sharing later or mutable state.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    (
+        storylines,
+        scenes,
+        _,
+        source_storyline,
+        source_scene,
+        source_target,
+        app,
+        first_response_id,
+        source_leaf_id,
+    ) = _prepared_older_scene(factory)
+    history = app.history(source_target).messages
+    scope = EvolutionScope(
+        identity_id=source_storyline.identity_id,
+        persona_id=source_storyline.persona_id,
+        continuity_id=source_storyline.id,
+    )
+    first_source = EvolutionEvidenceReference(
+        scope=scope,
+        kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT,
+        conversation_id=source_target.scope.conversation_id,
+        scene_id=source_scene.id,
+        scene_position=1,
+        user_message_id=history[0].id,
+        user_sequence=1,
+        persona_message_id=first_response_id,
+        persona_sequence=2,
+    )
+    later_source = EvolutionEvidenceReference(
+        scope=scope,
+        kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT,
+        conversation_id=source_target.scope.conversation_id,
+        scene_id=source_scene.id,
+        scene_position=1,
+        user_message_id=history[2].id,
+        user_sequence=3,
+        persona_message_id=source_leaf_id,
+        persona_sequence=4,
+    )
+    evolution = DbEvolutionRepository(factory)
+    relationship, adaptations = _starting_evolution(scope)
+    evolution.initialize(relationship, adaptations)
+    first_event, relationship, adaptations = _append_evolution(
+        evolution,
+        first_source,
+        _evolution_provenance(),
+        SetSocialStatusCommand(
+            expected=RelationshipSocialStatus.STRANGER,
+            value=RelationshipSocialStatus.ACQUAINTANCE,
+            rationale="The first exchange establishes an acquaintance.",
+            sources=(first_source,),
+        ),
+        relationship,
+        adaptations,
+    )
+    _, relationship, adaptations = _append_evolution(
+        evolution,
+        later_source,
+        _evolution_provenance(),
+        SetPersonaAdaptationCommand(
+            facet=AdaptationFacet.COMMUNICATION_STYLE,
+            expected=None,
+            value="Uses concise reassurance.",
+            rationale="The later exchange supports a concise style.",
+            sources=(later_source,),
+        ),
+        relationship,
+        adaptations,
+    )
+    replacement = SetSocialStatusCommand(
+        expected=RelationshipSocialStatus.STRANGER,
+        value=RelationshipSocialStatus.CASUAL_FRIEND,
+        rationale="The user interprets the first exchange as friendship.",
+        sources=(first_source,),
+    )
+    correction = EvolutionCorrectionEvent(
+        id=uuid4(),
+        scope=scope,
+        target_event_id=first_event.id,
+        action=EvolutionCorrectionAction.REPLACE,
+        replacement=replacement,
+        note="Preserve the stronger user-authored interpretation.",
+        expected_relationship_revision=1,
+        expected_adaptation_revision=1,
+        relationship_revision=2,
+        adaptation_revision=1,
+        created_at=datetime.now(UTC),
+    )
+    evolution.append_correction(
+        correction,
+        relationship.model_copy(
+            update={"revision": 2, "social": RelationshipSocialStatus.CASUAL_FRIEND}
+        ),
+        adaptations,
+    )
+    source_before = evolution.get_projections(scope)
+
+    identities = DbIdentityRepository(factory)
+    personas = DbPersonaRepository(factory)
+    duplicate = identities.create(identities.get(source_storyline.identity_id).details)
+    forks = StorylineForkService(
+        storylines,
+        scenes,
+        DbConversationRepository(factory),
+        DbConversationRepository(factory),
+        identities,
+        personas,
+        DbStorylineForkRepository(factory),
+    )
+    result = forks.confirm(
+        forks.preview(
+            request_id=uuid4(),
+            name="Evolution at the branch point",
+            target=source_target,
+            branch_point_message_id=first_response_id,
+            expected_selected_leaf_id=source_leaf_id,
+            expected_storyline_revision=source_storyline.revision + 1,
+            target_identity_id=duplicate.id,
+            target_persona_id=source_storyline.persona_id,
+        )
+    )
+    target_scope = EvolutionScope(
+        identity_id=result.storyline.identity_id,
+        persona_id=result.storyline.persona_id,
+        continuity_id=result.storyline.id,
+    )
+    copied_events = evolution.list_events(target_scope)
+    copied_corrections = evolution.list_corrections(target_scope)
+    copied_projection = evolution.get_projections(target_scope)
+    mapping_kinds = {mapping.kind for mapping in result.mappings}
+
+    assert len(copied_events) == 1
+    assert copied_events[0].id != first_event.id
+    assert copied_events[0].command.sources[0].scope == target_scope
+    assert copied_events[0].command.sources[0].persona_message_id != first_response_id
+    assert len(copied_corrections) == 1
+    assert copied_corrections[0].target_event_id == copied_events[0].id
+    assert (
+        copied_projection.relationship.social == RelationshipSocialStatus.CASUAL_FRIEND
+    )
+    assert copied_projection.persona_adaptations.adaptations == ()
+    assert mapping_kinds >= {
+        "evolution_effect",
+        "evolution_proposal",
+        "evolution_event",
+        "evolution_correction",
+        "relationship_projection",
+        "persona_adaptation_projection",
+    }
+
+    target_exclusion = EvolutionCorrectionEvent(
+        id=uuid4(),
+        scope=target_scope,
+        target_event_id=copied_events[0].id,
+        action=EvolutionCorrectionAction.EXCLUDE,
+        note="Change only the fork interpretation.",
+        expected_relationship_revision=copied_projection.relationship.revision,
+        expected_adaptation_revision=copied_projection.persona_adaptations.revision,
+        relationship_revision=copied_projection.relationship.revision + 1,
+        adaptation_revision=copied_projection.persona_adaptations.revision,
+        created_at=datetime.now(UTC),
+    )
+    evolution.append_correction(
+        target_exclusion,
+        copied_projection.relationship.model_copy(
+            update={
+                "revision": copied_projection.relationship.revision + 1,
+                "social": RelationshipSocialStatus.STRANGER,
+            }
+        ),
+        copied_projection.persona_adaptations,
+    )
+    assert evolution.get_projections(target_scope).relationship.social == "stranger"
+    assert evolution.get_projections(scope) == source_before
 
 
 def _prepared_older_scene(

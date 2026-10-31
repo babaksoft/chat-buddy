@@ -1,37 +1,117 @@
 """Atomic structural copying for reviewed Storyline forks."""
 
 from copy import deepcopy
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
     ConfirmationConflictError,
+    EvolutionCommand,
+    EvolutionCorrectionAction,
+    EvolutionCorrectionEvent,
+    EvolutionDecision,
+    EvolutionDecisionOutcome,
+    EvolutionEvent,
+    EvolutionEvidenceReference,
+    EvolutionProposal,
+    EvolutionScope,
     Identity,
     Persona,
+    PersonaAdaptationProjection,
+    RelationshipAffection,
+    RelationshipDynamic,
+    RelationshipProjection,
+    RelationshipRomanticStatus,
+    RelationshipSocialStatus,
+    RelationshipTrust,
     ResponseProvenance,
+    StartingRelationship,
     StorylineForkConflictError,
     StorylineForkMapping,
     StorylineForkPreview,
     StorylineForkResult,
+    apply_evolution_command,
+    is_adaptation_command,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityModel,
     ConversationModel,
+    EvolutionCorrectionEventModel,
+    EvolutionEffectModel,
+    EvolutionEventModel,
     GenerationAttemptModel,
     IdentityModel,
     MemoryEvidenceModel,
     MemoryRevisionModel,
     MessageModel,
+    PersonaAdaptationProjectionModel,
     PersonaModel,
+    RelationshipProjectionModel,
     SceneModel,
     StartingRelationshipModel,
     StorylineMemoryModel,
     StorylineModel,
     SummaryRevisionModel,
 )
+
+_EVOLUTION_COMMAND_ADAPTER: TypeAdapter[EvolutionCommand] = TypeAdapter(
+    EvolutionCommand
+)
+
+
+@dataclass
+class _EvolutionCopyState:
+    """Accumulate remapped evolution history during one atomic fork.
+
+    Attributes:
+        mappings:
+            Evolution-specific source-to-target identifier mappings.
+        events:
+            Eligible inferred events copied in replay order.
+        corrections:
+            Eligible user corrections copied in replay order.
+        event_ids:
+            Source inferred-event IDs mapped to target IDs.
+        events_by_id:
+            Target inferred events indexed for correction remapping.
+        relationship_revision:
+            Normalized target relationship revision.
+        adaptation_revision:
+            Normalized target persona-adaptation revision.
+    """
+
+    mappings: list[StorylineForkMapping] = field(default_factory=list)
+    events: list[EvolutionEvent] = field(default_factory=list)
+    corrections: list[EvolutionCorrectionEvent] = field(default_factory=list)
+    event_ids: dict[UUID, UUID] = field(default_factory=dict)
+    events_by_id: dict[UUID, EvolutionEvent] = field(default_factory=dict)
+    relationship_revision: int = 0
+    adaptation_revision: int = 0
+
+    def advance(self, command: EvolutionCommand) -> tuple[int, int]:
+        """Advance the normalized revision targeted by one command.
+
+        Args:
+            command:
+                Copied inferred or corrected command.
+
+        Returns:
+            Relationship and adaptation revisions after the command.
+        """
+
+        if is_adaptation_command(command):
+            self.adaptation_revision += 1
+        else:
+            self.relationship_revision += 1
+        return self.relationship_revision, self.adaptation_revision
+
+
 from chat_buddy.characters.infrastructure.db.repositories.identity_repository import (
     DbIdentityRepository,
 )
@@ -274,6 +354,15 @@ class DbStorylineForkRepository:
                 session,
                 source.continuity_id,
                 target_continuity,
+                mappings,
+            )
+        )
+        mappings.extend(
+            self._copy_evolution(
+                session,
+                source.continuity_id,
+                target_continuity,
+                relationship,
                 mappings,
             )
         )
@@ -684,6 +773,695 @@ class DbStorylineForkRepository:
             session.flush()
 
         return copied_mappings
+
+    @staticmethod
+    def _copy_evolution(
+        session: Session,
+        source_continuity_id: UUID,
+        target_continuity: ContinuityModel,
+        starting_relationship: StartingRelationshipModel,
+        mappings: list[StorylineForkMapping],
+    ) -> list[StorylineForkMapping]:
+        """Copy eligible evolution audit history and rebuild independent caches.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_continuity_id:
+                Source Storyline evolution owner.
+            target_continuity:
+                Independent fork owner.
+            starting_relationship:
+                Copied user-authored starting relationship.
+            mappings:
+                Structural identifiers available for evidence remapping.
+
+        Returns:
+            Effect, proposal, event, correction, and projection mappings.
+        """
+
+        mapped = DbStorylineForkRepository._evolution_structural_mappings(mappings)
+        target_scope = EvolutionScope(
+            identity_id=target_continuity.identity_id,
+            persona_id=target_continuity.persona_id,
+            continuity_id=target_continuity.id,
+        )
+        state = _EvolutionCopyState()
+
+        DbStorylineForkRepository._copy_evolution_effects(
+            session, source_continuity_id, target_scope, mapped, state
+        )
+        DbStorylineForkRepository._copy_evolution_corrections(
+            session, source_continuity_id, target_scope, mapped, state
+        )
+        DbStorylineForkRepository._persist_evolution_projections(
+            session,
+            source_continuity_id,
+            target_scope,
+            StartingRelationship.model_validate(starting_relationship.snapshot),
+            state,
+        )
+        session.flush()
+
+        return state.mappings
+
+    @staticmethod
+    def _evolution_structural_mappings(
+        mappings: list[StorylineForkMapping],
+    ) -> dict[str, dict[UUID, UUID]]:
+        """Index copied structural identifiers used by evolution evidence.
+
+        Args:
+            mappings:
+                All structural mappings created before evolution is considered.
+
+        Returns:
+            Scene, conversation, and message mappings indexed by source ID.
+        """
+
+        return {
+            kind: {
+                mapping.source_id: mapping.target_id
+                for mapping in mappings
+                if mapping.kind == kind
+            }
+            for kind in ("scene", "conversation", "message")
+        }
+
+    @staticmethod
+    def _copy_evolution_effects(
+        session: Session,
+        source_continuity_id: UUID,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+        state: _EvolutionCopyState,
+    ) -> None:
+        """Copy terminal effects whose complete evidence history was copied.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_continuity_id:
+                Source Storyline evolution owner.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+            state:
+                Accumulated target history and normalized revisions.
+        """
+
+        effects = tuple(
+            session.scalars(
+                select(EvolutionEffectModel)
+                .where(EvolutionEffectModel.continuity_id == source_continuity_id)
+                .order_by(EvolutionEffectModel.created_at, EvolutionEffectModel.id)
+                .with_for_update()
+            )
+        )
+        for effect in effects:
+            DbStorylineForkRepository._copy_evolution_effect(
+                session, effect, target_scope, mapped, state
+            )
+        session.flush()
+
+    @staticmethod
+    def _copy_evolution_effect(
+        session: Session,
+        effect: EvolutionEffectModel,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+        state: _EvolutionCopyState,
+    ) -> None:
+        """Remap and persist one eligible terminal evolution effect.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            effect:
+                Source terminal effect candidate.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+            state:
+                Accumulated target history and normalized revisions.
+
+        Raises:
+            StorylineForkConflictError:
+                If applied audit history is internally incomplete.
+        """
+
+        if (
+            effect.state == "reserved"
+            or effect.proposal is None
+            or effect.decision is None
+        ):
+            return
+
+        source = EvolutionEvidenceReference.model_validate(effect.source)
+        target_source = DbStorylineForkRepository._remap_evolution_source(
+            source, target_scope, mapped
+        )
+        proposal = EvolutionProposal.model_validate(effect.proposal)
+        commands = tuple(
+            DbStorylineForkRepository._remap_evolution_command(
+                command, target_scope, mapped
+            )
+            for command in proposal.commands
+        )
+        if target_source is None or any(command is None for command in commands):
+            return
+
+        target_commands = tuple(command for command in commands if command is not None)
+        source_decision = EvolutionDecision.model_validate(effect.decision)
+        source_events = source_decision.events
+        if source_decision.outcome == EvolutionDecisionOutcome.APPLIED and len(
+            source_events
+        ) != len(target_commands):
+            raise StorylineForkConflictError(
+                "Applied evolution audit history is incomplete"
+            )
+
+        target_effect_id = uuid4()
+        target_proposal_id = uuid4()
+        expected_relationship_revision = state.relationship_revision
+        expected_adaptation_revision = state.adaptation_revision
+        event_commands = (
+            target_commands
+            if source_decision.outcome == EvolutionDecisionOutcome.APPLIED
+            else ()
+        )
+        target_events = tuple(
+            DbStorylineForkRepository._copy_evolution_event(
+                source_event,
+                command,
+                target_proposal_id,
+                target_scope,
+                state,
+            )
+            for source_event, command in zip(source_events, event_commands, strict=True)
+        )
+        target_proposal = proposal.model_copy(
+            update={
+                "id": target_proposal_id,
+                "scope": target_scope,
+                "expected_relationship_revision": expected_relationship_revision,
+                "expected_adaptation_revision": expected_adaptation_revision,
+                "source": target_source,
+                "commands": target_commands,
+            }
+        )
+        target_decision = source_decision.model_copy(
+            update={
+                "proposal_id": target_proposal_id,
+                "events": target_events,
+            }
+        )
+        DbStorylineForkRepository._persist_evolution_effect(
+            session,
+            effect,
+            target_effect_id,
+            target_source,
+            target_proposal,
+            target_decision,
+        )
+        state.mappings.extend(
+            (
+                StorylineForkMapping(
+                    kind="evolution_effect",
+                    source_id=effect.id,
+                    target_id=target_effect_id,
+                ),
+                StorylineForkMapping(
+                    kind="evolution_proposal",
+                    source_id=proposal.id,
+                    target_id=target_proposal_id,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _copy_evolution_event(
+        source_event: EvolutionEvent,
+        command: EvolutionCommand,
+        target_proposal_id: UUID,
+        target_scope: EvolutionScope,
+        state: _EvolutionCopyState,
+    ) -> EvolutionEvent:
+        """Remap one applied event and advance normalized target revisions.
+
+        Args:
+            source_event:
+                Source inferred event.
+            command:
+                Fully remapped event command.
+            target_proposal_id:
+                Independent proposal identifier.
+            target_scope:
+                Independent fork ownership.
+            state:
+                Accumulated target history and normalized revisions.
+
+        Returns:
+            Independent remapped event.
+        """
+
+        relationship_revision, adaptation_revision = state.advance(command)
+        target_event = source_event.model_copy(
+            update={
+                "id": uuid4(),
+                "proposal_id": target_proposal_id,
+                "scope": target_scope,
+                "command": command,
+                "relationship_revision": relationship_revision,
+                "adaptation_revision": adaptation_revision,
+            }
+        )
+        state.events.append(target_event)
+        state.event_ids[source_event.id] = target_event.id
+        state.events_by_id[target_event.id] = target_event
+        state.mappings.append(
+            StorylineForkMapping(
+                kind="evolution_event",
+                source_id=source_event.id,
+                target_id=target_event.id,
+            )
+        )
+        return target_event
+
+    @staticmethod
+    def _persist_evolution_effect(
+        session: Session,
+        source_effect: EvolutionEffectModel,
+        target_effect_id: UUID,
+        target_source: EvolutionEvidenceReference,
+        target_proposal: EvolutionProposal,
+        target_decision: EvolutionDecision,
+    ) -> None:
+        """Persist one fully remapped terminal effect and its inferred events.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_effect:
+                Source audit row supplying timestamps and terminal state.
+            target_effect_id:
+                Independent target effect identifier.
+            target_source:
+                Remapped exact source checkpoint.
+            target_proposal:
+                Remapped terminal proposal.
+            target_decision:
+                Remapped terminal decision and events.
+        """
+
+        scope = target_proposal.scope
+        session.add(
+            EvolutionEffectModel(
+                id=target_effect_id,
+                continuity_id=scope.continuity_id,
+                identity_id=scope.identity_id,
+                persona_id=scope.persona_id,
+                conversation_id=target_source.conversation_id,
+                source_persona_message_id=target_source.persona_message_id,
+                source=target_source.model_dump(mode="json"),
+                state=source_effect.state,
+                provenance=deepcopy(source_effect.provenance),
+                proposal=target_proposal.model_dump(mode="json"),
+                decision=target_decision.model_dump(mode="json"),
+                created_at=source_effect.created_at,
+                completed_at=source_effect.completed_at,
+            )
+        )
+        for position, event in enumerate(target_decision.events, start=1):
+            session.add(
+                EvolutionEventModel(
+                    id=event.id,
+                    effect_id=target_effect_id,
+                    proposal_id=event.proposal_id,
+                    continuity_id=scope.continuity_id,
+                    identity_id=scope.identity_id,
+                    persona_id=scope.persona_id,
+                    position=position,
+                    command=event.command.model_dump(mode="json"),
+                    relationship_revision=event.relationship_revision,
+                    adaptation_revision=event.adaptation_revision,
+                    provenance=event.provenance.model_dump(mode="json"),
+                    created_at=event.created_at,
+                )
+            )
+
+    @staticmethod
+    def _copy_evolution_corrections(
+        session: Session,
+        source_continuity_id: UUID,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+        state: _EvolutionCopyState,
+    ) -> None:
+        """Copy corrections whose inferred targets and evidence were copied.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_continuity_id:
+                Source Storyline evolution owner.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+            state:
+                Accumulated target history and normalized revisions.
+        """
+
+        corrections = tuple(
+            session.scalars(
+                select(EvolutionCorrectionEventModel)
+                .where(
+                    EvolutionCorrectionEventModel.continuity_id == source_continuity_id
+                )
+                .order_by(
+                    EvolutionCorrectionEventModel.relationship_revision
+                    + EvolutionCorrectionEventModel.adaptation_revision,
+                    EvolutionCorrectionEventModel.id,
+                )
+                .with_for_update()
+            )
+        )
+        for correction in corrections:
+            DbStorylineForkRepository._copy_evolution_correction(
+                session, correction, target_scope, mapped, state
+            )
+
+    @staticmethod
+    def _copy_evolution_correction(
+        session: Session,
+        row: EvolutionCorrectionEventModel,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+        state: _EvolutionCopyState,
+    ) -> None:
+        """Remap and persist one correction of a copied inferred event.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            row:
+                Source correction candidate.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+            state:
+                Accumulated target history and normalized revisions.
+        """
+
+        target_event_id = state.event_ids.get(row.target_event_id)
+        if target_event_id is None:
+            return
+        replacement = (
+            _EVOLUTION_COMMAND_ADAPTER.validate_python(row.replacement)
+            if row.replacement is not None
+            else None
+        )
+        if replacement is not None:
+            replacement = DbStorylineForkRepository._remap_evolution_command(
+                replacement, target_scope, mapped
+            )
+            if replacement is None:
+                return
+
+        expected_relationship_revision = state.relationship_revision
+        expected_adaptation_revision = state.adaptation_revision
+        target_event = state.events_by_id[target_event_id]
+        relationship_revision, adaptation_revision = state.advance(target_event.command)
+        correction = EvolutionCorrectionEvent(
+            id=uuid4(),
+            scope=target_scope,
+            target_event_id=target_event_id,
+            action=EvolutionCorrectionAction(row.action),
+            replacement=replacement,
+            note=row.note,
+            expected_relationship_revision=expected_relationship_revision,
+            expected_adaptation_revision=expected_adaptation_revision,
+            relationship_revision=relationship_revision,
+            adaptation_revision=adaptation_revision,
+            created_at=row.created_at,
+        )
+        state.corrections.append(correction)
+        session.add(
+            EvolutionCorrectionEventModel(
+                id=correction.id,
+                continuity_id=target_scope.continuity_id,
+                identity_id=target_scope.identity_id,
+                persona_id=target_scope.persona_id,
+                target_event_id=target_event_id,
+                action=correction.action.value,
+                replacement=(
+                    correction.replacement.model_dump(mode="json")
+                    if correction.replacement is not None
+                    else None
+                ),
+                note=correction.note,
+                expected_relationship_revision=expected_relationship_revision,
+                expected_adaptation_revision=expected_adaptation_revision,
+                relationship_revision=relationship_revision,
+                adaptation_revision=adaptation_revision,
+                created_at=correction.created_at,
+            )
+        )
+        state.mappings.append(
+            StorylineForkMapping(
+                kind="evolution_correction",
+                source_id=row.id,
+                target_id=correction.id,
+            )
+        )
+
+    @staticmethod
+    def _persist_evolution_projections(
+        session: Session,
+        source_continuity_id: UUID,
+        target_scope: EvolutionScope,
+        starting_relationship: StartingRelationship,
+        state: _EvolutionCopyState,
+    ) -> None:
+        """Replay copied history and persist independent projection caches.
+
+        Args:
+            session:
+                Current atomic fork transaction.
+            source_continuity_id:
+                Source projection identifier recorded in fork mappings.
+            target_scope:
+                Independent fork ownership.
+            starting_relationship:
+                Copied user-authored starting relationship.
+            state:
+                Complete copied history and normalized final revisions.
+        """
+
+        relationship, adaptations, relationship_checkpoint, adaptation_checkpoint = (
+            DbStorylineForkRepository._replay_copied_evolution(
+                target_scope,
+                starting_relationship,
+                tuple(state.events),
+                tuple(state.corrections),
+                state.relationship_revision,
+                state.adaptation_revision,
+            )
+        )
+        updated_at = datetime.now(UTC)
+        session.add_all(
+            [
+                RelationshipProjectionModel(
+                    continuity_id=target_scope.continuity_id,
+                    identity_id=target_scope.identity_id,
+                    persona_id=target_scope.persona_id,
+                    revision=relationship.revision,
+                    rebuild_checkpoint_id=relationship_checkpoint,
+                    snapshot=relationship.model_dump(mode="json"),
+                    updated_at=updated_at,
+                ),
+                PersonaAdaptationProjectionModel(
+                    continuity_id=target_scope.continuity_id,
+                    identity_id=target_scope.identity_id,
+                    persona_id=target_scope.persona_id,
+                    revision=adaptations.revision,
+                    rebuild_checkpoint_id=adaptation_checkpoint,
+                    snapshot=adaptations.model_dump(mode="json"),
+                    updated_at=updated_at,
+                ),
+            ]
+        )
+        state.mappings.extend(
+            (
+                StorylineForkMapping(
+                    kind="relationship_projection",
+                    source_id=source_continuity_id,
+                    target_id=target_scope.continuity_id,
+                ),
+                StorylineForkMapping(
+                    kind="persona_adaptation_projection",
+                    source_id=source_continuity_id,
+                    target_id=target_scope.continuity_id,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _remap_evolution_source(
+        source: EvolutionEvidenceReference,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+    ) -> EvolutionEvidenceReference | None:
+        """Remap one exact evidence reference when all owned rows were copied.
+
+        Args:
+            source:
+                Source-continuity evidence reference.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+
+        Returns:
+            Remapped evidence, or None when its history was not copied.
+        """
+
+        conversation_id = mapped["conversation"].get(source.conversation_id)
+        user_message_id = mapped["message"].get(source.user_message_id)
+        persona_message_id = mapped["message"].get(source.persona_message_id)
+        scene_id = (
+            mapped["scene"].get(source.scene_id)
+            if source.scene_id is not None
+            else None
+        )
+        if (
+            conversation_id is None
+            or user_message_id is None
+            or persona_message_id is None
+            or (source.scene_id is not None and scene_id is None)
+        ):
+            return None
+
+        return source.model_copy(
+            update={
+                "scope": target_scope,
+                "conversation_id": conversation_id,
+                "scene_id": scene_id,
+                "user_message_id": user_message_id,
+                "persona_message_id": persona_message_id,
+            }
+        )
+
+    @staticmethod
+    def _remap_evolution_command(
+        command: EvolutionCommand,
+        target_scope: EvolutionScope,
+        mapped: dict[str, dict[UUID, UUID]],
+    ) -> EvolutionCommand | None:
+        """Remap every evidence source of one atomic command.
+
+        Args:
+            command:
+                Source-continuity typed command.
+            target_scope:
+                Independent fork ownership.
+            mapped:
+                Structural source-to-target identifiers by row kind.
+
+        Returns:
+            Remapped command, or None when any supporting turn was not copied.
+        """
+
+        sources = tuple(
+            DbStorylineForkRepository._remap_evolution_source(
+                source, target_scope, mapped
+            )
+            for source in command.sources
+        )
+        if any(source is None for source in sources):
+            return None
+        return command.model_copy(
+            update={
+                "sources": tuple(source for source in sources if source is not None)
+            }
+        )
+
+    @staticmethod
+    def _replay_copied_evolution(
+        scope: EvolutionScope,
+        starting: StartingRelationship,
+        events: tuple[EvolutionEvent, ...],
+        corrections: tuple[EvolutionCorrectionEvent, ...],
+        relationship_revision: int,
+        adaptation_revision: int,
+    ) -> tuple[
+        RelationshipProjection,
+        PersonaAdaptationProjection,
+        UUID | None,
+        UUID | None,
+    ]:
+        """Replay copied history from the user-authored starting state.
+
+        Args:
+            scope:
+                Independent fork ownership.
+            starting:
+                Copied user-selected starting relationship.
+            events:
+                Eligible remapped inferred events.
+            corrections:
+                Remapped user-authored interpretations.
+            relationship_revision:
+                Normalized final relationship audit revision.
+            adaptation_revision:
+                Normalized final adaptation audit revision.
+
+        Returns:
+            Both rebuilt caches and their last inferred checkpoints.
+        """
+
+        dispositions: dict[UUID, EvolutionCommand | None] = {}
+        for correction in corrections:
+            if correction.action == EvolutionCorrectionAction.RESTORE:
+                dispositions.pop(correction.target_event_id, None)
+            elif correction.action == EvolutionCorrectionAction.EXCLUDE:
+                dispositions[correction.target_event_id] = None
+            else:
+                dispositions[correction.target_event_id] = correction.replacement
+
+        relationship = RelationshipProjection(
+            scope=scope,
+            revision=0,
+            social=RelationshipSocialStatus(starting.social),
+            romantic=RelationshipRomanticStatus(starting.romantic),
+            dynamic=RelationshipDynamic(starting.dynamic),
+            trust=RelationshipTrust(starting.trust),
+            affection=RelationshipAffection(starting.affection),
+        )
+        adaptations = PersonaAdaptationProjection(scope=scope, revision=0)
+        relationship_checkpoint: UUID | None = None
+        adaptation_checkpoint: UUID | None = None
+        for event in events:
+            if is_adaptation_command(event.command):
+                adaptation_checkpoint = event.id
+            else:
+                relationship_checkpoint = event.id
+            command = dispositions.get(event.id, event.command)
+            if command is not None:
+                relationship, adaptations = apply_evolution_command(
+                    relationship, adaptations, command
+                )
+
+        return (
+            relationship.model_copy(update={"revision": relationship_revision}),
+            adaptations.model_copy(update={"revision": adaptation_revision}),
+            relationship_checkpoint,
+            adaptation_checkpoint,
+        )
 
     @staticmethod
     def _copy_summaries(

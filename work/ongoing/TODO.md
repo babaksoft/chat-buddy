@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 13 — Preserve evolution through Storyline forks.
+Next delivery focus: Stage 7, Slice 14 — Add inspection and correction UI.
 
 Deferred engineering:
 

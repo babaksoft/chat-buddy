@@ -450,6 +450,12 @@ ForkRecordKind = Literal[
     "memory",
     "memory_revision",
     "memory_evidence",
+    "evolution_effect",
+    "evolution_proposal",
+    "evolution_event",
+    "evolution_correction",
+    "relationship_projection",
+    "persona_adaptation_projection",
 ]
 
 
