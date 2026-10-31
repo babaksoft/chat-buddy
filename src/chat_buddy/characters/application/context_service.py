@@ -8,6 +8,7 @@ from chat_buddy.characters.domain import (
     ConversationHistory,
     EffectiveGeneration,
     EligibleContext,
+    EvolutionProjectionState,
     Identity,
     Message,
     Persona,
@@ -114,6 +115,7 @@ class OngoingContextBudgeter:
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
+        projections: EvolutionProjectionState | None = None,
     ) -> ContextSelection:
         """Reserve mandatory blocks and greedily add whole turns newest first.
 
@@ -130,6 +132,8 @@ class OngoingContextBudgeter:
                 Effective response capacity after output reservation.
             counter:
                 Provider-specific deterministic estimator.
+            projections:
+                Current relationship and adaptation caches when initialized.
 
         Returns:
             Bounded prompt and explicit compression prefix.
@@ -142,7 +146,9 @@ class OngoingContextBudgeter:
         turns = context.uncovered_turns
         mandatory_count = min(1, len(turns))
         selected = turns[-mandatory_count:] if mandatory_count else ()
-        prompt = self._render(persona, identity, continuity, context, selected)
+        prompt = self._render(
+            persona, identity, continuity, context, selected, projections
+        )
         tokens = counter.count(prompt)
         if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
             raise ContextCapacityError(
@@ -153,7 +159,12 @@ class OngoingContextBudgeter:
         for turn in reversed(omitted):
             candidate_turns = (turn,) + selected
             candidate = self._render(
-                persona, identity, continuity, context, candidate_turns
+                persona,
+                identity,
+                continuity,
+                context,
+                candidate_turns,
+                projections,
             )
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -178,6 +189,7 @@ class OngoingContextBudgeter:
         continuity: Continuity,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
+        projections: EvolutionProjectionState | None,
     ) -> tuple[PromptMessage, ...]:
         """Format one candidate using given eligibility.
 
@@ -192,6 +204,8 @@ class OngoingContextBudgeter:
                 Summary and current input.
             turns:
                 Selected chronological complete turns.
+            projections:
+                Current relationship and adaptation caches when initialized.
 
         Returns:
             Provider-ready prompt messages.
@@ -208,6 +222,8 @@ class OngoingContextBudgeter:
             messages,
             context.current_input,
             context.summary.content if context.summary is not None else None,
+            projections.relationship if projections is not None else None,
+            projections.persona_adaptations if projections is not None else None,
         )
 
 
@@ -224,6 +240,7 @@ class StorylineContextBudgeter:
         generation: EffectiveGeneration,
         counter: TokenCounter,
         memories: tuple[StorylineMemory, ...] = (),
+        projections: EvolutionProjectionState | None = None,
     ) -> ContextSelection:
         """Reserve Storyline blocks and greedily add whole turns newest first.
 
@@ -244,6 +261,8 @@ class StorylineContextBudgeter:
                 Provider-specific deterministic estimator.
             memories:
                 Dedicated-budget response memories in selector priority order.
+            projections:
+                Current relationship and adaptation caches when initialized.
 
         Returns:
             Bounded prompt and explicit compression prefix.
@@ -265,6 +284,7 @@ class StorylineContextBudgeter:
             context,
             selected,
             selected_memories,
+            projections,
         )
         tokens = counter.count(prompt)
         if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -282,6 +302,7 @@ class StorylineContextBudgeter:
                 context,
                 selected,
                 candidate_memories,
+                projections,
             )
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS <= generation.input_tokens:
@@ -300,6 +321,7 @@ class StorylineContextBudgeter:
                 context,
                 candidate_turns,
                 selected_memories,
+                projections,
             )
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -326,6 +348,7 @@ class StorylineContextBudgeter:
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
         memories: tuple[StorylineMemory, ...],
+        projections: EvolutionProjectionState | None,
     ) -> tuple[PromptMessage, ...]:
         """Format one candidate from exact Storyline scene inputs.
 
@@ -344,6 +367,8 @@ class StorylineContextBudgeter:
                 Selected chronological complete turns.
             memories:
                 Whole response memories admitted before optional older turns.
+            projections:
+                Current relationship and adaptation caches when initialized.
 
         Returns:
             Provider-ready prompt messages.
@@ -362,4 +387,6 @@ class StorylineContextBudgeter:
             context.current_input,
             context.summary.content if context.summary is not None else None,
             memories,
+            projections.relationship if projections is not None else None,
+            projections.persona_adaptations if projections is not None else None,
         )

@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 11 — Feed projections into future responses.
+Next delivery focus: Stage 7, Slice 12 — Rebuild after retry selection and branching.
 
 Deferred engineering:
 

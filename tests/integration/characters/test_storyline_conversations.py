@@ -370,7 +370,7 @@ def _summary_service(
         ModelDescriptor(
             provider="fake",
             model="response",
-            context_tokens=170,
+            context_tokens=190,
             output_tokens=10,
             capabilities=frozenset({"response"}),
         ),

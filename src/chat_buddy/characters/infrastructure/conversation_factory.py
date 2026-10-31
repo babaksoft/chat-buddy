@@ -171,4 +171,5 @@ def create_conversation_service(
         memory_extraction=extraction,
         response_memories=response_memories,
         evolution=evolution,
+        evolution_projections=evolution_repository,
     )

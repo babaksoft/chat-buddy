@@ -245,7 +245,7 @@ def prove_stage_four_milestone(factory: sessionmaker[Session]) -> None:
     )
     list(recovered.stream(ongoing_target(fresh_scope), attempt.id))
     assert [m.content for m in responses.captured[-1][-1:]] == ["Fresh start"]
-    assert len(responses.captured[-1]) == 5
+    assert len(responses.captured[-1]) == 7
     assert recovered.history(ongoing_target(scope)) == final
     assert identities.inspect(identity.id) == frozen_identity
     assert personas.inspect(persona.id) == frozen_persona

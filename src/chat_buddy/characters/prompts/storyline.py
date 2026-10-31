@@ -4,7 +4,9 @@ from chat_buddy.characters.domain import (
     Identity,
     Message,
     Persona,
+    PersonaAdaptationProjection,
     PromptMessage,
+    RelationshipProjection,
     Scene,
     Storyline,
     StorylineMemory,
@@ -46,6 +48,8 @@ def assemble_storyline_prompt(
     current_input: str | None = None,
     summary: str | None = None,
     memories: tuple[StorylineMemory, ...] = (),
+    relationship: RelationshipProjection | None = None,
+    adaptations: PersonaAdaptationProjection | None = None,
 ) -> tuple[PromptMessage, ...]:
     """Render one scene with selected memory and without foreign context.
 
@@ -66,6 +70,10 @@ def assemble_storyline_prompt(
             Compatible summary from this scene only.
         memories:
             Selected eligible continuity memories in response-strategy order.
+        relationship:
+            Current qualitative relationship projection when evolution is active.
+        adaptations:
+            Current continuity-local persona adaptations when evolution is active.
 
     Returns:
         Ordered provider input without titles, other scenes, or partial output.
@@ -82,16 +90,28 @@ def assemble_storyline_prompt(
         ),
         PromptMessage(
             role="system",
-            content="Relationship intent and starting state:\n"
-            + storyline.relationship.model_dump_json()
-            + "\nThese are starting qualities, not evidence of shared events. Do not invent shared history.",
+            content="Relationship intent and user boundaries:\n"
+            + storyline.relationship.model_dump_json(include={"intent", "boundaries"}),
+        ),
+        PromptMessage(
+            role="system",
+            content="Current relationship projection:\n"
+            + _relationship_json(storyline, relationship),
+        ),
+        PromptMessage(
+            role="system",
+            content="Current persona adaptations:\n" + _adaptation_json(adaptations),
         ),
     )
     scene_blocks = (
         PromptMessage(role="system", content="Scene setup:\n" + scene.details.setup),
         PromptMessage(
             role="system",
-            content="Response style:\n" + scene.details.response_style.instruction,
+            content=(
+                "Response style:\n"
+                + scene.details.response_style.instruction
+                + "\nPreserve the authored relationship boundaries and do not invent shared history."
+            ),
         ),
     )
     summary_block = (
@@ -119,3 +139,45 @@ def assemble_storyline_prompt(
         + history
         + tail
     )
+
+
+def _relationship_json(
+    storyline: Storyline, relationship: RelationshipProjection | None
+) -> str:
+    """Render only qualitative current relationship values.
+
+    Args:
+        storyline:
+            Owned starting state used before the first evolution effect.
+        relationship:
+            Persisted current projection when available.
+
+    Returns:
+        Compact JSON without ownership, revision, or experiment metadata.
+    """
+
+    if relationship is None:
+        return storyline.relationship.model_dump_json(
+            include={"social", "romantic", "dynamic", "trust", "affection"}
+        )
+
+    return relationship.model_dump_json(
+        include={"social", "romantic", "dynamic", "trust", "affection", "milestones"}
+    )
+
+
+def _adaptation_json(adaptations: PersonaAdaptationProjection | None) -> str:
+    """Render bounded active adaptations without persistence metadata.
+
+    Args:
+        adaptations:
+            Persisted current adaptations when available.
+
+    Returns:
+        Compact JSON containing only typed facets and concise values.
+    """
+
+    if adaptations is None:
+        return '{"adaptations":[]}'
+
+    return adaptations.model_dump_json(include={"adaptations"})

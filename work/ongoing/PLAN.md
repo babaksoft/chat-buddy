@@ -415,6 +415,8 @@ schema, provider, and model provenance.
 
 ### Slice 11 — Feed projections into future responses
 
+Status: Complete
+
 Update Characters context assembly to use:
 
 ```text

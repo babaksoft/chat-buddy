@@ -37,6 +37,10 @@ from chat_buddy.characters.domain import (
     ConversationSettings,
     ConversationTarget,
     EffectiveGeneration,
+    EvolutionProjectionConflictError,
+    EvolutionProjectionState,
+    EvolutionRepository,
+    EvolutionScope,
     ForkRequiredError,
     GenerationAttempt,
     GraphAction,
@@ -149,6 +153,7 @@ class ConversationService:
         memory_extraction: _StorylineExtractionProcessor | None = None,
         response_memories: _StorylineResponseMemoryProvider | None = None,
         evolution: _EvolutionEffectProcessor | None = None,
+        evolution_projections: EvolutionRepository | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -175,6 +180,8 @@ class ConversationService:
                 Optional branch-aware Storyline response-memory workflow.
             evolution:
                 Optional post-completion selected-turn evolution workflow.
+            evolution_projections:
+                Optional current evolution projection reader for response context.
         """
 
         self._conversations = conversations
@@ -186,6 +193,7 @@ class ConversationService:
         self._memory_extraction = memory_extraction
         self._response_memories = response_memories
         self._evolution = evolution
+        self._evolution_projections = evolution_projections
         self._branch_mode_facts = (
             branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
         )
@@ -785,6 +793,7 @@ class ConversationService:
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
         current = self._summaries.current(scope, summary_path_leaf_id)
+        projections = self._response_projections(scope, history)
         storyline: Storyline | None = None
         scene: Scene | None = None
         continuity = None
@@ -818,12 +827,19 @@ class ConversationService:
                     generation,
                     counter,
                     memories,
+                    projections,
                 )
             else:
                 if continuity is None:
                     raise ValueError("Ongoing target resolution failed")
                 selection = self._budgeter.assemble(
-                    persona, identity, continuity, eligible, generation, counter
+                    persona,
+                    identity,
+                    continuity,
+                    eligible,
+                    generation,
+                    counter,
+                    projections,
                 )
             if not selection.omitted_turns:
                 return selection.prompt
@@ -836,6 +852,42 @@ class ConversationService:
         raise ContextCapacityError(
             "Conversation summary did not make bounded progress."
         )
+
+    def _response_projections(
+        self, scope: ConversationScope, history: ConversationHistory
+    ) -> EvolutionProjectionState | None:
+        """Read current evolution caches without inventing pre-effect state.
+
+        Args:
+            scope:
+                Complete response-conversation ownership.
+            history:
+                Selected committed history used to distinguish a fresh continuity.
+
+        Returns:
+            Current paired projections, or None before the first completed turn.
+
+        Raises:
+            EvolutionProjectionConflictError:
+                If caches are missing after a completed turn should have initialized
+                them.
+        """
+
+        if self._evolution_projections is None:
+            return None
+
+        evolution_scope = EvolutionScope(
+            identity_id=scope.identity_id,
+            persona_id=scope.persona_id,
+            continuity_id=scope.continuity_id,
+        )
+        try:
+            return self._evolution_projections.get_projections(evolution_scope)
+        except EvolutionProjectionConflictError:
+            if not any(message.role == "persona" for message in history.messages):
+                return None
+
+            raise
 
     def _validate_target(
         self,

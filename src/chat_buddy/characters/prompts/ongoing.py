@@ -5,7 +5,9 @@ from chat_buddy.characters.domain import (
     Identity,
     Message,
     Persona,
+    PersonaAdaptationProjection,
     PromptMessage,
+    RelationshipProjection,
 )
 
 # Extra deterministic safety reserve beyond the provider counter's framing.
@@ -19,6 +21,8 @@ def assemble_ongoing_prompt(
     messages: tuple[Message, ...],
     current_input: str | None = None,
     summary: str | None = None,
+    relationship: RelationshipProjection | None = None,
+    adaptations: PersonaAdaptationProjection | None = None,
 ) -> tuple[PromptMessage, ...]:
     """Render mandatory blocks, summary, selected history, and current input.
 
@@ -35,6 +39,10 @@ def assemble_ongoing_prompt(
             New input, absent when continuing an existing tail.
         summary:
             Active conversation summary covering messages before this history.
+        relationship:
+            Current qualitative relationship projection when evolution is active.
+        adaptations:
+            Current continuity-local persona adaptations when evolution is active.
 
     Returns:
         Ordered provider input without partial output or memory.
@@ -51,13 +59,25 @@ def assemble_ongoing_prompt(
         ),
         PromptMessage(
             role="system",
-            content="Relationship intent and starting state:\n"
-            + continuity.relationship.model_dump_json()
-            + "\nThese are starting qualities, not evidence of shared events. Do not invent shared history.",
+            content="Relationship intent and user boundaries:\n"
+            + continuity.relationship.model_dump_json(include={"intent", "boundaries"}),
         ),
         PromptMessage(
             role="system",
-            content="Respond as the persona in a natural conversation. Use clear text and preserve the authored identity and relationship boundaries.",
+            content="Current relationship projection:\n"
+            + _relationship_json(continuity, relationship),
+        ),
+        PromptMessage(
+            role="system",
+            content="Current persona adaptations:\n" + _adaptation_json(adaptations),
+        ),
+        PromptMessage(
+            role="system",
+            content=(
+                "Response style:\nRespond as the persona in a natural conversation. "
+                "Use clear text and preserve the authored identity and relationship "
+                "boundaries. Do not invent shared history."
+            ),
         ),
     )
     summary_block = (
@@ -78,6 +98,48 @@ def assemble_ongoing_prompt(
         else ()
     )
     return blocks + summary_block + history + tail
+
+
+def _relationship_json(
+    continuity: Continuity, relationship: RelationshipProjection | None
+) -> str:
+    """Render only qualitative current relationship values.
+
+    Args:
+        continuity:
+            Owned starting state used before the first evolution effect.
+        relationship:
+            Persisted current projection when available.
+
+    Returns:
+        Compact JSON without ownership, revision, or experiment metadata.
+    """
+
+    if relationship is None:
+        return continuity.relationship.model_dump_json(
+            include={"social", "romantic", "dynamic", "trust", "affection"}
+        )
+
+    return relationship.model_dump_json(
+        include={"social", "romantic", "dynamic", "trust", "affection", "milestones"}
+    )
+
+
+def _adaptation_json(adaptations: PersonaAdaptationProjection | None) -> str:
+    """Render bounded active adaptations without persistence metadata.
+
+    Args:
+        adaptations:
+            Persisted current adaptations when available.
+
+    Returns:
+        Compact JSON containing only typed facets and concise values.
+    """
+
+    if adaptations is None:
+        return '{"adaptations":[]}'
+
+    return adaptations.model_dump_json(include={"adaptations"})
 
 
 def assemble_summary_prompt(

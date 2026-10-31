@@ -390,6 +390,7 @@ class DbStorylineRepository:
             raise ConfirmationConflictError(
                 "Use a new confirmation identifier for changed inputs"
             )
+
         return row
 
     @staticmethod
@@ -462,6 +463,7 @@ class DbStorylineRepository:
         row = session.scalar(query.with_for_update() if lock else query)
         if row is None:
             raise ContinuityNotFoundError(str(storyline_id))
+
         return row
 
     @staticmethod
@@ -488,6 +490,7 @@ class DbStorylineRepository:
             ContinuityModel.persona_id == row.persona_id,
             ContinuityModel.mode == "storyline",
         )
+
         return session.scalars(query.with_for_update() if lock else query).one()
 
     @classmethod

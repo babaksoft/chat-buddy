@@ -1287,6 +1287,7 @@ class DbMemoryExtractionRepository:
         evidence = session.get(MemoryEvidenceModel, row.evidence_id)
         if evidence is None:
             raise MemoryConflictNotFoundError(str(row.id))
+
         return MemoryConflict(
             id=row.id,
             continuity_id=row.continuity_id,

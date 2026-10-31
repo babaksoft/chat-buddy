@@ -121,7 +121,7 @@ def test_long_context_advances_revisions_and_resumes_from_durable_checkpoint(
     )
     list(app.stream(ongoing_target(scope), fourth.id))
     prompt = responses.captured[-1]
-    assert prompt[4].content == "Conversation summary:\nDurable summary 2"
+    assert prompt[6].content == "Conversation summary:\nDurable summary 2"
     assert [message.content for message in prompt[-3:]] == [
         "Third",
         "Hello there",
@@ -410,7 +410,7 @@ def _service(
         ModelDescriptor(
             provider="fake",
             model="response",
-            context_tokens=170,
+            context_tokens=190,
             output_tokens=10,
             capabilities=frozenset({"response"}),
         ),
