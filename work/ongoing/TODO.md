@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 16 — Update project documents for delivered evolution behavior.
+Next delivery focus: Stage 8 — Timeline and response-style controls.
 
 Deferred engineering:
 

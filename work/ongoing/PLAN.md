@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-10-31
+Last updated: 2026-11-01
 
 ## Outcome
 
@@ -529,6 +529,8 @@ Complete when maintainers can compare two strategies locally while the ordinary
 application and test suite remain independent of the observability backend.
 
 ### Slice 16 — Update project documents for delivered evolution behavior
+
+Status: Complete
 
 Update `README.md` only for shipped user-visible relationship evolution, persona
 adaptation, correction, configuration, privacy, or data-flow behavior. Describe

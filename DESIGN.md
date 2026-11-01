@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-10-28
+Last updated: 2026-11-01
 
 ## Purpose and scope
 
@@ -339,7 +339,7 @@ distinct profile pair and copies only supporting evidence whose source was also
 copied. Excluded or future memory and unresolved conflicts do not cross the fork.
 No continuity-owned row is shared.
 
-Stage 6 provides no source-scene, conversation, or message deletion. Any future
+There is no source-scene, conversation, or message deletion. Any future
 source-deletion workflow must reject deletion while memory provenance refers to
 the source. Archival preserves those records. Hard deletion of a logical memory
 removes its own provenance but does not delete its sources.
@@ -458,7 +458,9 @@ Ongoing context is ordered as:
 ```text
 Persona core
 → Identity
-→ Starting relationship
+→ Relationship intent and user boundaries
+→ Current relationship projection
+→ Current persona adaptations
 → Effective response presentation
 → Rolling summary
 → Recent selected-path messages
@@ -470,7 +472,9 @@ The general Characters context order, as later modes add state, is:
 ```text
 Persona core
 → Identity
-→ Relationship intent and current state
+→ Relationship intent and user boundaries
+→ Current relationship projection
+→ Current persona adaptations
 → Eligible continuity memories
 → Scene setup and current state
 → Response style
@@ -530,10 +534,9 @@ checkpoint, and time. Selection, extraction, and later consolidation or ranking
 may evolve independently without changing ownership, evidence, or temporal rules.
 
 Changing the selected branch recomputes memory eligibility at read time without
-rewriting its lineage. Derived relationship and persona projections rebuild from
-eligible evidence when those capabilities are present. Unselected alternatives
-cannot continue to influence context, memory, relationship projections, or persona
-adaptation.
+rewriting its lineage. Relationship and persona-adaptation projections rebuild
+from eligible events. Unselected alternatives cannot continue to influence
+context, memory, relationship projections, or persona adaptation.
 
 Relationship and adaptation evolution follows the same selected-history rule but
 uses its own append-only events. A branch switch makes events supported only by
@@ -602,8 +605,9 @@ Provider adapters:
 
 Ollama is the default local adapter. Chat may use explicitly enabled cloud adapters
 for visible responses while retaining local utility operations. A cloud adapter
-does not change Chat application or context services. Characters providers remain
-independently configured and cannot reuse Chat contracts.
+does not change Chat application or context services. Characters response,
+summary, memory-extraction, and evolution models remain independently configured
+and cannot reuse Chat contracts.
 
 ### Streamlit shell
 
@@ -629,8 +633,8 @@ its own schema.
 - Local correction or deletion cannot retract data already transmitted externally.
 - Ownership checks include every required identifier rather than trusting a single
   record ID.
-- Memory and inferred relationship information remain inspectable and controllable
-  by the user.
+- Memory, inferred relationship state, and persona adaptations remain inspectable
+  and controllable by the user.
 
 ### Reliability and recovery
 
@@ -661,7 +665,8 @@ its own schema.
 - Incomplete output is visibly separate from committed history.
 - Retry limits, read-only state, provider limitations, and recovery options are
   explicit.
-- Inferred memory and relationship state links back to its source provenance.
+- Inferred memory, relationship state, and persona adaptation link back to exact
+  source provenance; user corrections remain visibly distinct.
 - Generation, summarization, extraction, strategy, validation, and context failures
   are logged without leaking credentials or raw provider secrets.
 

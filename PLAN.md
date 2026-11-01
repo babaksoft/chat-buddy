@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-10-27
+Last updated: 2026-11-01
 
 ## How to use this plan
 
@@ -211,6 +211,8 @@ hold, corrections immediately affect context, and no Characters memory is
 visible to Chat.
 
 ## Stage 7 — Add relationship and persona evolution
+
+**Status: Complete.**
 
 - Persist append-only relationship events and a current relationship-state
   projection.

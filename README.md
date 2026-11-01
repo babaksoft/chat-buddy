@@ -51,6 +51,12 @@ experiences:
 - Use branch-aware, time-aware Storyline memory extracted after complete turns.
 - Inspect memory evidence and revisions; correct, exclude, reactivate, or
   permanently delete memories; and review extraction conflicts.
+- Let relationships and persona behavior evolve conservatively from completed,
+  selected turns in either continuity mode.
+- Inspect qualitative relationship state, milestones, active persona adaptations,
+  exact supporting exchanges, and diagnostic provenance.
+- Correct, exclude, or restore an inferred interpretation without editing the
+  conversation or authored persona.
 - Archive a Storyline as read-only and start a fresh independent Storyline for the
   same identity and persona.
 - Duplicate frozen profiles when authored changes are needed.
@@ -73,15 +79,17 @@ not extract long-term memory. A Storyline owns ordered scenes and its own extrac
 memory; branch and scene-time rules prevent unrelated or future knowledge from
 entering a prompt. Storyline memory crosses into another continuity only through a
 reviewed Storyline fork, which creates an independent lineage by remapping copied
-evidence. Characters does not yet evolve relationship or persona state from
-conversation content.
+evidence. In both modes, accepted relationship evolution and persona adaptations
+remain continuity-scoped, follow the selected conversation path, and affect later
+responses. A reviewed Storyline fork copies only evolution supported by copied
+history; a fresh continuity inherits none.
 
 ## Local-first behavior and cloud usage
 
 PostgreSQL stores application data in the configured local database. Ollama
 provides the default generation path for both areas. It also performs Chat title
-generation, summarization, and memory extraction, plus Characters summarization
-and Storyline memory extraction.
+generation, summarization, and memory extraction, plus Characters summarization,
+Storyline memory extraction, and relationship and persona-adaptation inference.
 
 OpenAI is an explicit, optional provider for visible Chat responses. When selected,
 the eligible current input, recent turns, conversation summary, and active Chat
@@ -93,11 +101,13 @@ external provider.
 Chat and Characters use separate provider configuration. Depending on the
 Characters operation, its Ollama endpoint may receive the authored identity and
 persona, starting relationship, eligible Storyline memory, scene setup, compatible
-summary, selected-path messages, and the current or newly completed turn. Data sent
-to an Ollama endpoint remains under the control of that endpoint and selected
-model. If either points to a hosted or remote service, that eligible context leaves
-the local machine; verify the endpoint and model hosting behavior when local-only
-processing is required.
+summary, current relationship and persona adaptations, selected-path messages, and
+the current or newly completed turn. Evolution inference sends a bounded
+continuity snapshot to that same configured endpoint. Data sent to an Ollama
+endpoint remains under the control of that endpoint and selected model. If either
+points to a hosted or remote service, that eligible context leaves the local
+machine; verify the endpoint and model hosting behavior when local-only processing
+is required.
 
 ## Architecture at a glance
 
@@ -221,7 +231,11 @@ default page; use the sidebar to open the focused Characters pages.
 6. On the selected Storyline, inspect its memory and conflicts below the scene.
    Corrections, exclusions, reactivations, and confirmed permanent deletions affect
    that Storyline only. Archived Storylines and their memory are read-only.
-7. Navigate active or archived histories under their identity and persona.
+7. Expand **Relationship evolution** on an Ongoing or Storyline page to inspect
+   the starting state, current qualitative state, adaptations, evidence, and
+   diagnostics. Confirmed corrections affect future context without rewriting
+   conversation history.
+8. Navigate active or archived histories under their identity and persona.
 
 Confirming the first continuity permanently freezes the selected identity and
 persona. Duplicate a frozen profile to create an editable variant. Archived
@@ -260,6 +274,7 @@ Characters reads its model settings when its services are composed:
 | `CHARACTERS_RESPONSE_MODEL` | `gpt-oss:20b-cloud` | Persona response model |
 | `CHARACTERS_SUMMARY_MODEL` | `gpt-oss:20b-cloud` | Rolling-summary model |
 | `CHARACTERS_MEMORY_EXTRACTION_MODEL` | `gpt-oss:20b-cloud` | Storyline memory-extraction model |
+| `CHARACTERS_EVOLUTION_MODEL` | `gpt-oss:20b-cloud` | Relationship and persona-adaptation inference model |
 | `CHARACTERS_CONTEXT_TOKENS` | `32768` | Total configured context window |
 | `CHARACTERS_OUTPUT_TOKENS` | `4096` | Default output-token limit |
 
@@ -270,14 +285,15 @@ export CHARACTERS_OLLAMA_ENDPOINT_URL=http://localhost:11434
 export CHARACTERS_RESPONSE_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_SUMMARY_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_MEMORY_EXTRACTION_MODEL=gpt-oss:20b-cloud
+export CHARACTERS_EVOLUTION_MODEL=gpt-oss:20b-cloud
 export CHARACTERS_CONTEXT_TOKENS=8192
 export CHARACTERS_OUTPUT_TOKENS=1024
 ```
 
-The response, summary, and memory-extraction models are independently selectable
-but must all be available through the configured Characters Ollama endpoint.
-Storyline extraction uses the context and output limits above with its own bounded
-input selection; it does not make Ongoing memory-bearing.
+The response, summary, memory-extraction, and evolution models are independently
+selectable but must all be available through the configured Characters Ollama
+endpoint. Storyline memory extraction and continuity evolution use their own
+bounded input selection; evolution does not make Ongoing memory-bearing.
 
 The Characters database URL is currently source-configured in
 `src/chat_buddy/characters/infrastructure/config/settings.py` and defaults to the
