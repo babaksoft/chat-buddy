@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from uuid import UUID
 
 from chat_buddy.characters.application.evolution import (
     EvolutionEvaluator,
     EvolutionProposalValidator,
+)
+from chat_buddy.characters.application.evolution_observability import (
+    NoOpEvolutionObserver,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
@@ -23,6 +27,8 @@ from chat_buddy.characters.domain import (
     EvolutionEffectState,
     EvolutionEvidenceKind,
     EvolutionEvidenceReference,
+    EvolutionObserver,
+    EvolutionOperation,
     EvolutionProjectionConflictError,
     EvolutionRepository,
     EvolutionScope,
@@ -56,6 +62,7 @@ class EvolutionEffectService:
         configuration_resolver: EvolutionConfigurationResolver,
         strategy: EvolutionStrategy,
         threshold_policy: EvolutionThresholdPolicy,
+        observer: EvolutionObserver | None = None,
     ) -> None:
         """Bind exact-history readers and replaceable evolution components.
 
@@ -78,6 +85,8 @@ class EvolutionEffectService:
                 Typed proposal implementation.
             threshold_policy:
                 Versioned gradual-change calibration policy.
+            observer:
+                Optional privacy-safe telemetry sink.
         """
 
         self._conversations = conversations
@@ -89,6 +98,7 @@ class EvolutionEffectService:
         self._configuration_resolver = configuration_resolver
         self._strategy = strategy
         self._threshold_policy = threshold_policy
+        self._observer = observer or NoOpEvolutionObserver()
 
     def process(
         self, target: ConversationTarget, source_persona_message_id: UUID
@@ -128,6 +138,7 @@ class EvolutionEffectService:
         self._validate_configuration(configuration)
         effect = self._repository.reserve(source, configuration.provenance())
         if effect.state != EvolutionEffectState.RESERVED:
+            self._observer.duplicate_reservation()
             return effect
 
         try:
@@ -138,24 +149,49 @@ class EvolutionEffectService:
                 PersonaAdaptationProjection(scope=scope, revision=0),
             )
 
-        snapshot = self._selector.select(scope, source)
-        proposal = EvolutionEvaluator(self._strategy, configuration).evaluate(snapshot)
-        result = EvolutionProposalValidator(self._threshold_policy).evaluate(
-            snapshot, proposal
-        )
+        attributes = _trace_attributes(configuration)
+        started = perf_counter()
+        with self._observer.span(EvolutionOperation.SELECTOR, attributes):
+            snapshot = self._selector.select(scope, source)
+        snapshot_seconds = perf_counter() - started
+
+        started = perf_counter()
+        with self._observer.span(EvolutionOperation.STRATEGY, attributes):
+            proposal = EvolutionEvaluator(self._strategy, configuration).evaluate(
+                snapshot
+            )
+        strategy_seconds = perf_counter() - started
+        with self._observer.span(EvolutionOperation.VALIDATION, attributes):
+            result = EvolutionProposalValidator(self._threshold_policy).evaluate(
+                snapshot, proposal
+            )
 
         try:
-            if result.decision.outcome == EvolutionDecisionOutcome.APPLIED:
-                return self._repository.complete(
-                    effect.id,
-                    proposal,
-                    result.decision,
-                    result.relationship,
-                    result.persona_adaptations,
-                )
-
-            return self._repository.complete(effect.id, proposal, result.decision)
+            with self._observer.span(EvolutionOperation.APPLICATION, attributes):
+                if result.decision.outcome == EvolutionDecisionOutcome.APPLIED:
+                    terminal = self._repository.complete(
+                        effect.id,
+                        proposal,
+                        result.decision,
+                        result.relationship,
+                        result.persona_adaptations,
+                    )
+                else:
+                    terminal = self._repository.complete(
+                        effect.id, proposal, result.decision
+                    )
+            self._observer.effect_terminal(
+                terminal.state,
+                result.decision.outcome,
+                result.decision.reason,
+                len(proposal.commands),
+                configuration,
+                snapshot_seconds,
+                strategy_seconds,
+            )
+            return terminal
         except EvolutionEffectConflictError:
+            self._observer.duplicate_reservation()
             terminal = self._repository.get_effect(scope, source.persona_message_id)
             if terminal.state != EvolutionEffectState.RESERVED:
                 return terminal
@@ -297,3 +333,28 @@ def _relationship_projection(
         trust=RelationshipTrust(relationship.trust),
         affection=RelationshipAffection(relationship.affection),
     )
+
+
+def _trace_attributes(configuration: EvolutionConfiguration) -> dict[str, str]:
+    """Build low-cardinality trace attributes from versioned identities.
+
+    Args:
+        configuration:
+            Exact resolved evolution configuration.
+
+    Returns:
+        Privacy-safe trace attributes without continuity or conversation data.
+    """
+
+    return {
+        "evolution.selector": (
+            f"{configuration.selector.name}@{configuration.selector.version}"
+        ),
+        "evolution.strategy": (
+            f"{configuration.strategy.name}@{configuration.strategy.version}"
+        ),
+        "evolution.policy": (
+            f"{configuration.threshold_policy.name}"
+            f"@{configuration.threshold_policy.version}"
+        ),
+    }

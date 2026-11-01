@@ -141,6 +141,12 @@ from chat_buddy.characters.domain.evolution import (
     apply_evolution_command,
     is_adaptation_command,
 )
+from chat_buddy.characters.domain.evolution_observability import (
+    EvolutionObserver,
+    EvolutionOperation,
+    EvolutionRebuildReason,
+    EvolutionSpanAttributes,
+)
 from chat_buddy.characters.domain.identity import (
     Identity,
     IdentityDetails,
@@ -302,16 +308,20 @@ __all__ = [
     "EvolutionExperimentResult",
     "EvolutionGateway",
     "EvolutionMemory",
+    "EvolutionObserver",
+    "EvolutionOperation",
     "EvolutionProjectionConflictError",
     "EvolutionProjectionState",
     "EvolutionProposal",
     "EvolutionProvenance",
+    "EvolutionRebuildReason",
     "EvolutionRejectionReason",
     "EvolutionRepository",
     "EvolutionScope",
     "EvolutionSnapshot",
     "EvolutionSnapshotBudget",
     "EvolutionSnapshotSelector",
+    "EvolutionSpanAttributes",
     "EvolutionStrategy",
     "EvolutionThresholdAssessment",
     "EvolutionThresholdPolicy",

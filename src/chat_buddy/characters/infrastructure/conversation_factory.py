@@ -28,6 +28,9 @@ from chat_buddy.characters.domain import (
     ResponseMemoryBudget,
     StrategyIdentity,
 )
+from chat_buddy.characters.infrastructure.evolution_observability import (
+    default_evolution_observer,
+)
 from chat_buddy.characters.infrastructure.llm import (
     ContextualMemoryDeltaExtractor,
     create_model_registry,
@@ -128,6 +131,7 @@ def create_conversation_service(
                 ),
             ),
         )
+    observer = default_evolution_observer()
     evolution = EvolutionEffectService(
         conversations,
         DbContinuityRepository(session_factory),
@@ -160,12 +164,14 @@ def create_conversation_service(
             evolution_configuration,
         ),
         StrictBaselineEvolutionThresholdPolicy(),
+        observer,
     )
     evolution_rebuilder = EvolutionProjectionService(
         evolution_repository,
         DbContinuityRepository(session_factory),
         conversations,
         storylines,
+        observer,
     )
     return ConversationService(
         conversations,

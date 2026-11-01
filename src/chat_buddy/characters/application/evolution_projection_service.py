@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from time import perf_counter
 from uuid import UUID, uuid4
 
+from chat_buddy.characters.application.evolution_observability import (
+    NoOpEvolutionObserver,
+)
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     Continuity,
@@ -18,8 +22,10 @@ from chat_buddy.characters.domain import (
     EvolutionCorrectionConflictError,
     EvolutionCorrectionEvent,
     EvolutionEvent,
+    EvolutionObserver,
     EvolutionProjectionConflictError,
     EvolutionProjectionState,
+    EvolutionRebuildReason,
     EvolutionRepository,
     EvolutionScope,
     PersonaAdaptationProjection,
@@ -48,6 +54,7 @@ class EvolutionProjectionService:
         continuity_repository: ContinuityRepository,
         conversation_repository: ConversationGraphRepository,
         storyline_repository: StorylineRepository | None = None,
+        observer: EvolutionObserver | None = None,
     ) -> None:
         """Initialize the replay service.
 
@@ -60,18 +67,23 @@ class EvolutionProjectionService:
                 Selected conversation ancestry used to determine active evidence.
             storyline_repository:
                 Optional Storyline owner resolver for shared correction workflows.
+            observer:
+                Optional privacy-safe telemetry sink.
         """
 
         self._evolution_repository = evolution_repository
         self._continuity_repository = continuity_repository
         self._conversation_repository = conversation_repository
         self._storyline_repository = storyline_repository
+        self._observer = observer or NoOpEvolutionObserver()
 
     def rebuild(
         self,
         scope: EvolutionScope,
         expected_relationship_revision: int | None = None,
         expected_adaptation_revision: int | None = None,
+        *,
+        reason: EvolutionRebuildReason = EvolutionRebuildReason.RECOVERY,
     ) -> EvolutionProjectionState:
         """Replay all authoritative history and replace or recreate both caches.
 
@@ -82,6 +94,8 @@ class EvolutionProjectionService:
                 Optional observed relationship revision for guarded replacement.
             expected_adaptation_revision:
                 Optional observed adaptation revision for guarded replacement.
+            reason:
+                Stable trigger for this replay.
 
         Returns:
             Fully replayed persisted projection state.
@@ -94,8 +108,10 @@ class EvolutionProjectionService:
                 "Evolution rebuild requires both observed revisions"
             )
 
+        started = perf_counter()
+        correction_count = len(self._evolution_repository.list_corrections(scope))
         replayed, relationship_checkpoint, adaptation_checkpoint = self._replay(scope)
-        return self._evolution_repository.rebuild_projections(
+        result = self._evolution_repository.rebuild_projections(
             replayed.relationship,
             replayed.persona_adaptations,
             relationship_checkpoint,
@@ -103,6 +119,10 @@ class EvolutionProjectionService:
             expected_relationship_revision,
             expected_adaptation_revision,
         )
+        self._observer.projection_rebuilt(
+            reason, perf_counter() - started, correction_count
+        )
+        return result
 
     def exclude(
         self,
@@ -227,6 +247,7 @@ class EvolutionProjectionService:
     ) -> EvolutionProjectionState:
         """Validate, append, and replay one user-authored correction."""
 
+        started = perf_counter()
         continuity = self._owner(scope)
         if continuity.lifecycle == ContinuityLifecycle.ARCHIVED:
             raise ArchivedContinuityError("Archived continuities cannot be corrected")
@@ -274,9 +295,16 @@ class EvolutionProjectionService:
             scope, events=events, corrections=(*corrections, correction)
         )
 
-        return self._evolution_repository.append_correction(
+        result = self._evolution_repository.append_correction(
             correction, replayed.relationship, replayed.persona_adaptations
         )
+        self._observer.correction_appended(action)
+        self._observer.projection_rebuilt(
+            EvolutionRebuildReason.CORRECTION,
+            perf_counter() - started,
+            len(corrections) + 1,
+        )
+        return result
 
     def _replay(
         self,

@@ -499,6 +499,8 @@ conversation history.
 
 ### Slice 15 — Add observability and experiment reporting
 
+Status: Complete
+
 Add low-cardinality structured logs and metrics for:
 
 - Effect terminal state.

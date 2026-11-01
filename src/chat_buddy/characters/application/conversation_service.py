@@ -39,6 +39,7 @@ from chat_buddy.characters.domain import (
     EffectiveGeneration,
     EvolutionProjectionConflictError,
     EvolutionProjectionState,
+    EvolutionRebuildReason,
     EvolutionRepository,
     EvolutionScope,
     ForkRequiredError,
@@ -114,12 +115,16 @@ class _EvolutionEffectProcessor(Protocol):
 class _EvolutionProjectionRebuilder(Protocol):
     """Rebuild current evolution state from selected conversation ancestry."""
 
-    def rebuild(self, scope: EvolutionScope) -> EvolutionProjectionState:
+    def rebuild(
+        self, scope: EvolutionScope, *, reason: EvolutionRebuildReason
+    ) -> EvolutionProjectionState:
         """Rebuild both projections for the currently selected history.
 
         Args:
             scope:
                 Complete continuity ownership.
+            reason:
+                Stable selected-history mutation trigger.
 
         Returns:
             Fully replayed current projections.
@@ -353,7 +358,7 @@ class ConversationService:
                 target_message_id=message_id,
             )
         )
-        self._rebuild_evolution(target)
+        self._rebuild_evolution(target, EvolutionRebuildReason.PATH_SELECTION)
         return selected
 
     def select_saved_future(
@@ -416,7 +421,7 @@ class ConversationService:
                 target_message_id=message_id,
             )
         )
-        self._rebuild_evolution(target)
+        self._rebuild_evolution(target, EvolutionRebuildReason.BRANCH)
         return selected
 
     def resume(self, target: ConversationTarget) -> ConversationHistory:
@@ -626,7 +631,7 @@ class ConversationService:
                 yield chunk
             message = self._conversations.complete(scope, attempt_id)
             completed = True
-            self._rebuild_evolution(target)
+            self._rebuild_evolution(target, EvolutionRebuildReason.RESPONSE_COMPLETION)
             if (
                 self._memory_extraction is not None
                 and target.mode == ContinuityMode.STORYLINE
@@ -660,12 +665,16 @@ class ConversationService:
                 if not completed:
                     self._conversations.stop(scope, attempt_id, "interrupted")
 
-    def _rebuild_evolution(self, target: ConversationTarget) -> None:
+    def _rebuild_evolution(
+        self, target: ConversationTarget, reason: EvolutionRebuildReason
+    ) -> None:
         """Replay evolution after a selected-path mutation.
 
         Args:
             target:
                 Mode-owned target whose selected ancestry changed.
+            reason:
+                Stable selected-history mutation trigger.
         """
 
         if self._evolution_rebuilder is None:
@@ -676,7 +685,8 @@ class ConversationService:
                 identity_id=target.scope.identity_id,
                 persona_id=target.scope.persona_id,
                 continuity_id=target.scope.continuity_id,
-            )
+            ),
+            reason=reason,
         )
 
     def _prepare(

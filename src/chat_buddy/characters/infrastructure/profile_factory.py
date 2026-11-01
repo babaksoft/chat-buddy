@@ -164,6 +164,9 @@ def create_evolution_inspection_service() -> EvolutionInspectionService:
         DbEvolutionRepository,
         DbStorylineRepository,
     )
+    from chat_buddy.characters.infrastructure.evolution_observability import (
+        default_evolution_observer,
+    )
 
     evolution = DbEvolutionRepository(CharactersSessionLocal)
     conversations = DbConversationRepository(CharactersSessionLocal)
@@ -172,5 +175,6 @@ def create_evolution_inspection_service() -> EvolutionInspectionService:
         DbContinuityRepository(CharactersSessionLocal),
         conversations,
         DbStorylineRepository(CharactersSessionLocal),
+        default_evolution_observer(),
     )
     return EvolutionInspectionService(evolution, conversations, projections)

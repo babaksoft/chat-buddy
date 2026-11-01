@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 7, Slice 15 — Add observability and experiment reporting.
+Next delivery focus: Stage 7, Slice 16 — Update project documents for delivered evolution behavior.
 
 Deferred engineering:
 

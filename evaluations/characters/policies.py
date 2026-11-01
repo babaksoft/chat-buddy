@@ -1,16 +1,26 @@
 """Policies for exercising native evolution evaluation scenarios."""
 
 from chat_buddy.characters.application import (
+    BASELINE_EVOLUTION_SCHEMA,
     EvolutionProposalValidator,
     StrictBaselineEvolutionThresholdPolicy,
 )
 from chat_buddy.characters.domain import (
+    EvolutionConfiguration,
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionProposal,
     EvolutionSnapshot,
+    StrategyIdentity,
 )
 from evaluations.characters.models import PolicyEvaluation
+
+NO_CHANGE_EVALUATION_CONFIGURATION = EvolutionConfiguration(
+    selector=StrategyIdentity(name="evaluation.curated_scenarios", version="1.0.0"),
+    strategy=StrategyIdentity(name="baseline.no_change", version="1.0.0"),
+    threshold_policy=StrategyIdentity(name="evaluation.no_change", version="1.0.0"),
+    schema_identity=BASELINE_EVOLUTION_SCHEMA,
+)
 
 
 class NoChangeEvaluationPolicy:

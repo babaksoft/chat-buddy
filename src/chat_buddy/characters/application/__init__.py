@@ -39,6 +39,9 @@ from chat_buddy.characters.application.evolution_inspection_service import (
     EvolutionInspection,
     EvolutionInspectionService,
 )
+from chat_buddy.characters.application.evolution_observability import (
+    NoOpEvolutionObserver,
+)
 from chat_buddy.characters.application.evolution_projection_service import (
     EvolutionProjectionService,
 )
@@ -102,6 +105,7 @@ __all__ = [
     "IdentityService",
     "NoChangeEvolutionStrategy",
     "NoOpEvolutionExperimentReporter",
+    "NoOpEvolutionObserver",
     "OngoingContextBudgeter",
     "OngoingContextEligibility",
     "PersonaService",
