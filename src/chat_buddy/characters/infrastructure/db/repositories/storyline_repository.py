@@ -16,7 +16,7 @@ from chat_buddy.characters.domain import (
     ConversationScope,
     IdentityNotFoundError,
     PersonaNotFoundError,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneDetails,
     StaleIdentityError,
@@ -571,7 +571,7 @@ class DbStorylineRepository:
             details=SceneDetails(
                 title=row.title,
                 setup=row.setup,
-                response_style=ResponseStyleSnapshot.model_validate(row.response_style),
+                response_style=ResponseStyle.model_validate(row.response_style),
             ),
             setup_locked=row.setup_locked,
         )

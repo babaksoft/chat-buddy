@@ -22,7 +22,7 @@ from chat_buddy.characters.domain import (
     RelationshipIntent,
     RelationshipSelection,
     ResponseProvenance,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     SceneAppendEligibility,
     SceneDetails,
     StaleStorylineError,
@@ -324,14 +324,14 @@ def _relationship() -> StartingRelationship:
     )
 
 
-def _style() -> ResponseStyleSnapshot:
+def _style() -> ResponseStyle:
     """Create the fixed Stage 6 response style.
 
     Returns:
         Valid response-style snapshot.
     """
 
-    return ResponseStyleSnapshot(
+    return ResponseStyle(
         name="storyline.default",
         version="1.0.0",
         instruction="Respond naturally within the current scene.",

@@ -27,7 +27,7 @@ from chat_buddy.characters.domain import (
     Message,
     MessageNode,
     ResponseProvenance,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     RetryAvailability,
     RetryLimitError,
     SelectedPath,
@@ -47,7 +47,7 @@ from chat_buddy.characters.infrastructure.db.models import (
 class DbConversationRepository:
     """Persist selected-path turns under the archive serialization lock."""
 
-    _RESPONSE_STYLE = ResponseStyleSnapshot(
+    _RESPONSE_STYLE = ResponseStyle(
         name="ongoing.default",
         version="1.0.0",
         instruction=(
@@ -418,7 +418,7 @@ class DbConversationRepository:
         session: Session,
         scope: ConversationScope,
         conversation: ConversationModel,
-    ) -> ResponseStyleSnapshot:
+    ) -> ResponseStyle:
         """Resolve immutable response-style provenance from the owning mode.
 
         Args:
@@ -445,7 +445,7 @@ class DbConversationRepository:
         )
         if scene is None:
             raise AttemptConflictError("Storyline scene ownership changed")
-        return ResponseStyleSnapshot.model_validate(scene.response_style)
+        return ResponseStyle.model_validate(scene.response_style)
 
     def stop(
         self,

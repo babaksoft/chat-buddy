@@ -19,7 +19,7 @@ from chat_buddy.characters.domain import (
     MessageNode,
     ProviderInvocationError,
     ResponseProvenance,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     StaleSelectionError,
     StrategyIdentity,
     SubmittedInput,
@@ -80,7 +80,7 @@ def _graph_with_controls(service: Mock) -> tuple[MessageNode, MessageNode, Messa
             created_at=started + timedelta(seconds=offset),
             response_provenance=ResponseProvenance(
                 generation=generation,
-                response_style=ResponseStyleSnapshot(
+                response_style=ResponseStyle(
                     name="ongoing", version="1.0.0", instruction="Respond naturally."
                 ),
                 evolution_strategy=StrategyIdentity(name="baseline", version="1.0.0"),

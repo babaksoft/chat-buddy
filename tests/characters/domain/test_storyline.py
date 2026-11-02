@@ -15,7 +15,7 @@ from chat_buddy.characters.domain import (
     PersonaCore,
     RelationshipIntent,
     RelationshipSelection,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneAppendEligibility,
     SceneDetails,
@@ -57,14 +57,14 @@ def _relationship() -> StartingRelationship:
     )
 
 
-def _style() -> ResponseStyleSnapshot:
+def _style() -> ResponseStyle:
     """Create the fixed Stage 6 response style fixture.
 
     Returns:
         Valid immutable response-style snapshot.
     """
 
-    return ResponseStyleSnapshot(
+    return ResponseStyle(
         name="storyline.default",
         version="1.0.0",
         instruction="Respond naturally within the current scene.",

@@ -33,7 +33,7 @@ from chat_buddy.characters.domain import (
     RelationshipRomanticStatus,
     RelationshipSocialStatus,
     RelationshipTrust,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneDetails,
     StartingOrigins,
@@ -122,7 +122,7 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_selected_memory() -> None:
         details=SceneDetails(
             title="Hidden presentation title",
             setup="They wait beside the midnight train.",
-            response_style=ResponseStyleSnapshot(
+            response_style=ResponseStyle(
                 name="storyline.quiet",
                 version="1.0.0",
                 instruction="Reply with restrained warmth.",

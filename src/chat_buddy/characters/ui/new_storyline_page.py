@@ -19,7 +19,7 @@ from chat_buddy.characters.domain import (
     Persona,
     RelationshipIntent,
     RelationshipSelection,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     RomanticStatus,
     SceneDetails,
     SocialStatus,
@@ -31,7 +31,7 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure import create_storyline_services
 
 _REVIEW_KEY = "characters_new_storyline_review"
-_STYLE = ResponseStyleSnapshot(
+_STYLE = ResponseStyle(
     name="storyline.default",
     version="1.0.0",
     instruction="Respond naturally within the current scene.",

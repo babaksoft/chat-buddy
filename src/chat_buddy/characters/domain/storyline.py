@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from chat_buddy.characters.domain.branching import ResponseStyleSnapshot
 from chat_buddy.characters.domain.continuity import (
     ContinuityLifecycle,
     RelationshipSelection,
@@ -16,6 +15,7 @@ from chat_buddy.characters.domain.continuity import (
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.identity import Identity
 from chat_buddy.characters.domain.persona import Persona
+from chat_buddy.characters.domain.response_style import ResponseStyle
 
 
 class SceneDetails(BaseModel):
@@ -38,7 +38,7 @@ class SceneDetails(BaseModel):
     setup: str = Field(
         min_length=1, max_length=8192, description="Authored scene situation."
     )
-    response_style: ResponseStyleSnapshot = Field(
+    response_style: ResponseStyle = Field(
         description="Fixed response behavior for the scene."
     )
 

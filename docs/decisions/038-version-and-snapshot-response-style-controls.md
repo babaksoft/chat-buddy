@@ -83,7 +83,7 @@ a competing long-lived `warm`, `playful`, `serious`, `dramatic`, or free-form to
 instruction.
 
 The Characters-owned renderer has a semantic version and produces an immutable
-effective `ResponseStyleSnapshot` containing that renderer identity, all three
+effective `ResponseStyle` containing that renderer identity, all three
 resolved values, the source style revision, and the exact deterministic
 instruction in the table order above followed by the fixed Markdown convention.
 The instruction must fit the existing 4,096-character snapshot limit. Style

@@ -19,7 +19,7 @@ from chat_buddy.characters.domain import (
     MessageNode,
     ModelDescriptor,
     ResponseProvenance,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     RetryAvailability,
     SelectedPath,
     StrategyIdentity,
@@ -65,7 +65,7 @@ def _provenance() -> ResponseProvenance:
             capability="response",
             input_tokens=8064,
         ),
-        response_style=ResponseStyleSnapshot(
+        response_style=ResponseStyle(
             name="ongoing.default",
             version="1.0.0",
             instruction="Respond naturally while preserving authored boundaries.",
@@ -117,7 +117,7 @@ def test_provenance_identifiers_require_machine_names_and_stable_versions() -> N
     with pytest.raises(ValidationError):
         StrategyIdentity(name="stable.name", version="1.0.0-rc.1")
     with pytest.raises(ValidationError):
-        ResponseStyleSnapshot(
+        ResponseStyle(
             name="stable.style",
             version="1.0.0-rc.1",
             instruction="Respond naturally.",

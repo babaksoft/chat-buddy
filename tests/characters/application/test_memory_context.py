@@ -38,7 +38,7 @@ from chat_buddy.characters.domain import (
     PromptMessage,
     RelationshipIntent,
     ResponseMemoryBudget,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneDetails,
     ScenePosition,
@@ -513,7 +513,7 @@ def test_response_service_uses_same_branch_and_time_eligibility_query() -> None:
         details=SceneDetails(
             title="Arrival",
             setup="At the platform.",
-            response_style=ResponseStyleSnapshot(
+            response_style=ResponseStyle(
                 name="stage6.default",
                 version="1.0.0",
                 instruction="Respond naturally.",
@@ -586,7 +586,7 @@ def test_snapshot_service_builds_owned_storyline_context_and_rejects_ongoing() -
         relationship=_relationship(),
         revision=1,
     )
-    style = ResponseStyleSnapshot(
+    style = ResponseStyle(
         name="stage6.default",
         version="1.0.0",
         instruction="Respond naturally.",

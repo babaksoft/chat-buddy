@@ -21,7 +21,7 @@ from chat_buddy.characters.domain import (
     Persona,
     PersonaCore,
     RelationshipIntent,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneAppendEligibility,
     SceneDetails,
@@ -502,7 +502,7 @@ def _scene(storyline: Storyline, position: int, *, locked: bool) -> Scene:
         details=SceneDetails(
             title="Arrival" if position == 1 else "Departure",
             setup="A quiet station at dusk.",
-            response_style=ResponseStyleSnapshot(
+            response_style=ResponseStyle(
                 name="storyline.default",
                 version="1.0.0",
                 instruction="Respond naturally within the current scene.",

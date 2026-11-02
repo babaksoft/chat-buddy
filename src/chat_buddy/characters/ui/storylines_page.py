@@ -23,7 +23,7 @@ from chat_buddy.characters.domain import (
     IncompleteLatestSceneError,
     LockedSceneSetupError,
     Persona,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneAppendEligibility,
     SceneDetails,
@@ -53,7 +53,7 @@ from chat_buddy.characters.ui.storyline_memory import (
 )
 
 _SCOPE_KEY = "characters_storyline_scope"
-_STYLE = ResponseStyleSnapshot(
+_STYLE = ResponseStyle(
     name="storyline.default",
     version="1.0.0",
     instruction="Respond naturally within the current scene.",

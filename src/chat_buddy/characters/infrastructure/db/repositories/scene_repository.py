@@ -11,7 +11,7 @@ from chat_buddy.characters.domain import (
     IncompleteLatestSceneError,
     InvalidSceneOwnershipError,
     LockedSceneSetupError,
-    ResponseStyleSnapshot,
+    ResponseStyle,
     Scene,
     SceneAppendEligibility,
     SceneDetails,
@@ -217,9 +217,7 @@ class DbSceneRepository:
             validated = SceneDetails(
                 title=title,
                 setup=scene.setup,
-                response_style=ResponseStyleSnapshot.model_validate(
-                    scene.response_style
-                ),
+                response_style=ResponseStyle.model_validate(scene.response_style),
             )
 
             scene.title = validated.title
@@ -270,9 +268,7 @@ class DbSceneRepository:
             validated = SceneDetails(
                 title=scene.title,
                 setup=setup,
-                response_style=ResponseStyleSnapshot.model_validate(
-                    scene.response_style
-                ),
+                response_style=ResponseStyle.model_validate(scene.response_style),
             )
 
             scene.setup = validated.setup
@@ -454,7 +450,7 @@ class DbSceneRepository:
             details=SceneDetails(
                 title=row.title,
                 setup=row.setup,
-                response_style=ResponseStyleSnapshot.model_validate(row.response_style),
+                response_style=ResponseStyle.model_validate(row.response_style),
             ),
             setup_locked=row.setup_locked,
         )
