@@ -195,7 +195,7 @@ guesses.
 
 ### Slice 2 — Add executable calendar and response-style values
 
-Status: Pending
+Status: Complete
 
 Add immutable Pydantic values for:
 
@@ -204,7 +204,7 @@ Add immutable Pydantic values for:
   closing instant.
 - An injected application-local IANA timezone source used only at Timeline start.
 - The three typed response-style controls, their validated requested settings, and
-  a versioned effective `ResponseStyleSnapshot` renderer.
+  a versioned effective `ResponseStyle` renderer.
 - Optimistic style revisions and explicit default resolution.
 
 Keep timezone conversion in one Characters-owned calendar policy based on

@@ -9,6 +9,7 @@ from chat_buddy.characters.application.branch_policy import (
     DeferredBranchModeFactsResolver,
     decide_branch_mode,
 )
+from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
 from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
@@ -67,6 +68,12 @@ from chat_buddy.characters.application.response_memory import (
     BaselineResponseMemorySelector,
     StorylineResponseMemoryService,
 )
+from chat_buddy.characters.application.response_style import (
+    RESPONSE_STYLE_RENDERER_NAME,
+    RESPONSE_STYLE_RENDERER_VERSION,
+    ResponseStyleRenderer,
+    default_response_style,
+)
 from chat_buddy.characters.application.rolling_summary_service import (
     RollingSummaryService,
 )
@@ -85,6 +92,8 @@ __all__ = [
     "BASELINE_EVOLUTION_CONFIGURATION",
     "BASELINE_EVOLUTION_SCHEMA",
     "BASELINE_PROVIDER_EVOLUTION_STRATEGY",
+    "RESPONSE_STYLE_RENDERER_NAME",
+    "RESPONSE_STYLE_RENDERER_VERSION",
     "BaselineEvolutionSnapshotSelector",
     "BaselineEvolutionStrategy",
     "BaselineMemoryContextSelector",
@@ -109,6 +118,7 @@ __all__ = [
     "OngoingContextBudgeter",
     "OngoingContextEligibility",
     "PersonaService",
+    "ResponseStyleRenderer",
     "RollingSummaryService",
     "StartAvailability",
     "StorylineContextBudgeter",
@@ -121,6 +131,8 @@ __all__ = [
     "StorylineResponseMemoryService",
     "StorylineService",
     "StrictBaselineEvolutionThresholdPolicy",
+    "TimelineCalendarPolicy",
     "decide_branch_mode",
+    "default_response_style",
     "resolve_starting_relationship",
 ]

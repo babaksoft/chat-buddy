@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 2 — Add executable calendar and response-style values.
+Next delivery focus: Stage 8, Slice 3 — Add Timeline domain and repository contracts.
 
 Deferred engineering:
 

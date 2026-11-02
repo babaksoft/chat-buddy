@@ -12,46 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from chat_buddy.characters.domain.continuity import ContinuityMode
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.llm import EffectiveGeneration
+from chat_buddy.characters.domain.response_style import ResponseStyle
 from chat_buddy.characters.domain.strategy import StrategyIdentity
-from chat_buddy.characters.domain.validation import (
-    MACHINE_READABLE_NAME_PATTERN,
-    NON_BLANK_TEXT_PATTERN,
-    SEMANTIC_VERSION_PATTERN,
-)
-
-
-class ResponseStyleSnapshot(BaseModel):
-    """Fixed response-presentation behavior copied to a persona message.
-
-    Attributes:
-        name:
-            Stable machine-readable style name.
-        version:
-            Semantic version of the style behavior.
-        instruction:
-            Exact non-secret instruction effective for the response.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(
-        min_length=1,
-        max_length=128,
-        pattern=MACHINE_READABLE_NAME_PATTERN,
-        description="Stable machine-readable style name.",
-    )
-    version: str = Field(
-        min_length=1,
-        max_length=64,
-        pattern=SEMANTIC_VERSION_PATTERN,
-        description="Semantic style behavior version.",
-    )
-    instruction: str = Field(
-        min_length=1,
-        max_length=4096,
-        pattern=NON_BLANK_TEXT_PATTERN,
-        description="Exact effective response instruction.",
-    )
+from chat_buddy.characters.domain.validation import NON_BLANK_TEXT_PATTERN
 
 
 class ResponseProvenance(BaseModel):
@@ -73,7 +36,7 @@ class ResponseProvenance(BaseModel):
     generation: EffectiveGeneration = Field(
         description="Effective response generation and budget."
     )
-    response_style: ResponseStyleSnapshot = Field(
+    response_style: ResponseStyle = Field(
         description="Effective response-presentation behavior."
     )
     evolution_strategy: StrategyIdentity = Field(
