@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
-- Last revised: 2026-10-24
+- Last revised: 2026-11-02
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
 
 ## Context
@@ -28,6 +28,11 @@ branch or its applicable ancestors.
   memories from later scenes.
 - A Timeline uses current-day messages as short-term context and eligible prior
   memory and relationship state as long-term context.
+
+Timeline temporal eligibility uses immutable day position, not mutable local date
+or UTC order. Only the target day's transcript is short-term context. ADR 037
+defines Timeline extraction, evolution, and fork remapping; Storyline continues to
+use scene position under ADRs 031 and 032.
 
 ## Alternatives considered
 

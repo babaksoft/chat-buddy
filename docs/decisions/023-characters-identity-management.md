@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-01
+- Last revised: 2026-11-02
 - Scope: Characters, Stage 4 Slice 1
 
 ## Context
@@ -22,6 +23,11 @@ identity; changing its display name retains its default designation.
 Duplicates copy only authored details, optionally revised, and start editable,
 non-default, and without continuity history. Demographics are optional; age and
 birth date are alternative inputs, and timezone is optional for Ongoing.
+
+Authored identity timezone remains optional profile context. It does not determine
+Timeline calendar boundaries, which use ADR 011's automatically captured
+application-local timezone. Persona-local clock display and availability behavior
+are deferred and are not inferred from identity or persona location.
 
 ## Consequences
 

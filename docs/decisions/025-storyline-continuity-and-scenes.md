@@ -2,10 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-24
-- Last revised: 2026-10-26
+- Last revised: 2026-11-02
 - Scope: Characters, Stage 6
 - Refines: ADRs 006, 009, and 024
-- Refined by: ADR 033
+- Refined by: ADRs 033 and 038
 - Consistent with: ADR 013
 
 ## Context
@@ -17,13 +17,17 @@ several empty scenes would also introduce state that has no conversation meaning
 ## Decision
 
 An identity/persona pair may own at most one active Storyline. The pair may
-independently own an Ongoing continuity because the modes do not share conversation
-or memory state.
+independently own an Ongoing continuity and an ADR 037 Timeline because the three
+mode slots do not share conversation or derived state.
 
 Confirmed start atomically creates the named Storyline and one starting scene from
-the reviewed profiles, starting relationship, scene title and setup, and fixed
-response style. The confirmation is idempotent over every input. Starting another
-Storyline for that pair is rejected while one is active.
+the reviewed profiles, starting relationship, scene title and setup, and initial
+response-style setting. The confirmation is idempotent over every input. Starting
+another Storyline for that pair is rejected while one is active.
+
+ADR 038 supersedes fixed per-scene style after the Stage 8 persistence change:
+style becomes a mutable continuity setting snapshotted by each newly reserved
+attempt. Scene setup and conversation history remain immutable.
 
 Archival is explicit, permanent, and read-only. It releases the pair to start a
 fresh Storyline through a new confirmation and starting relationship. The archived

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
-- Last revised: 2026-10-24
+- Last revised: 2026-11-02
 - Scope: Characters area; terminology and ownership clarified by ADR 013
 
 ## Context
@@ -17,6 +17,11 @@ Define a continuity as one coherent identity/persona relationship. A continuity
 owns its mode, conversations, eligible memories, relationship state, and persona
 adaptation. Information never crosses continuities unless an accepted workflow
 makes the transfer explicit to the user.
+
+Storyline and Timeline forks are the only history-copying workflows currently
+accepted. They create distinct continuities and remap copied ownership and
+provenance under ADRs 025, 033, and 037; they never make one record belong to two
+continuities.
 
 ## Consequences
 

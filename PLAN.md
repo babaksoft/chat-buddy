@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02
 
 ## How to use this plan
 
@@ -237,20 +237,24 @@ has no Chat dependency or effect.
 
 - Add one dated conversation per active local Timeline day.
 - Store UTC timestamps plus the resolved immutable local date and IANA timezone.
+- Capture the local-first application's IANA timezone automatically at Timeline
+  start; expose no Timeline timezone selection or rezoning workflow.
 - Close days after their local boundary, including after offline periods, and
   reject messages, retries, and in-place branches for closed days.
-- Create no records for days without interaction and apply timezone changes only
-  to future boundaries.
+- Create no records for days without interaction. Keep persona-local clocks,
+  inferred persona timezones, and sleep or availability policy outside the pilot.
 - Use current-day messages as short-term context and eligible prior memory and
   relationship state as long-term context.
-- Add scene-description level, response length, narrative placement, dialogue
-  formatting, and tone controls.
+- Add scene-description level, response length, and narrative-placement controls.
+- Render identity and persona messages with one safe Markdown convention; keep
+  dialogue punctuation contextual and tone governed by persona and relationship
+  state rather than style settings.
 - Apply style changes from the next persona response and record the effective
   style with every generated message.
 
-**Complete when:** closure, missing-day behavior, timezone changes, temporal
-memory, fork rules, and response styles are deterministic and tested, including
-DST boundaries.
+**Complete when:** closure, missing-day behavior, captured-zone stability,
+temporal memory, fork rules, and response styles are deterministic and tested,
+including DST boundaries.
 
 ## Stage 9 — Harden and prepare Characters extraction
 

@@ -1,6 +1,6 @@
 # Stage 8 Execution Plan — Timeline and Response-Style Controls
 
-Status: Proposed
+Status: In progress
 
 Last updated: 2026-11-02
 
@@ -16,12 +16,16 @@ read-only after its local boundary. Current-day messages provide short-term
 context; branch- and time-eligible Timeline memory, relationship state, and persona
 adaptations provide long-term continuity. Exploring an alternate past from a
 closed day creates an independent Timeline fork rather than changing history.
+Timeline start captures the local-first application's IANA timezone automatically;
+the pilot exposes no Timeline timezone control or persona-local clock.
 
-Response-style controls cover scene-description level, response length, narrative
-placement, dialogue formatting, and tone. A saved change affects the next newly
-reserved persona response, and every completed persona message retains the exact
-effective style snapshot used to generate it. Existing messages and derived
-memory, relationship, and persona state are never rewritten.
+Response-style controls cover scene-description level, response length, and
+narrative placement. A fixed Markdown convention handles description, ordinary
+prose, emphasis, quotations, and embedded exchanges without dialogue-format or
+tone settings. A saved change affects the next newly reserved persona response,
+and every completed persona message retains the exact effective style snapshot
+used to generate it. Existing messages and derived memory, relationship, and
+persona state are never rewritten.
 
 The stage must preserve these boundaries:
 
@@ -41,12 +45,13 @@ Stage 6 and Stage 7 behavior. It should add or revise only the focused decisions
 needed to settle the following details before schema work:
 
 - A Timeline is an independently owned continuity with one identity, persona,
-  starting relationship, lifecycle, current IANA timezone, and optimistic revision.
+  starting relationship, lifecycle, automatically captured immutable application-
+  local IANA timezone, and optimistic revision.
 - A profile pair may own at most one active Timeline. Ongoing and Storyline active
   slots are independent of that Timeline slot.
-- Timeline start requires an explicit reviewed IANA timezone. The continuity owns
-  its timezone after start; frozen identity details are not mutated when the
-  Timeline timezone changes.
+- Timeline start captures the application's valid local IANA timezone without a
+  user-facing timezone field. Identity and persona location do not override it,
+  and an existing Timeline cannot be rezoned.
 - A represented day owns an immutable positive position, local date, boundary
   timezone, UTC opening time, UTC closing boundary, conversation graph, summary
   lineage, and derivation provenance. The local date and boundary facts never
@@ -57,9 +62,8 @@ needed to settle the following details before schema work:
   boundary facts, then persisted idempotently when observed. A closed day can be
   read but cannot accept input, retry, alternative selection, or an in-place
   branch.
-- Timezone changes take effect at the next day boundary. They neither rename nor
-  reopen an existing day. The decision must define behavior for large westward or
-  eastward changes without allowing duplicate or non-monotonic represented dates.
+- Persona-local clock display, inferred persona timezones, and sleep or
+  availability rules remain outside Timeline calendar behavior and are deferred.
 - An open current day branches in place. A closed-day branch requires a reviewed
   fork that preserves the source, copies only the eligible selected history through
   the exact persona branch point, remaps all owned provenance, and then evolves
@@ -73,9 +77,10 @@ needed to settle the following details before schema work:
   cite exact selected evidence, and rebuild after branch selection or a fork under
   the same replay rules as the other Characters modes.
 - Response style has a typed, versioned, safe vocabulary and deterministic prompt
-  rendering for all five controls. The decision must define allowed values,
-  defaults, scope in Ongoing, Storyline, and Timeline, and whether tone is a bounded
-  preset or validated authored value.
+  rendering for all three controls. The decision must define allowed values,
+  defaults, and scope in Ongoing, Storyline, and Timeline. Dialogue formatting is
+  a fixed Markdown convention, while tone remains governed by persona and
+  relationship context rather than persisted style.
 - Saving style and reserving an attempt use a clear revision boundary. An already
   reserved attempt keeps its immutable style; the next attempt reserved after a
   successful update uses the new style. Retry is a new attempt and therefore uses
@@ -109,9 +114,9 @@ PostgreSQL. Render offline SQL and reject references to the `chat` schema. Compa
 representative Chat rows, schema objects, and `chat.alembic_version` before and
 after Characters migrations.
 
-Time tests must use explicit aware UTC instants and named IANA zones. Cover normal
-midnights, both DST transitions, zones with non-hour offsets, offline gaps, and
-timezone changes. Never patch the process timezone or use sleeps.
+Time tests must use explicit aware UTC instants and injected named IANA zones.
+Cover normal midnights, both DST transitions, zones with non-hour offsets, and
+offline gaps. Never patch the process timezone or use sleeps.
 
 Every implementation slice adds focused tests in the matching
 `tests/characters/` layer. Add PostgreSQL coverage for constraints, locks, and
@@ -141,8 +146,8 @@ the same cap.
 | 1 | Record Timeline, calendar, fork, and style decisions | Stage 7 | None |
 | 2 | Add executable calendar and response-style values | 1 | None |
 | 3 | Add Timeline ownership, day, start, and repository contracts | 1–2 | None |
-| 4 | Persist Timelines, days, timezone changes, and style settings | 2–3 | Characters migration |
-| 5 | Start, resume, archive, and schedule timezone changes | 4 | Existing Timeline records |
+| 4 | Persist Timelines, days, calendar facts, and style settings | 2–3 | Characters migration |
+| 5 | Start, resume, and archive Timelines | 4 | Existing Timeline records |
 | 6 | Create days atomically and close them deterministically | 4–5 | Existing Timeline/day records |
 | 7 | Resolve, update, and snapshot effective response style | 2, 4–6 | Existing style and attempt records |
 | 8 | Converse and summarize within an open Timeline day | 6–7 | Existing graph/summary records |
@@ -165,7 +170,7 @@ from its first end-to-end test.
 
 ### Slice 1 — Record durable Timeline and style decisions
 
-Status: Pending
+Status: Complete
 
 Update ADR 011 and add focused ADRs only where needed to establish the baseline
 contract above. Reconcile the result with:
@@ -178,14 +183,15 @@ contract above. Reconcile the result with:
 - ADRs 034–036 adaptation, replayable evolution, and strategy versions.
 
 Include executable behavioral examples for first interaction, no-interaction days,
-offline reopening, DST gaps and folds, eastward and westward timezone changes,
-concurrent first sends, concurrent boundary crossing, an open-day retry, a
-closed-day fork, a style update before send, a style update during an attempt, and
-a retry under a newer style.
+offline reopening, DST gaps and folds, automatic application-local timezone
+capture, a persona in another location, concurrent first sends, concurrent
+boundary crossing, an open-day retry, a closed-day fork, a style update before
+send, a style update during an attempt, and a retry under a newer style.
 
-Complete when ownership, active-slot rules, day identity, closure, timezone
-activation, fork copying, memory/evolution eligibility, style scope, and attempt
-snapshot semantics are unambiguous enough to implement without schema guesses.
+Complete when ownership, active-slot rules, day identity, closure, immutable
+calendar-zone capture, fork copying, memory/evolution eligibility, style scope,
+and attempt snapshot semantics are unambiguous enough to implement without schema
+guesses.
 
 ### Slice 2 — Add executable calendar and response-style values
 
@@ -196,20 +202,21 @@ Add immutable Pydantic values for:
 - Injected aware-UTC `Clock` behavior and resolved local calendar facts.
 - A day boundary containing local date, IANA timezone, UTC opening instant, and UTC
   closing instant.
-- Requested timezone changes and their effective boundary.
-- The five typed response-style controls, their validated requested settings, and
+- An injected application-local IANA timezone source used only at Timeline start.
+- The three typed response-style controls, their validated requested settings, and
   a versioned effective `ResponseStyleSnapshot` renderer.
 - Optimistic style revisions and explicit default resolution.
 
 Keep timezone conversion in one Characters-owned calendar policy based on
-`zoneinfo`. Reject naive timestamps, invalid zones, ambiguous unsupported state,
-unknown style values, oversized authored values if the ADR permits them, and
-instructions that cannot fit the existing snapshot limit. Do not persist or call a
-provider in this slice.
+`zoneinfo`. Reject naive timestamps, an invalid injected local zone, ambiguous
+unsupported state, unknown style values, oversized authored values if the ADR
+permits them, and instructions that cannot fit the existing snapshot limit. Do
+not persist or call a provider in this slice.
 
 Unit-test DST spring-forward and fall-back boundaries, non-hour offsets, year and
 leap-day rollover, UTC/local conversion, style defaults, every control, stable
-render order, and equivalent snapshot equality.
+render order, fixed Markdown instructions, rejection of removed dialogue-format
+and tone fields, and equivalent snapshot equality.
 
 Complete when calendar decisions and style settings are deterministic pure values
 that later services can depend on without reading system time or formatting prompt
@@ -219,10 +226,10 @@ text themselves.
 
 Status: Pending
 
-Add immutable Timeline, Timeline day, start request, timezone-change request,
-group/navigation snapshot, and fork-review contracts. Extend conversation targets
-so Timeline requires a day owner just as Storyline requires a scene owner, while
-Ongoing remains ownerless at that level.
+Add immutable Timeline, Timeline day, start request, group/navigation snapshot,
+and fork-review contracts. Extend conversation targets so Timeline requires a day
+owner just as Storyline requires a scene owner, while Ongoing remains ownerless at
+that level.
 
 Define Characters-owned repository protocols for:
 
@@ -230,7 +237,6 @@ Define Characters-owned repository protocols for:
 - Looking up represented days and loading the latest day.
 - Reserving the first input and attempt with a new day.
 - Observing and persisting closure idempotently.
-- Scheduling and activating a timezone change.
 - Copying a reviewed closed-day fork with identifier remapping.
 - Reading and updating current style settings under an expected revision.
 
@@ -238,7 +244,7 @@ Use explicit results for active-slot conflicts, stale revisions, closure races,
 duplicate dates, stale leaves, and fork-required decisions. Do not leak SQLAlchemy
 models or session types through the contracts.
 
-Complete when invalid ownership, lifecycle, day order, timezone activation, and
+Complete when invalid ownership, lifecycle, day order, captured calendar zone, and
 conversation targets fail in domain tests and application code has all persistence
 seams needed by later slices.
 
@@ -250,7 +256,8 @@ Add one reviewed Characters migration and database repository implementations fo
 the accepted model. At minimum persist:
 
 - Timeline continuity identity, profile ownership, lifecycle, starting
-  relationship, current and pending timezone facts, revision, and fork provenance.
+  relationship, captured immutable calendar timezone, revision, and fork
+  provenance.
 - Timeline day continuity ownership, immutable position and local date, boundary
   timezone, UTC opening/closing facts, closure observation, conversation ownership,
   and source-day fork provenance.
@@ -272,29 +279,26 @@ schema preservation.
 Complete when Timeline and style state survive restart, invalid rows fail at the
 database boundary, and no migration or model references Chat.
 
-### Slice 5 — Start, resume, archive, and change Timeline timezone
+### Slice 5 — Start, resume, and archive Timelines
 
 Status: Pending
 
 Implement application services that:
 
-- Review profile revisions, starting relationship, and explicit timezone before
-  confirmation.
+- Review profile revisions and starting relationship, then capture the injected
+  application-local timezone during confirmation without exposing a timezone
+  field.
 - Freeze newly used profiles and create the Timeline atomically and idempotently.
 - Preserve independent active slots for Ongoing, Storyline, and Timeline.
 - Return stable navigation snapshots without creating a day.
 - Archive a Timeline under its expected revision and make all owned state
   permanently read-only.
-- Schedule a timezone change according to Slice 1 rather than mutating frozen
-  identity details or historical day facts.
 
-Cover duplicate confirmations, conflicting request reuse, missing timezones,
-invalid zones, active-slot races, stale revisions, archive/send serialization, and
-timezone changes both before and after the current boundary.
+Cover duplicate confirmations, conflicting request reuse, invalid injected local
+zones, active-slot races, stale revisions, and archive/send serialization.
 
-Complete when a Timeline can be started, resumed, safely reconfigured for future
-boundaries, and archived without creating placeholder days or affecting other
-continuity modes.
+Complete when a Timeline can be started, resumed, and archived without timezone
+setup, placeholder days, or effects on other continuity modes.
 
 ### Slice 6 — Create days atomically and close them deterministically
 
@@ -306,9 +310,8 @@ write-capable Timeline operation it must:
 1. Load the Timeline and latest represented day under the required lock/revision.
 2. Resolve closure from stored boundary facts and the current UTC instant.
 3. Persist newly observed closure idempotently, including after an offline gap.
-4. Activate any due timezone change without rewriting existing days.
-5. Resolve the writable local day under the active timezone.
-6. Reuse an open represented day or atomically create a new day together with its
+4. Resolve the writable local day under the Timeline's captured calendar timezone.
+5. Reuse an open represented day or atomically create a new day together with its
    first user node and pending generation attempt.
 
 Reading an empty or future Timeline creates no row. Do not generate records for
@@ -317,9 +320,9 @@ across already committed calendar facts or would violate the monotonic-date rule
 accepted in Slice 1.
 
 Add deterministic unit and PostgreSQL integration tests for exact-boundary
-instants, DST gaps/folds, multi-day offline periods, timezone activation, two first
-sends racing, a send racing midnight, closure idempotency, and rollback after
-attempt reservation failure.
+instants, DST gaps/folds, multi-day offline periods, captured-zone stability, two
+first sends racing, a send racing midnight, closure idempotency, and rollback
+after attempt reservation failure.
 
 Complete when exactly one correctly dated conversation is created per interacting
 day, no empty days exist, and closed-day writes cannot win a race.
@@ -332,7 +335,7 @@ Implement one Characters style service and prompt renderer shared by Ongoing,
 Storyline, and Timeline. It must:
 
 - Load defaults or current settings for the exact ADR-defined scope.
-- Validate and save all five controls atomically under an expected style revision.
+- Validate and save all three controls atomically under an expected style revision.
 - Resolve a complete, versioned instruction without provider-specific behavior.
 - Copy the effective snapshot into each newly reserved response attempt and then
   into the completed persona message.
@@ -343,9 +346,10 @@ Replace hard-coded UI style constants only when the relevant mode is wired to th
 service. Preserve historical Storyline scene and message snapshots during the
 transition; do not rewrite applied migrations or old rows.
 
-Test no-op and stale updates, defaults, all control combinations, a style update
-racing atomic input/attempt reservation, updates during streaming, failure/retry,
-saved alternatives with different styles, and restart.
+Test no-op and stale updates, defaults, all control combinations, stable Markdown
+rendering instructions, a style update racing atomic input/attempt reservation,
+updates during streaming, failure/retry, saved alternatives with different styles,
+and restart.
 
 Complete when the next newly reserved response in every Characters mode uses the
 saved style and every historical persona message remains explainable by its own
@@ -501,23 +505,23 @@ Status: Pending
 
 Add focused Streamlit pages and composition wiring for:
 
-- Reviewing identity, persona, relationship, and required timezone before start.
+- Reviewing identity, persona, and relationship before start without timezone
+  setup.
 - Confirming an idempotent new Timeline without creating its first day.
 - Grouped active and archived Timeline navigation under identity and persona.
-- Showing represented local dates, active timezone, pending timezone change,
-  current/open/closed state, and empty-yet-valid Timeline state.
-- Scheduling a future timezone change with a clear effective-boundary preview.
+- Showing represented local dates, current/open/closed state, and empty-yet-valid
+  Timeline state without an ongoing secondary clock.
 - Archiving with confirmation and preserving read-only history.
 
 Use application services only. Do not query SQLAlchemy, derive closure from the UI
 process clock, or initialize Chat. Refresh and navigation must not create a day.
 
 Add Streamlit tests for validation, duplicate submissions, DST boundary display,
-offline closure on resume, timezone-change preview, no-interaction gaps, archive,
-and lazy area initialization.
+offline closure on resume, no-interaction gaps, absence of timezone controls,
+archive, and lazy area initialization.
 
-Complete when a user can create, find, understand, rezone, resume, and archive a
-Timeline without hidden calendar side effects.
+Complete when a user can create, find, understand, resume, and archive a Timeline
+without timezone setup or hidden calendar side effects.
 
 ### Slice 14 — Ship Timeline chat, style, memory, evolution, and fork UI
 
@@ -528,7 +532,7 @@ Add the complete interaction surface:
 - Send, stream, recover, retry, choose alternatives, and branch on an open day.
 - Display closed days as read-only and route branch-from-here through the reviewed
   fork flow rather than presenting an action that will fail late.
-- Edit all five response-style controls, preview their effective meaning, save
+- Edit all three response-style controls, preview their effective meaning, save
   under a revision, and state that changes apply to the next response.
 - Show each persona message's effective style alongside existing generation
   provenance without exposing raw internal prompt instructions by default.
@@ -553,11 +557,12 @@ the UI cannot bypass calendar, ownership, or revision guards.
 Status: Pending
 
 Add low-cardinality structured diagnostics for Timeline start, day creation,
-closure observation, timezone activation, rejected closed-day operations, fork
-completion, style revision, context assembly, extraction/evolution terminal state,
-and recovery after interrupted attempts. Include identifiers, mode, local date,
-timezone, policy/version, terminal reason, and latency where appropriate; do not
-log conversation text, persona details, memory content, tone text, or raw prompts.
+closure observation, rejected closed-day operations, fork completion, style
+revision, context assembly, extraction/evolution terminal state, and recovery after
+interrupted attempts. Include identifiers, mode, local date, boundary timezone,
+policy/version, terminal reason, and latency where appropriate; do not log
+conversation text, persona details, memory content, rendered style instructions,
+or raw prompts.
 
 Add startup/read-path recovery checks that idempotently observe overdue closure
 and incomplete attempts without scanning or mutating unrelated continuities. Keep
@@ -577,8 +582,8 @@ UI behavior are final.
 Update `README.md` with only shipped, user-visible behavior:
 
 - Add Timeline to current Characters capabilities and the product model.
-- Explain local-day creation, missing days, closure, timezone changes, closed-day
-  forks, and response-style controls in concise product language.
+- Explain application-local day creation, missing days, closure, closed-day forks,
+  and response-style controls in concise product language.
 - Extend the Characters quick-start flow with Timeline start/resume and style
   editing without duplicating the canonical setup path.
 - Update local/cloud data-flow and configuration text only where the final code
@@ -587,7 +592,7 @@ Update `README.md` with only shipped, user-visible behavior:
   privacy claim against the repository. Do not describe planned work as shipped.
 
 Reconcile `DESIGN.md` with the accepted ADRs and final implementation, especially
-Timeline ownership, day closure, timezone activation, temporal memory/evolution,
+Timeline ownership, day closure, captured local timezone, temporal memory/evolution,
 fork remapping, context order, and message-boundary style behavior. Remove
 superseded fixed-style statements, check nearby sections for contradictions, and
 update its `Last updated` date for the material design change.
@@ -614,16 +619,16 @@ Status: Pending
 
 Add one deterministic acceptance journey that:
 
-1. Starts a Timeline with a reviewed relationship and explicit timezone without
-   creating a day.
+1. Starts a Timeline with a reviewed relationship and automatically captured
+   application-local timezone without creating a day or showing timezone controls.
 2. Sends the first message atomically, streams a styled response, and verifies its
    local date, boundary facts, attempt, style, and provenance.
 3. Changes style and proves the next response changes while the prior response does
    not; retries again under a later style and preserves both alternatives.
 4. Crosses normal midnight and both DST transition shapes through the fake clock,
    including an offline gap, without placeholder days.
-5. Schedules eastward and westward timezone changes and proves historical dates and
-   boundaries remain immutable.
+5. Changes the injected host zone after start and proves the Timeline's captured
+   zone and all historical boundaries remain immutable.
 6. Extracts and manages Timeline memory, evolves relationship/persona state, and
    proves prior knowledge is eligible only on valid selected later days.
 7. Switches an open-day alternative and rebuilds derived state.
@@ -643,10 +648,10 @@ Ongoing still has no long-term memory, Storyline temporal rules are unchanged,
 all modes snapshot effective response style, and Chat remains unchanged. Record
 any Black timeout or unavailable optional smoke dependency honestly.
 
-Complete when closure, missing-day behavior, timezone changes, temporal memory and
-evolution, open/closed graph rules, closed-day forks, and response-style controls
-are deterministic and tested across DST boundaries, and the full required suite
-passes.
+Complete when closure, missing-day behavior, captured-zone stability, temporal
+memory and evolution, open/closed graph rules, closed-day forks, and response-style
+controls are deterministic and tested across DST boundaries, and the full required
+suite passes.
 
 ## Explicitly deferred
 
@@ -654,9 +659,12 @@ Keep the following outside Stage 8:
 
 - Stage 9 repository-wide hardening, broad observability, export/deletion proof,
   and Characters extraction packaging.
-- Automatic timezone detection from IP, browser, operating system, or location.
-- Multiple concurrent timezones within one Timeline or rewriting historical dates
-  after travel.
+- User-selected Timeline timezones, rezoning an existing Timeline, multiple
+  concurrent Timeline timezones, or rewriting historical dates after travel.
+- Persona-local clocks, inferred persona timezones, persona sleep or availability
+  schedules, and automatic message restrictions based on persona location.
+- Timezone detection from IP, browser geolocation, or persona/identity location;
+  the pilot uses the local-first application runtime's injected IANA zone.
 - Placeholder days, calendar streaks, synthetic missed-day summaries, reminders,
   scheduled persona messages, and background day creation.
 - Merging Timeline forks or moving memory/evolution between unrelated
@@ -665,5 +673,7 @@ Keep the following outside Stage 8:
 - Model-generated style changes, automatic style optimization, arbitrary prompt
   injection through style controls, per-message editing of historical style, and
   provider-specific style vocabularies.
+- Dialogue-format and tone controls, unsafe HTML rendering, or treating Markdown
+  emphasis and layout as structured evidence.
 - Learned memory ranking or new relationship scoring beyond the versioned
   strategies already accepted.

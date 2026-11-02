@@ -2,9 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-09-09
-- Last revised: 2026-10-26
+- Last revised: 2026-11-02
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
-- Refined by: ADR 033
+- Refined by: ADRs 033 and 037
 
 ## Context
 

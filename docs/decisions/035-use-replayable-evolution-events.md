@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-28
-- Scope: Characters, Stage 7
+- Last revised: 2026-11-02
+- Scope: Characters, Stages 7–8
 - Refines: ADRs 009, 010, and 033
 - Consistent with: ADRs 031 and 032
 
@@ -41,9 +42,10 @@ original event. Projections replay from the user-selected starting state and
 currently eligible events.
 
 Branch selection makes events supported only by deselected evidence inactive and
-restores them when that evidence is selected again. A reviewed Storyline fork
-copies only events supported by copied history, remaps ownership and provenance,
-and evolves independently. A fresh continuity copies no events or projections.
+restores them when that evidence is selected again. A reviewed Storyline or
+Timeline fork copies only events supported by copied history, remaps ownership
+and provenance, and evolves independently. A fresh continuity copies no events or
+projections. Timeline eligibility and copying use ADR 037's immutable day order.
 
 ## Consequences
 

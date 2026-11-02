@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02
 
 ## Purpose and scope
 
@@ -221,15 +221,16 @@ Starting a continuity:
 - Creates an independent starting relationship without invented shared events.
 - Is idempotent for an identical confirmation and rejects conflicting reuse.
 - Does not transfer conversation, memory, relationship, or adaptation state from
-  another continuity unless it is the explicit remapped Storyline fork below.
+  another continuity unless it is an explicit remapped Storyline or Timeline fork
+  below.
 
 A confirmed Storyline start also supplies its user-authored name and initial
-scene. The initial scene owns a title, setup, fixed response-style snapshot,
-conversation graph, and summary lineage. All confirmed fields participate in
-idempotency. An identity/persona pair may own at most one active Storyline. Archival
-leaves its scenes and memory read-only but permits a fresh, independent Storyline
-with a new confirmation and starting relationship. The same pair may independently
-own an Ongoing continuity.
+scene. The initial scene owns a title, setup, conversation graph, and summary
+lineage. The continuity owns the current response-style setting. All confirmed
+fields participate in idempotency. An identity/persona pair may own at most one
+active continuity of each mode. The Ongoing, Storyline, and Timeline slots are
+independent. Archival releases only its mode's slot and leaves all owned state
+read-only; a replacement starts from a new confirmation and starting relationship.
 
 Archiving a continuity is explicit and makes it permanently read-only. It does not
 unfreeze profiles or create a replacement.
@@ -251,12 +252,19 @@ Every continuity has exactly one mode:
   memories from itself and earlier scenes, never from later scenes.
 - **Timeline** is a sequence of untitled local-calendar-day scenes. It has at most
   one conversation per represented date, creates a day with its first user input
-  and attempt rather than as a placeholder, and keeps resolved historical dates
-  immutable.
+  and attempt in one transaction rather than as a placeholder, and gives each day
+  an immutable positive position, local date, boundary timezone, and UTC opening
+  and closing facts. Timeline start captures the application's valid local IANA
+  timezone automatically. Users do not select or change it, and identity or
+  persona location does not override it.
 
-Timeline closure uses the continuity's IANA timezone. The current local day is
-writable; a past day is closed and read-only, including when closure is first
-detected after an offline period. Timezone changes affect future boundaries only.
+Timeline closure uses that captured immutable calendar timezone. The current local
+day is writable; a past day is closed and read-only, including when closure is
+first detected after an offline period. Dates increase strictly with day position;
+missing interaction days and civil-calendar anomalies create no placeholders.
+Persona-local clocks, inferred persona timezones, and sleep or availability rules
+are deferred presentation or simulation features and never control Timeline
+closure.
 
 ### Branches and alternatives
 
@@ -290,6 +298,12 @@ for context and downstream derivation.
   changes only the fork.
 - A closed Timeline day cannot retry or branch in place; an alternate past requires
   a Timeline fork.
+- A Timeline fork uses an exact profile duplication and a distinct pair with a free
+  Timeline slot. It copies earlier selected day histories and the chosen closed
+  day's exact ancestry through the persona branch point. It remaps all copied
+  ownership and eligible provenance, excludes later days and unsupported state,
+  preserves copied boundary facts, and retains the source Timeline's captured
+  calendar timezone for future days.
 
 Persona messages retain their effective response style, provider, model,
 generation metadata and budget, strategy version, and completing attempt. Summary
@@ -338,6 +352,14 @@ source and temporal provenance into a new independent lineage owned by the fork'
 distinct profile pair and copies only supporting evidence whose source was also
 copied. Excluded or future memory and unresolved conflicts do not cross the fork.
 No continuity-owned row is shared.
+
+Timeline memory uses the same lifecycle, evidence, correction, extraction, and
+branch rules with immutable day position replacing scene position. Occurrence
+cannot be later than learned position, and neither may be later than the target
+day. Only the target day's transcript is short-term context; eligible Timeline
+memory, relationship state, and persona adaptation carry long-term continuity.
+Timeline forks copy only eligible active lineages supported by copied evidence and
+remap all day and source provenance.
 
 There is no source-scene, conversation, or message deletion. Any future
 source-deletion workflow must reject deletion while memory provenance refers to
@@ -484,11 +506,30 @@ Persona core
 Each mode owns its eligibility policy. Eligibility, token budgeting, summary
 generation, and provider invocation remain separate responsibilities.
 
-Storyline response context uses that general order with the scene's fixed response
-style and only that scene's compatible summary and selected-path messages. Other
-scene transcripts and titles are not short-term context. Response-memory selection
-has its own budget and strategy version; optional memories never displace required
-prompt blocks.
+Storyline response context uses that general order with the continuity's effective
+response style and only that scene's compatible summary and selected-path
+messages. Other scene transcripts and titles are not short-term context.
+Response-memory selection has its own budget and strategy version; optional
+memories never displace required prompt blocks.
+
+Ongoing, Storyline, and Timeline each own one current, optimistically revised
+response-style setting. Its bounded controls are scene-description level, response
+length, and narrative placement. Attempt reservation renders and stores the exact
+versioned effective snapshot; completion copies it to the persona message. A
+concurrent or later style save affects only attempts reserved after that save
+commits.
+
+All Characters messages share one versioned Markdown presentation convention.
+Persona scene description and action may use italics when enabled; ordinary prose
+and dialogue remain plain; bold is available for sparing emphasis; quotations and
+embedded speaker exchanges use whatever ordinary Markdown is clear in context.
+Identity messages may use the same syntax. The UI renders Markdown with unsafe
+HTML disabled, and derivation never treats formatting as structured evidence.
+
+Tone is not a response-style control. Persona core, continuity-specific
+adaptation, relationship and current state, scene setup, and current conversation
+determine characteristic and situational tone without a competing persistent
+style instruction.
 
 Ongoing summary revisions are continuity- and conversation-scoped. They cover only
 complete selected turns and record their predecessor, checkpoint, effective
@@ -541,14 +582,15 @@ context, memory, relationship projections, or persona adaptation.
 Relationship and adaptation evolution follows the same selected-history rule but
 uses its own append-only events. A branch switch makes events supported only by
 the deselected path inactive without deleting them and restores them if their
-evidence becomes selected again. A reviewed Storyline fork copies only events
-supported by copied history, remaps ownership and provenance, and then evolves
-independently. A fresh continuity starts from its reviewed relationship and copies
-no events, projection, memory, or adaptation.
+evidence becomes selected again. A reviewed Storyline or Timeline fork copies
+only events supported by copied history, remaps ownership and provenance, and
+then evolves independently. A fresh continuity starts from its reviewed
+relationship and copies no events, projection, memory, or adaptation.
 
-Response style changes apply at a message boundary and affect only subsequent
-persona responses. They never rewrite prior messages, facts, memories, or
-relationship state.
+Response style changes apply at the attempt-reservation boundary and affect only
+subsequent persona responses. They change presentation only and never rewrite
+prior messages, facts, memories, relationship state, persona adaptation, scene
+setup, or provenance.
 
 ## Data ownership and persistence
 
@@ -570,17 +612,20 @@ Important transaction boundaries include:
 - Reserving an attempt with any newly committed user input.
 - Completing an attempt with its assistant or persona message.
 - Freezing identity and persona profiles with continuity creation.
+- Creating a Timeline day with its first user input and pending attempt.
+- Saving a response-style revision or snapshotting it during attempt reservation.
 - Replacing a current summary revision.
 - Correcting, excluding, reactivating, or deleting memory.
 - Applying a validated relationship or persona proposal and its projection.
 - Selecting a Characters branch or continuity fork.
-- Applying one validated Storyline memory delta and its terminal extraction
-  effect.
+- Applying one validated Storyline or Timeline memory delta and its terminal
+  extraction effect.
 
 Optimistic revision checks reject stale authored edits and reviewed starts.
 Database uniqueness and row locking enforce invariants that must survive concurrent
 processes, including active-continuity limits, open-attempt limits, summary
-replacement, active Storyline-pair uniqueness, archival races, and retry limits.
+replacement, active mode-pair uniqueness, Timeline day/date uniqueness, archival
+races, style revisions, and retry limits.
 
 Derived records retain enough provenance to explain and rebuild their state.
 Deletion respects ownership: deleting one area's record never queries or mutates

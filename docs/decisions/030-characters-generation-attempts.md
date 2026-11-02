@@ -2,8 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-24
+- Last revised: 2026-11-02
 - Scope: Characters, Stages 4–5
 - Refines: ADRs 014 and 024
+- Refined by: ADR 038
 - Consistent with: ADRs 009 and 028
 
 ## Context

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-24
+- Last revised: 2026-11-02
 - Scope: Characters, Stage 6
 - Refines: ADR 008
 - Consistent with: ADR 031
@@ -56,8 +57,9 @@ configuration, source checkpoint, and creation time. Ranking, confidence, typed
 memory, or separate consolidation may be introduced only behind a new strategy
 version without changing ownership, evidence, or temporal rules.
 
-These decisions apply only to Storyline. Ongoing remains memory-free, Timeline
-behavior remains deferred, and no Chat contract or record is imported.
+These mechanics remain the Storyline definition. ADR 037 adopts the same bounded,
+contextual delta and lifecycle rules for Timeline with day-position eligibility.
+Ongoing remains memory-free, and no Chat contract or record is imported.
 
 ## Consequences
 

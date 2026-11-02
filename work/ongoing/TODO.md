@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8 — Timeline and response-style controls.
+Next delivery focus: Stage 8, Slice 2 — Add executable calendar and response-style values.
 
 Deferred engineering:
 
