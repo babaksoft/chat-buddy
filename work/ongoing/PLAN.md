@@ -1,423 +1,443 @@
-# Stage 7 Execution Plan — Relationship and Persona Evolution
+# Stage 8 Execution Plan — Timeline and Response-Style Controls
 
-Status: Complete
+Status: Proposed
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02
 
 ## Outcome
 
-Add explainable, continuity-scoped relationship evolution and persona adaptation
-to Characters.
+Add Timeline as the third Characters continuity mode and replace fixed internal
+response-style defaults with user-controlled presentation settings.
 
-After an eligible completed turn, a versioned strategy may propose a bounded set
-of typed changes. The application validates the proposal against immutable
-ownership, selected evidence, user intent, boundaries, transition rules, and
-conservative evidence thresholds. Accepted changes become append-only events from
-which current relationship and adaptation projections can be rebuilt.
+A Timeline grows through local-calendar-day conversations. It creates a day only
+when the first user input and generation attempt are reserved atomically, stores
+the resolved local date and timezone with that day, and makes the day permanently
+read-only after its local boundary. Current-day messages provide short-term
+context; branch- and time-eligible Timeline memory, relationship state, and persona
+adaptations provide long-term continuity. Exploring an alternate past from a
+closed day creates an independent Timeline fork rather than changing history.
 
-Evolution must remain:
+Response-style controls cover scene-description level, response length, narrative
+placement, dialogue formatting, and tone. A saved change affects the next newly
+reserved persona response, and every completed persona message retains the exact
+effective style snapshot used to generate it. Existing messages and derived
+memory, relationship, and persona state are never rewritten.
 
-- Isolated to one Characters continuity.
-- Traceable to exact selected evidence.
-- Correct after retry selection, branching, correction, and Storyline forks.
-- Unable to modify the authored persona core or user-controlled boundaries.
-- Replaceable and measurable through versioned strategies and evaluation
-  scenarios.
-- Independent of Chat.
+The stage must preserve these boundaries:
 
-## Evaluation approach
+- Timeline data, prompts, repositories, migrations, and UI remain Characters-owned.
+- Chat records, schema objects, runtime initialization, and behavior are unchanged.
+- Ongoing remains free of extracted long-term memory.
+- Storyline temporal eligibility continues to use scene order; Timeline eligibility
+  uses its own immutable day order and date facts.
+- All persistence access remains behind Characters repository protocols.
+- Tests use an injected clock and fake providers; wall-clock timing, local machine
+  timezone, Ollama, and network access are not CI requirements.
 
-Use an in-repository evaluation harness as the authoritative foundation. It should
-run deterministically under pytest, require no network service, and represent
-evolution-specific concepts directly.
+## Baseline contract to record before implementation
 
-Phoenix is the best initial optional integration because it is already a project
-dependency in [pyproject.toml](../../pyproject.toml), supports local datasets,
-experiments, tracing, deterministic evaluators, and LLM judges, and can be
-self-hosted. Its documentation recommends beginning with manually curated
-examples, which suits Stage 7 well. [Phoenix datasets](https://arize.com/docs/phoenix/learn/datasets-and-experiments/datasets-concepts),
-[Phoenix evaluation](https://arize.com/docs/phoenix/evaluation/llm-evals/evaluator-traces).
+Slice 1 must reconcile ADRs 006, 008, 009, 011, 025, and 033 with the delivered
+Stage 6 and Stage 7 behavior. It should add or revise only the focused decisions
+needed to settle the following details before schema work:
 
-Do not initially add Ragas or TruLens:
+- A Timeline is an independently owned continuity with one identity, persona,
+  starting relationship, lifecycle, current IANA timezone, and optimistic revision.
+- A profile pair may own at most one active Timeline. Ongoing and Storyline active
+  slots are independent of that Timeline slot.
+- Timeline start requires an explicit reviewed IANA timezone. The continuity owns
+  its timezone after start; frozen identity details are not mutated when the
+  Timeline timezone changes.
+- A represented day owns an immutable positive position, local date, boundary
+  timezone, UTC opening time, UTC closing boundary, conversation graph, summary
+  lineage, and derivation provenance. The local date and boundary facts never
+  change after creation.
+- A day is created with its first user message and pending response attempt in one
+  transaction. Merely opening or refreshing the UI creates nothing.
+- Closure is determined from the injected current UTC instant and the stored
+  boundary facts, then persisted idempotently when observed. A closed day can be
+  read but cannot accept input, retry, alternative selection, or an in-place
+  branch.
+- Timezone changes take effect at the next day boundary. They neither rename nor
+  reopen an existing day. The decision must define behavior for large westward or
+  eastward changes without allowing duplicate or non-monotonic represented dates.
+- An open current day branches in place. A closed-day branch requires a reviewed
+  fork that preserves the source, copies only the eligible selected history through
+  the exact persona branch point, remaps all owned provenance, and then evolves
+  independently. The decision must settle active-slot and profile-duplication rules
+  consistently with Storyline forks.
+- Timeline memory is continuity-scoped, branch-aware, and temporally eligible by
+  immutable day position. Occurrence and learned positions cannot be later than
+  the target day. Current-day messages are the only transcript used as short-term
+  response context.
+- Relationship and persona evolution run after eligible complete Timeline turns,
+  cite exact selected evidence, and rebuild after branch selection or a fork under
+  the same replay rules as the other Characters modes.
+- Response style has a typed, versioned, safe vocabulary and deterministic prompt
+  rendering for all five controls. The decision must define allowed values,
+  defaults, scope in Ongoing, Storyline, and Timeline, and whether tone is a bounded
+  preset or validated authored value.
+- Saving style and reserving an attempt use a clear revision boundary. An already
+  reserved attempt keeps its immutable style; the next attempt reserved after a
+  successful update uses the new style. Retry is a new attempt and therefore uses
+  the then-current style while preserving older alternatives.
+- Style changes affect presentation only. They do not alter persona core,
+  adaptations, facts, memory, relationship state, historical scene setup, or prior
+  message provenance.
 
-- Ragas supports custom and rubric-based metrics, but many built-in metrics target
-  RAG and agent workflows rather than typed state transitions.
-  [Ragas metrics](https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/)
-- TruLens supports custom deterministic and model-based metrics and recommends
-  beginning with domain-expert evaluations, but adding it now would overlap with
-  the native harness and existing Phoenix dependency.
-  [TruLens feedback functions](https://www.trulens.org/getting_started/core_concepts/feedback_functions/)
+If implementation would contradict an accepted decision, revise or supersede the
+decision explicitly rather than embedding a different rule in code.
 
-Keep the evaluation runner independent of Phoenix so another framework can be
-added through an adapter later.
+## Delivery and verification rules
 
-## Baseline contract
+Implement slices in order unless the dependency table permits parallel work. Each
+slice must leave both product areas runnable and must satisfy its own acceptance
+criteria without depending on an unfinished later slice.
 
-### Stable domain rules
+Domain values and repository protocols belong in `characters/domain/`;
+orchestration, calendar policy, context eligibility, and style resolution belong
+in `characters/application/`; SQLAlchemy models and repositories belong in
+`characters/infrastructure/`; prompts belong in `characters/prompts/`; widgets and
+page flow belong in `characters/ui/`. Export main architecture symbols at their
+owning package boundaries and retain complete type hints and Google-style
+docstrings.
 
-The following are product invariants, not experimental strategy behavior:
+Persistence slices add forward-only revisions under
+`alembic/characters/versions/` through `alembic-characters.ini`. Never edit an
+applied migration. Test fresh upgrade, upgrade from the Stage 7 head, downgrade to
+the preceding head where data loss is understood, and re-upgrade on disposable
+PostgreSQL. Render offline SQL and reject references to the `chat` schema. Compare
+representative Chat rows, schema objects, and `chat.alembic_version` before and
+after Characters migrations.
 
-- Persona core never evolves.
-- Factual knowledge belongs to memory, not persona adaptation.
-- Persona adaptation describes continuity-specific behavior toward the identity.
-- User-selected boundaries cannot be automatically removed or weakened.
-- Evolution uses only evidence eligible for the current continuity and selected
-  history.
-- Rolling summaries may aid interpretation but cannot serve as final provenance.
-- Platonic intent cannot produce romantic evolution.
-- Major romantic transitions require explicit narrative evidence.
-- Every applied change cites exact source evidence.
-- Evolution is idempotent per source persona checkpoint.
-- Archived continuities cannot evolve.
-- Projections are rebuildable and are not the source of truth.
+Time tests must use explicit aware UTC instants and named IANA zones. Cover normal
+midnights, both DST transitions, zones with non-hour offsets, offline gaps, and
+timezone changes. Never patch the process timezone or use sleeps.
 
-### Experimental surfaces
+Every implementation slice adds focused tests in the matching
+`tests/characters/` layer. Add PostgreSQL coverage for constraints, locks, and
+races, integration coverage when services cross repository boundaries, and
+architecture coverage when package or schema boundaries change. Use deterministic
+fake providers except for separately enabled smoke tests.
 
-Experiments may replace or configure:
+For each slice, run the smallest relevant checks. Slice 17 runs the CI-equivalent
+commands independently:
 
-- Evolution evidence selection.
-- Proposal prompt and provider.
-- Proposal strategy implementation.
-- Conservative thresholds for gradual changes.
-- Accepted persona-adaptation facets.
-- Evaluation rubrics and optional model judges.
+```bash
+timeout 30s uv run black --check src tests
+uv run isort --check-only src tests
+uv run ruff check src tests
+uv run mypy src tests
+uv run pytest -v
+```
 
-Every experiment records exact selector, strategy, policy, prompt-schema,
-provider, and model versions.
-
-### Simple baseline thresholds
-
-The initial policy should be understandable rather than statistically
-sophisticated:
-
-- A current interaction dynamic may change from one strong explicit exchange.
-- Trust, affection, and social status require compatible evidence from at least
-  two distinct turns.
-- Romantic interest requires explicit evidence and compatible relationship
-  intent.
-- Partnership, engagement, marriage, breakup, and reconciliation require an
-  explicit unambiguous narrative event.
-- Temporary conflict affects the dynamic before it affects durable status.
-- Reversing a gradual change requires later opposing evidence under the same
-  conservative threshold.
-- Uncertainty produces no change.
-
-These are versioned calibration rules, not permanent universal constants.
-
-## Evaluation model
-
-Create a framework-neutral `EvolutionScenario` containing:
-
-- Scenario name and behavioral tags.
-- Starting relationship and current projection.
-- Current persona adaptations.
-- User intent and boundaries.
-- Eligible evidence in chronological order.
-- Exact new source turn.
-- Required proposals.
-- Permitted proposals.
-- Forbidden proposals.
-- Expected application decision and reason.
-- Expected relationship and adaptation projections after replay.
-
-Initial deterministic metrics:
-
-- Schema validity.
-- Ownership and evidence validity.
-- Required-proposal recall.
-- Forbidden-proposal rate.
-- Hard-invariant violation rate.
-- No-change correctness.
-- Policy acceptance or rejection correctness.
-- Projection replay correctness.
-- Branch and fork correctness.
-- Correction correctness.
-- Duplicate-effect rate.
-- State-oscillation scenarios.
-
-Hard-invariant, idempotency, and replay metrics must pass exactly. Qualitative
-strategy metrics may be comparative rather than absolute.
+If Black times out, do not retry it during that run. Continue the other checks and
+report the timeout. Fix an ordinary formatting failure and rerun Black once with
+the same cap.
 
 ## Slice sequence
 
 | Slice | Self-contained outcome | Depends on | Database impact |
 |---|---|---:|---|
-| 1 | Establish terminology, invariants, and experiment boundaries | Stage 6 | None |
-| 2 | Add typed evolution state, evidence, proposal, and event values | 1 | None |
-| 3 | Add the native scenario and evaluation harness | 1–2 | None |
-| 4 | Define replaceable selector, strategy, and policy seams | 2–3 | None |
-| 5 | Persist effects, decisions, events, and projections | 2–4 | Characters migration |
-| 6 | Build immutable, budgeted evolution snapshots | 4–5 | Existing repository operations |
-| 7 | Validate typed proposals and baseline transitions | 3, 6 | None |
-| 8 | Apply evolution idempotently after eligible turns | 5–7 | Existing evolution records |
-| 9 | Rebuild projections and support user corrections | 5–8 | Existing evolution records |
-| 10 | Implement the baseline proposal strategy | 3–9 | None |
-| 11 | Add evolution state to subsequent response context | 8–10 | None |
-| 12 | Rebuild evolution after retry selection and in-place branching | 9–11 | Existing evolution records |
-| 13 | Preserve eligible evolution through Storyline forks | 9, 12 | Existing evolution records |
-| 14 | Add inspection and correction UI | 9–13 | Existing evolution records |
-| 15 | Add focused observability and optional Phoenix integration | 3, 8–14 | None |
-| 16 | Update project documents for delivered evolution behavior | 1–15 | None |
-| 17 | Prove the milestone | 1–16 | Verification only |
+| 1 | Record Timeline, calendar, fork, and style decisions | Stage 7 | None |
+| 2 | Add executable calendar and response-style values | 1 | None |
+| 3 | Add Timeline ownership, day, start, and repository contracts | 1–2 | None |
+| 4 | Persist Timelines, days, timezone changes, and style settings | 2–3 | Characters migration |
+| 5 | Start, resume, archive, and schedule timezone changes | 4 | Existing Timeline records |
+| 6 | Create days atomically and close them deterministically | 4–5 | Existing Timeline/day records |
+| 7 | Resolve, update, and snapshot effective response style | 2, 4–6 | Existing style and attempt records |
+| 8 | Converse and summarize within an open Timeline day | 6–7 | Existing graph/summary records |
+| 9 | Add branch- and time-aware Timeline memory | 6, 8 | Existing memory records or additive migration if required by Slice 1 |
+| 10 | Add Timeline relationship and persona evolution | 6, 8–9 | Existing evolution records |
+| 11 | Assemble deterministic Timeline response context | 7–10 | Existing repository operations |
+| 12 | Enforce open-day graph actions and fork closed days | 6, 8–11 | Fork provenance in Timeline persistence |
+| 13 | Ship Timeline creation, navigation, day, and archive UI | 5–6, 8 | Existing Timeline/day records |
+| 14 | Ship style, memory, evolution, and closed-day fork UI | 7, 9–13 | Existing records only |
+| 15 | Add focused diagnostics and calendar recovery checks | 5–14 | None |
+| 16 | Update project documents for shipped Stage 8 behavior | 1–15 | None |
+| 17 | Prove the Stage 8 milestone and area isolation | 1–16 | Verification only |
+
+The split keeps schema ownership, calendar policy, derivation eligibility, fork
+copying, and Streamlit state out of the same change. Response-style work lands
+before Timeline prompting so every new persona response has correct provenance
+from its first end-to-end test.
 
 ## Slice details
 
-### Slice 1 — Record terminology and durable decisions
+### Slice 1 — Record durable Timeline and style decisions
+
+Status: Pending
+
+Update ADR 011 and add focused ADRs only where needed to establish the baseline
+contract above. Reconcile the result with:
+
+- ADR 006 continuity ownership and mode isolation.
+- ADR 008 mode-specific context and memory.
+- ADRs 009 and 033 graph actions and fork semantics.
+- ADR 025 Storyline lifecycle and exact profile duplication.
+- ADRs 031 and 032 memory lifecycle and extraction.
+- ADRs 034–036 adaptation, replayable evolution, and strategy versions.
 
-Status: Complete
+Include executable behavioral examples for first interaction, no-interaction days,
+offline reopening, DST gaps and folds, eastward and westward timezone changes,
+concurrent first sends, concurrent boundary crossing, an open-day retry, a
+closed-day fork, a style update before send, a style update during an attempt, and
+a retry under a newer style.
 
-Revise or supersede ADR 010 and add only the ADRs needed to establish:
+Complete when ownership, active-slot rules, day identity, closure, timezone
+activation, fork copying, memory/evolution eligibility, style scope, and attempt
+snapshot semantics are unambiguous enough to implement without schema guesses.
+
+### Slice 2 — Add executable calendar and response-style values
+
+Status: Pending
+
+Add immutable Pydantic values for:
+
+- Injected aware-UTC `Clock` behavior and resolved local calendar facts.
+- A day boundary containing local date, IANA timezone, UTC opening instant, and UTC
+  closing instant.
+- Requested timezone changes and their effective boundary.
+- The five typed response-style controls, their validated requested settings, and
+  a versioned effective `ResponseStyleSnapshot` renderer.
+- Optimistic style revisions and explicit default resolution.
 
-- Relationship state versus persona adaptation versus current state.
-- Memory versus adaptation ownership.
-- Evidence, proposal, decision, event, effect, and projection terminology.
-- User boundaries as constraints rather than inferred relationship dimensions.
-- Model-proposed/application-validated evolution.
-- Append-only events and rebuildable projections.
-- Stable invariants versus versioned experimental policy.
+Keep timezone conversion in one Characters-owned calendar policy based on
+`zoneinfo`. Reject naive timestamps, invalid zones, ambiguous unsupported state,
+unknown style values, oversized authored values if the ADR permits them, and
+instructions that cannot fit the existing snapshot limit. Do not persist or call a
+provider in this slice.
 
-Include concise behavioral examples for friendship, romance, conflict, adaptation,
-correction, branch selection, and fresh continuities.
+Unit-test DST spring-forward and fall-back boundaries, non-hour offsets, year and
+leap-day rollover, UTC/local conversion, style defaults, every control, stable
+render order, and equivalent snapshot equality.
+
+Complete when calendar decisions and style settings are deterministic pure values
+that later services can depend on without reading system time or formatting prompt
+text themselves.
+
+### Slice 3 — Add Timeline domain and repository contracts
+
+Status: Pending
+
+Add immutable Timeline, Timeline day, start request, timezone-change request,
+group/navigation snapshot, and fork-review contracts. Extend conversation targets
+so Timeline requires a day owner just as Storyline requires a scene owner, while
+Ongoing remains ownerless at that level.
+
+Define Characters-owned repository protocols for:
+
+- Starting, loading, listing, revising, and archiving a Timeline.
+- Looking up represented days and loading the latest day.
+- Reserving the first input and attempt with a new day.
+- Observing and persisting closure idempotently.
+- Scheduling and activating a timezone change.
+- Copying a reviewed closed-day fork with identifier remapping.
+- Reading and updating current style settings under an expected revision.
 
-Seed the first evaluation scenario inventory directly from the ADR examples.
+Use explicit results for active-slot conflicts, stale revisions, closure races,
+duplicate dates, stale leaves, and fork-required decisions. Do not leak SQLAlchemy
+models or session types through the contracts.
+
+Complete when invalid ownership, lifecycle, day order, timezone activation, and
+conversation targets fail in domain tests and application code has all persistence
+seams needed by later slices.
+
+### Slice 4 — Persist Timeline, calendar, and style state
 
-Complete when the vocabulary is unambiguous and every later slice can refer to one
-accepted definition.
+Status: Pending
+
+Add one reviewed Characters migration and database repository implementations for
+the accepted model. At minimum persist:
+
+- Timeline continuity identity, profile ownership, lifecycle, starting
+  relationship, current and pending timezone facts, revision, and fork provenance.
+- Timeline day continuity ownership, immutable position and local date, boundary
+  timezone, UTC opening/closing facts, closure observation, conversation ownership,
+  and source-day fork provenance.
+- Current response-style settings and revision at the ADR-defined scope.
+- The linkage needed for every generation attempt and persona message to retain its
+  immutable effective style snapshot.
 
-### Slice 2 — Add executable evolution values
+Prefer reusing the established continuity, graph, attempt, summary, memory, and
+evolution tables where their ownership contracts genuinely match. Add columns or
+tables rather than encoding Timeline facts into scene setup or arbitrary JSON.
+Enforce one active Timeline per profile pair, unique day ownership/date/position,
+aware UTC values, and no cross-mode owner shapes through constraints and repository
+validation.
 
-Status: Complete
+Test fresh and incremental migration paths, offline SQL, constraint failures,
+active-slot and first-day races, repository detachment, restart behavior, and Chat
+schema preservation.
 
-Replace the current string-oriented proposal scaffold with frozen Pydantic values
-for:
+Complete when Timeline and style state survive restart, invalid rows fail at the
+database boundary, and no migration or model references Chat.
 
-- `RelationshipProjection`.
-- `PersonaAdaptationProjection`.
-- `EvolutionEvidenceReference`.
-- `EvolutionSnapshot`.
-- Typed relationship-change commands.
-- Relationship milestone commands.
-- Persona-adaptation commands.
-- Bounded atomic `EvolutionProposal`.
-- `EvolutionEvent`.
-- `EvolutionDecision`.
-- Strategy and policy provenance.
+### Slice 5 — Start, resume, archive, and change Timeline timezone
 
-Use exact enums for relationship values. Establish a small initial
-adaptation-facet vocabulary such as communication style, openness, support style,
-conflict style, and shared habit.
+Status: Pending
 
-Evolution evidence must support Ongoing turns and Storyline scene/conversation
-checkpoints without pretending that one Storyline has only one conversation.
+Implement application services that:
 
-Complete when invalid values, foreign evidence, duplicate sources, malformed
-transitions, and unbounded proposals fail at the domain boundary.
+- Review profile revisions, starting relationship, and explicit timezone before
+  confirmation.
+- Freeze newly used profiles and create the Timeline atomically and idempotently.
+- Preserve independent active slots for Ongoing, Storyline, and Timeline.
+- Return stable navigation snapshots without creating a day.
+- Archive a Timeline under its expected revision and make all owned state
+  permanently read-only.
+- Schedule a timezone change according to Slice 1 rather than mutating frozen
+  identity details or historical day facts.
 
-### Slice 3 — Ship the native evaluation harness
+Cover duplicate confirmations, conflicting request reuse, missing timezones,
+invalid zones, active-slot races, stale revisions, archive/send serialization, and
+timezone changes both before and after the current boundary.
 
-Status: Complete
+Complete when a Timeline can be started, resumed, safely reconfigured for future
+boundaries, and archived without creating placeholder days or affecting other
+continuity modes.
 
-Add a development-only evaluation area, preferably `evaluations/characters/`,
-with:
+### Slice 6 — Create days atomically and close them deterministically
 
-- Versioned JSONL scenario datasets.
-- Pydantic dataset loading and validation.
-- A deterministic runner accepting any evolution strategy and policy.
-- Per-scenario results and aggregate metrics.
-- Machine-readable JSON output and concise terminal output.
-- Pytest integration for promotion gates.
+Status: Pending
 
-Start with curated scenarios covering:
+Build one calendar orchestration service around the injected clock. On every
+write-capable Timeline operation it must:
 
-- Platonic warmth without romance.
-- Gradual trust and friendship.
-- Insufficient evidence.
-- Explicit partnership and engagement.
-- Vague sentiment rejected as a milestone.
-- Temporary conflict without relationship erasure.
-- User boundary enforcement.
-- Persona-core contradiction.
-- Adaptation versus memory classification.
-- Retry selection and replay.
-- Correction and fresh-continuity isolation.
+1. Load the Timeline and latest represented day under the required lock/revision.
+2. Resolve closure from stored boundary facts and the current UTC instant.
+3. Persist newly observed closure idempotently, including after an offline gap.
+4. Activate any due timezone change without rewriting existing days.
+5. Resolve the writable local day under the active timezone.
+6. Reuse an open represented day or atomically create a new day together with its
+   first user node and pending generation attempt.
 
-Complete when the existing no-change strategy and test strategies can be compared
-using the same dataset without a database, provider, or Phoenix instance.
+Reading an empty or future Timeline creates no row. Do not generate records for
+missed days. Reject any operation whose supplied clock instant moves backward
+across already committed calendar facts or would violate the monotonic-date rule
+accepted in Slice 1.
 
-### Slice 4 — Define the replaceable evolution seams
+Add deterministic unit and PostgreSQL integration tests for exact-boundary
+instants, DST gaps/folds, multi-day offline periods, timezone activation, two first
+sends racing, a send racing midnight, closure idempotency, and rollback after
+attempt reservation failure.
 
-Status: Complete
+Complete when exactly one correctly dated conversation is created per interacting
+day, no empty days exist, and closed-day writes cannot win a race.
 
-Introduce narrow Characters-owned protocols for:
+### Slice 7 — Resolve, update, and snapshot effective response style
 
-- Selecting an immutable evolution snapshot.
-- Producing a typed proposal.
-- Applying versioned gradual-change thresholds.
-- Reporting experiment results.
+Status: Pending
 
-Keep hard domain validation outside replaceable strategies and policies.
+Implement one Characters style service and prompt renderer shared by Ongoing,
+Storyline, and Timeline. It must:
 
-Define an `EvolutionConfiguration` carrying selector, strategy, threshold-policy,
-and schema identities. Resolve it at a message boundary and record it on each
-effect. Experimental assignment should be continuity-stable unless explicitly
-changed.
+- Load defaults or current settings for the exact ADR-defined scope.
+- Validate and save all five controls atomically under an expected style revision.
+- Resolve a complete, versioned instruction without provider-specific behavior.
+- Copy the effective snapshot into each newly reserved response attempt and then
+  into the completed persona message.
+- Preserve the attempt snapshot if settings change while streaming.
+- Resolve retries from the settings current at retry reservation time.
 
-Provide:
+Replace hard-coded UI style constants only when the relevant mode is wired to the
+service. Preserve historical Storyline scene and message snapshots during the
+transition; do not rewrite applied migrations or old rows.
 
-- A no-change production strategy.
-- A deterministic fixture strategy.
-- A strict baseline threshold policy.
-- A no-op experiment reporter.
+Test no-op and stale updates, defaults, all control combinations, a style update
+racing atomic input/attempt reservation, updates during streaming, failure/retry,
+saved alternatives with different styles, and restart.
 
-Complete when strategies and policies can be substituted independently without
-repository, SDK, or Chat dependencies.
+Complete when the next newly reserved response in every Characters mode uses the
+saved style and every historical persona message remains explainable by its own
+snapshot.
 
-### Slice 5 — Persist evolution history and projections
+### Slice 8 — Converse and summarize within an open Timeline day
 
-Status: Complete
+Status: Pending
 
-Add a Characters migration and repositories for:
+Extend Characters generation and branch-addressable summary services to Timeline
+day targets. Reuse the durable pending/streaming/completed/failed/interrupted
+attempt lifecycle, immutable message graph, expected-leaf guards, retry allowance,
+and provider capability contracts.
 
-- One evolution effect per source persona checkpoint.
-- Terminal decision and bounded proposal audit data.
-- Append-only evolution events.
-- Current relationship projection.
-- Current persona-adaptation projection.
-- Projection revision and rebuild checkpoint.
+For this slice, a response prompt may use only required identity/persona/start
+facts, the effective style, a compatible summary for the current day, recent
+selected-path messages from that day, and current input. Cross-day memory and
+evolution state arrive in later slices. Never copy a prior day's transcript into
+the current-day short-term window.
 
-Use an effect lifecycle such as:
+Run closure policy immediately before attempt reservation and persona-message
+commit so a stream crossing the boundary follows the decision recorded in Slice 1.
+Test incomplete-attempt recovery, summary compatibility after alternative
+selection, no cross-day transcript leakage, style provenance, archive races, and
+restart.
 
-```text
-reserved → no_change | applied | rejected
-```
+Complete when an open day supports durable generation and compatible summaries
+without weakening Ongoing or Storyline behavior.
 
-Store strategy, selector, policy, prompt schema, provider, model, source
-checkpoint, timestamps, and rejection reason. Commit accepted events and their
-updated projections atomically.
+### Slice 9 — Add branch- and time-aware Timeline memory
 
-Projections remain caches; events and corrections remain authoritative.
+Status: Pending
 
-Complete when repository contract, migration, concurrency, and restart tests prove
-idempotency and projection consistency.
+Generalize the existing Characters memory contracts only as far as required for a
+Timeline temporal position. Preserve one continuity-owned logical lineage,
+revision lifecycle, evidence, conflict handling, correction, exclusion,
+reactivation, and hard deletion.
 
-### Slice 6 — Build evolution snapshots
+Implement Timeline extraction and response-memory selectors that require:
 
-Status: Complete
+- Exact Timeline/day/conversation ownership.
+- Selected source evidence and source persona checkpoint.
+- Immutable occurrence and learned day positions no later than the target day.
+- Current active, non-excluded content with branch-compatible evidence.
+- A complete turn and one idempotent retryable effect per source persona message.
+- Deterministic whole-record budgeting independent from response context budgeting.
 
-Create a dedicated-budget selector that assembles:
+The extraction snapshot may use eligible prior Timeline memory and current-day
+selected history, but not another day transcript, another continuity, Storyline
+memory, Ongoing state, or Chat memory. Corrections affect the next response without
+changing historical prompts.
 
-1. Identity and persona core.
-2. Relationship intent and user boundaries.
-3. Current relationship projection.
-4. Current persona adaptations.
-5. Relevant continuity memory where eligible.
-6. Compatible summary as interpretation context.
-7. Recent selected-path turns.
-8. Exact new turn marked as new evidence.
+Add domain, repository, application, extraction-delta, management, branch-switch,
+as-of, restart, and cross-mode isolation tests. Add an additive migration here only
+if the Slice 1 decision proves the existing memory position representation cannot
+safely support both scenes and days.
 
-Optional context must never displace ownership, current state, boundaries, or the
-new turn. Summaries cannot be cited as evidence. Memory-supported proposals must
-ultimately retain their original turn provenance.
+Complete when a later day can recall eligible selected evidence, an earlier day
+cannot see future knowledge, and memory lifecycle operations remain continuity-
+and mode-isolated.
 
-Complete when snapshots are deterministic, bounded, continuity-safe, branch-aware,
-and usable across Storyline scenes.
+### Slice 10 — Add Timeline relationship and persona evolution
 
-### Slice 7 — Implement validation and transition policy
+Status: Pending
 
-Status: Complete
+Make Timeline an eligible mode for the Stage 7 selector, snapshot, strategy,
+validation, idempotent effect, event, projection, correction, and replay services.
+Use current-day selected messages as the new evidence window and allow eligible
+prior Timeline memory and derived projections only under the policy recorded in
+Slice 1.
 
-Validate proposals against:
+Ensure that:
 
-- Expected current projection revision and values.
-- Relationship intent.
-- User boundaries.
-- Allowed transition graphs.
-- Evidence eligibility.
-- Explicit milestone requirements.
-- Baseline gradual-change thresholds.
-- Persona-core compatibility.
-- Adaptation-facet policy.
-- Proposal size limits.
+- Evolution never uses a future day or unselected branch.
+- Day closure does not erase already accepted events.
+- Selecting an open-day alternative rebuilds projections from eligible evidence.
+- A failed inference remains retryable without rolling back the visible response.
+- Corrections retain exact source provenance.
+- Strategy and policy versions remain attached to effects and events.
 
-Treat one proposal as an atomic change set: apply all validated commands or reject
-the proposal with a stable reason code.
+Extend the native evaluation scenarios with day boundaries, offline gaps,
+alternative selection, and fork remapping. Do not add Timeline-only relationship
+dimensions or expose numeric scores.
 
-Add every validator outcome to the evaluation harness.
+Complete when Timeline evolution is conservative, replayable, temporally correct,
+and unable to affect another continuity or Chat.
 
-Complete when arbitrary strategy output cannot bypass product invariants and all
-rejection reasons are deterministic.
+### Slice 11 — Assemble deterministic Timeline response context
 
-### Slice 8 — Orchestrate idempotent evolution effects
+Status: Pending
 
-Status: Complete
-
-After a complete selected persona turn:
-
-1. Reserve or resume its evolution effect.
-2. Build the immutable snapshot.
-3. Invoke the configured strategy.
-4. Validate the proposal.
-5. Persist no-change, rejection, or accepted events and projections.
-6. Leave failures retryable without rolling back the visible response.
-
-Do not run evolution for incomplete output, unmatched user input, unselected
-history, or archived continuities.
-
-Complete when repeated, concurrent, failed, and restarted processing cannot
-duplicate an event or lose a committed response.
-
-### Slice 9 — Rebuild projections and support corrections
-
-Status: Complete
-
-Implement deterministic replay from:
-
-- Starting relationship.
-- Eligible inferred events.
-- User-authored corrections.
-- Event exclusions or replacements.
-
-A correction appends a user-authored event; it does not edit the original event or
-conversation. Rebuild dependent later state rather than patching only the visible
-projection.
-
-Support:
-
-- Correcting an inferred value.
-- Excluding an erroneous event.
-- Replacing a persona adaptation.
-- Restoring an excluded interpretation when valid.
-- Optimistic projection revision checks.
-
-Complete when projection deletion and full replay produce exactly the same state
-as incremental application.
-
-### Slice 10 — Implement the baseline strategy
-
-Status: Complete
-
-Add a provider-backed baseline strategy that:
-
-- Receives only the immutable snapshot.
-- Produces bounded typed output.
-- Treats prior context as interpretation support.
-- Requires the new source turn to support or explicitly confirm each proposal.
-- Returns no change when evidence is ambiguous.
-- Cannot write persistence directly.
-
-Use a deterministic fake provider for ordinary tests and an explicitly enabled
-Ollama smoke evaluation for local qualitative inspection.
-
-Run the complete curated dataset before promoting the baseline from no-change.
-
-Complete when the baseline meets all hard gates and records its exact prompt,
-schema, provider, and model provenance.
-
-### Slice 11 — Feed projections into future responses
-
-Status: Complete
-
-Update Characters context assembly to use:
+Implement the final Timeline response context in the accepted Characters order:
 
 ```text
 Persona core
@@ -425,175 +445,225 @@ Persona core
 → Relationship intent and user boundaries
 → Current relationship projection
 → Current persona adaptations
-→ Eligible memory
-→ Scene/current state
-→ Response style
-→ Summary and recent selected messages
+→ Eligible Timeline memory
+→ Current-day state
+→ Effective response style
+→ Compatible current-day summary
+→ Recent selected current-day messages
+→ Current input
 ```
 
-Keep adaptation concise and budgeted. Never render rejected proposals, excluded
-events, experiment metadata, or hidden numeric scores into the persona prompt.
+Keep mandatory ownership, persona, relationship, style, and input blocks distinct
+from optional memory, summary, and history. Use deterministic whole-record
+selection and the existing budget safety rules. Record selector and prompt-schema
+versions with the attempt. Titles, other-day transcripts, future memory, excluded
+records, unselected alternatives, and incomplete output must never enter the
+prompt.
 
-Complete when an accepted or corrected event affects the next response context
-without rewriting prior prompts.
+Test exact ordering, budget pressure, deterministic ties, Unicode, empty prior
+history, prior-day memory, same-day summary compatibility, corrected memory,
+evolution projections, and provider limits.
 
-### Slice 12 — Rebuild after retry selection and branching
+Complete when prompt assembly is deterministic and a Timeline response has the
+required long-term continuity without transcript or temporal leakage.
 
-Status: Complete
+### Slice 12 — Enforce graph actions and fork closed days
 
-When an alternative becomes selected:
+Status: Pending
 
-- Recompute eligible events from selected ancestry.
-- Rebuild both projections.
-- Preserve events supported by still-selected evidence.
-- Make deselected events inactive without deleting them.
-- Restore them if their supporting history becomes selected again.
+Complete Timeline graph policy:
 
-Ongoing and writable Storyline branches remain in place. The evolution result must
-agree with a clean replay of the newly selected path.
+- An open day permits retry, saved-future selection, and in-place branch under the
+  existing expected-leaf and retry-limit rules.
+- A closed day rejects retry and saved-future selection and returns fork-required
+  for branch-from-here.
+- Missing, stale, foreign, or contradictory calendar facts fail closed.
 
-Complete when branch switching cannot leave stale relationship or adaptation state
-in context.
+Implement the reviewed closed-day fork accepted in Slice 1. Copy only the day
+metadata and selected histories required through the exact persona branch point,
+assign new ownership identifiers, and remap compatible summaries, completed
+attempt provenance, memory evidence/lineages, evolution events/effects,
+corrections, style state, and fork provenance. Exclude later days, later nodes,
+unselected alternatives, open attempts, ineligible memory, and unsupported derived
+state. Leave the source unchanged and validate the target active slot/profile
+duplication transactionally.
 
-### Slice 13 — Preserve evolution through Storyline forks
+Add exhaustive mapping assertions and PostgreSQL race tests. Prove that no mutable
+row or continuity-owned identifier is shared and that source and fork evolve
+independently after restart.
 
-Status: Complete
+Complete when open-day exploration is non-destructive and every alternate closed
+past is an explicit, independently owned fork with branch-correct derived state.
 
-Extend the reviewed Storyline fork to:
+### Slice 13 — Ship Timeline creation, navigation, day, and archive UI
 
-- Copy only evolution events supported by copied histories.
-- Remap evidence, effect, event, and projection identifiers.
-- Exclude later or off-path events.
-- Rebuild target projections from copied starting state and events.
-- Share no mutable or continuity-owned row.
-- Leave the source unchanged.
+Status: Pending
 
-A fresh Storyline start remains independent and copies no evolution.
+Add focused Streamlit pages and composition wiring for:
 
-Complete when original and fork can evolve independently from the exact branch
-point.
+- Reviewing identity, persona, relationship, and required timezone before start.
+- Confirming an idempotent new Timeline without creating its first day.
+- Grouped active and archived Timeline navigation under identity and persona.
+- Showing represented local dates, active timezone, pending timezone change,
+  current/open/closed state, and empty-yet-valid Timeline state.
+- Scheduling a future timezone change with a clear effective-boundary preview.
+- Archiving with confirmation and preserving read-only history.
 
-### Slice 14 — Add inspection and correction UI
+Use application services only. Do not query SQLAlchemy, derive closure from the UI
+process clock, or initialize Chat. Refresh and navigation must not create a day.
 
-Status: Complete
+Add Streamlit tests for validation, duplicate submissions, DST boundary display,
+offline closure on resume, timezone-change preview, no-interaction gaps, archive,
+and lazy area initialization.
 
-Show qualitative state rather than progress bars:
+Complete when a user can create, find, understand, rezone, resume, and archive a
+Timeline without hidden calendar side effects.
 
-- Current relationship dimensions.
-- Active persona adaptations.
-- Milestones.
-- Exact evidence and rationale.
-- Strategy and policy versions in diagnostic detail.
-- Rejected proposals only in an optional diagnostic view.
-- Correction and exclusion actions with confirmation.
+### Slice 14 — Ship Timeline chat, style, memory, evolution, and fork UI
 
-Clearly distinguish:
+Status: Pending
 
-- User-selected starting state.
-- Inferred evolution.
-- User-authored correction.
-- Temporarily inactive branch-derived state.
+Add the complete interaction surface:
 
-Complete when users can understand why state exists and correct it without editing
-conversation history.
+- Send, stream, recover, retry, choose alternatives, and branch on an open day.
+- Display closed days as read-only and route branch-from-here through the reviewed
+  fork flow rather than presenting an action that will fail late.
+- Edit all five response-style controls, preview their effective meaning, save
+  under a revision, and state that changes apply to the next response.
+- Show each persona message's effective style alongside existing generation
+  provenance without exposing raw internal prompt instructions by default.
+- Reuse continuity-scoped memory and evolution inspection/correction components
+  under Timeline eligibility and lifecycle rules.
 
-### Slice 15 — Add observability and experiment reporting
+Expose the same style controls on Ongoing and Storyline at the scope accepted in
+Slice 1. Remove obsolete claims that a Storyline scene style is permanently fixed
+if that is superseded by the decision; retain immutable historical message
+snapshots.
 
-Status: Complete
+Test widget isolation across pages and continuities, stale style revisions,
+style-save/send ordering, retry under a changed style, exact-boundary closure,
+closed-day fork review/cancel/confirm, memory management, evolution correction,
+and restart.
 
-Add low-cardinality structured logs and metrics for:
+Complete when all Stage 8 behavior is usable through focused Characters pages and
+the UI cannot bypass calendar, ownership, or revision guards.
 
-- Effect terminal state.
-- Proposal command counts.
-- Acceptance and rejection reasons.
-- Strategy, selector, and policy versions.
-- Snapshot and strategy latency.
-- Projection rebuild reason and duration.
-- Correction count.
-- Duplicate reservation conflicts.
+### Slice 15 — Add focused diagnostics and calendar recovery checks
 
-Do not log conversation text or persona details by default.
+Status: Pending
 
-Add an optional Phoenix adapter that can:
+Add low-cardinality structured diagnostics for Timeline start, day creation,
+closure observation, timezone activation, rejected closed-day operations, fork
+completion, style revision, context assembly, extraction/evolution terminal state,
+and recovery after interrupted attempts. Include identifiers, mode, local date,
+timezone, policy/version, terminal reason, and latency where appropriate; do not
+log conversation text, persona details, memory content, tone text, or raw prompts.
 
-- Publish curated datasets.
-- Record experiment runs.
-- Attach deterministic evaluation metrics.
-- Trace selector, strategy, validation, and application spans.
-- Remain disabled without changing behavior.
+Add startup/read-path recovery checks that idempotently observe overdue closure
+and incomplete attempts without scanning or mutating unrelated continuities. Keep
+broad production observability, export, deletion, and extraction-readiness work in
+Stage 9.
 
-Do not make Phoenix, Ragas, TruLens, a cloud service, or an evaluator model
-necessary for application startup or CI.
+Complete when maintainers can distinguish calendar, style, generation, memory,
+evolution, and fork failures without sensitive content or cross-area coupling.
 
-Complete when maintainers can compare two strategies locally while the ordinary
-application and test suite remain independent of the observability backend.
+### Slice 16 — Update project documents for shipped Stage 8 behavior
 
-### Slice 16 — Update project documents for delivered evolution behavior
+Status: Pending
 
-Status: Complete
+Reserve this slice for project-document maintenance after the implementation and
+UI behavior are final.
 
-Update `README.md` only for shipped user-visible relationship evolution, persona
-adaptation, correction, configuration, privacy, or data-flow behavior. Describe
-qualitative state and provenance without exposing internal class, table, strategy,
-or evaluation details.
+Update `README.md` with only shipped, user-visible behavior:
 
-Reconcile `DESIGN.md` with the accepted ADRs and final delivered behavior, including
-the relationship/adaptation/current-state distinction, evidence and projection
-rules, context order, correction, branching, Storyline forks, and experiment
-boundaries. Update its `Last updated` date and remove superseded statements.
+- Add Timeline to current Characters capabilities and the product model.
+- Explain local-day creation, missing days, closure, timezone changes, closed-day
+  forks, and response-style controls in concise product language.
+- Extend the Characters quick-start flow with Timeline start/resume and style
+  editing without duplicating the canonical setup path.
+- Update local/cloud data-flow and configuration text only where the final code
+  changes what is sent or exposes new operator settings.
+- Verify every command, path, environment variable, default, model name, and
+  privacy claim against the repository. Do not describe planned work as shipped.
 
-Mark Stage 7 complete in root `PLAN.md`, keep Stage 8 as the next delivery stage,
-and update `work/ongoing/TODO.md` without turning either document into a release
-log. Keep delivery mechanics and detailed verification in this stage plan.
+Reconcile `DESIGN.md` with the accepted ADRs and final implementation, especially
+Timeline ownership, day closure, timezone activation, temporal memory/evolution,
+fork remapping, context order, and message-boundary style behavior. Remove
+superseded fixed-style statements, check nearby sections for contradictions, and
+update its `Last updated` date for the material design change.
 
-Run `git diff --check -- README.md DESIGN.md PLAN.md work/ongoing/TODO.md` and
-relevant documentation/link checks. Broader code checks remain Slice 17 work.
+Mark Stage 8 complete in root `PLAN.md`, keep Stage 9 as the next stage, and update
+`work/ongoing/TODO.md` without turning either file into release notes. Preserve the
+stable README organization and the required DESIGN top-level section order.
 
-Complete when README describes only shipped behavior, DESIGN is coherent with the
-accepted decisions, and project planning points to the next stage.
+Run:
 
-### Slice 17 — Prove the Stage 7 milestone
+```bash
+git diff --check -- README.md DESIGN.md PLAN.md work/ongoing/TODO.md
+```
 
-Status: Complete
+Also verify relative links and any asserted commands or behavior. Broader code
+checks remain Slice 17 work.
 
-Add one acceptance journey covering:
+Complete when README accurately summarizes shipped Stage 8 behavior for users,
+DESIGN and ADRs form one coherent contract, and project planning points to Stage 9.
 
-- Natural and platonic starts.
-- Gradual friendship and trust.
-- Explicit romantic milestones.
-- Rejected boundary conflicts.
-- Persona adaptation without core mutation.
-- Failed and retried evolution effects.
-- User correction.
-- Retry-alternative selection.
-- Ongoing in-place branching.
-- Storyline fork remapping.
-- Archive and fresh independent continuity.
-- Restart and projection replay.
-- Strategy comparison through the evaluation runner.
+### Slice 17 — Prove the Stage 8 milestone and area isolation
 
-Run all CI-equivalent checks, Characters migration/concurrency tests,
-deterministic evaluation gates, and optional local Ollama/Phoenix smoke workflows
-separately.
+Status: Pending
 
-Complete when relationship and adaptation state is explainable, replayable,
-branch-correct, correction-safe, experimentally replaceable, and has no Chat
-dependency or effect.
+Add one deterministic acceptance journey that:
+
+1. Starts a Timeline with a reviewed relationship and explicit timezone without
+   creating a day.
+2. Sends the first message atomically, streams a styled response, and verifies its
+   local date, boundary facts, attempt, style, and provenance.
+3. Changes style and proves the next response changes while the prior response does
+   not; retries again under a later style and preserves both alternatives.
+4. Crosses normal midnight and both DST transition shapes through the fake clock,
+   including an offline gap, without placeholder days.
+5. Schedules eastward and westward timezone changes and proves historical dates and
+   boundaries remain immutable.
+6. Extracts and manages Timeline memory, evolves relationship/persona state, and
+   proves prior knowledge is eligible only on valid selected later days.
+7. Switches an open-day alternative and rebuilds derived state.
+8. Rejects input, retry, selection, and in-place branching on a closed day.
+9. Reviews and creates a closed-day fork, verifies complete identifier/provenance
+   remapping, and evolves source and fork independently.
+10. Restarts, resumes, archives, and proves the archived Timeline is read-only.
+
+Run the complete Characters migration chain beside populated Chat data, exercise
+real PostgreSQL constraints and concurrency tests, run deterministic evaluation
+gates, and then run every CI-equivalent command listed above. Run optional local
+Ollama smoke tests separately and do not count them as CI requirements.
+
+Inspect the final diff for forbidden cross-area imports, schema references,
+foreign keys, identifiers, queries, prompts, and runtime initialization. Confirm
+Ongoing still has no long-term memory, Storyline temporal rules are unchanged,
+all modes snapshot effective response style, and Chat remains unchanged. Record
+any Black timeout or unavailable optional smoke dependency honestly.
+
+Complete when closure, missing-day behavior, timezone changes, temporal memory and
+evolution, open/closed graph rules, closed-day forks, and response-style controls
+are deterministic and tested across DST boundaries, and the full required suite
+passes.
 
 ## Explicitly deferred
 
-Keep these outside the baseline:
+Keep the following outside Stage 8:
 
-- Learned or embedding-based evidence selection.
-- Numeric relationship scores exposed as product state.
-- Model-generated boundary removal.
-- Automatic persona-core evolution.
-- Cross-continuity learning outside reviewed forks.
-- Online self-optimizing strategies.
-- Automatic strategy promotion.
-- Production shadow evaluation of every turn.
-- Synthetic scenario generation at scale.
-- Ragas or TruLens integration unless the native/Phoenix approach proves
-  insufficient.
-- Statistical confidence or salience models.
-- Timeline-specific evolution eligibility, which belongs with Stage 8.
+- Stage 9 repository-wide hardening, broad observability, export/deletion proof,
+  and Characters extraction packaging.
+- Automatic timezone detection from IP, browser, operating system, or location.
+- Multiple concurrent timezones within one Timeline or rewriting historical dates
+  after travel.
+- Placeholder days, calendar streaks, synthetic missed-day summaries, reminders,
+  scheduled persona messages, and background day creation.
+- Merging Timeline forks or moving memory/evolution between unrelated
+  continuities.
+- Cross-area memory, prompts, identifiers, repositories, or data transfer.
+- Model-generated style changes, automatic style optimization, arbitrary prompt
+  injection through style controls, per-message editing of historical style, and
+  provider-specific style vocabularies.
+- Learned memory ranking or new relationship scoring beyond the versioned
+  strategies already accepted.
