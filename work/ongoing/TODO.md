@@ -1,7 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 3 — Adapt Timeline domain and repository
-contracts to latest-open-day branching.
+Next delivery focus: Stage 8, Slice 4 — Persist Timeline, calendar, and style state.
 
 Deferred product exploration:
 

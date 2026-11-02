@@ -225,7 +225,7 @@ text themselves.
 
 ### Slice 3 — Add Timeline domain and repository contracts
 
-Status: Pending
+Status: Complete
 
 Add immutable Timeline, Timeline day, start request, group/navigation snapshot,
 and graph-action availability contracts. Extend conversation targets so Timeline

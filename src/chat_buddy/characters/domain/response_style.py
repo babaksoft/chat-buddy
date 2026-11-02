@@ -79,6 +79,33 @@ class VersionedResponseStyleSettings(BaseModel):
     )
 
 
+class StyleUpdateStatus(StrEnum):
+    """Explicit outcomes of a guarded continuity style update."""
+
+    UPDATED = "updated"
+    IDEMPOTENT = "idempotent"
+    STALE_REVISION = "stale_revision"
+    ARCHIVED = "archived"
+
+
+class StyleUpdateResult(BaseModel):
+    """Result of replacing continuity-owned style under a revision guard.
+
+    Attributes:
+        status:
+            Stable update outcome.
+        style:
+            Current committed style for every outcome.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: StyleUpdateStatus = Field(description="Stable update outcome.")
+    style: VersionedResponseStyleSettings = Field(
+        description="Current committed style settings."
+    )
+
+
 class ResponseStyle(BaseModel):
     """Exact effective response presentation copied to an attempt and message.
 

@@ -1,6 +1,6 @@
 """Persistence contracts."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
@@ -51,6 +51,11 @@ from chat_buddy.characters.domain.memory import (
 )
 from chat_buddy.characters.domain.memory_extraction import MemoryDelta
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
+from chat_buddy.characters.domain.response_style import (
+    ResponseStyleSettings,
+    StyleUpdateResult,
+    VersionedResponseStyleSettings,
+)
 from chat_buddy.characters.domain.storyline import (
     Scene,
     SceneAppendEligibility,
@@ -63,6 +68,18 @@ from chat_buddy.characters.domain.storyline import (
     StorylineGroup,
 )
 from chat_buddy.characters.domain.summary import SummaryRevision
+from chat_buddy.characters.domain.timeline import (
+    DayClosureResult,
+    DayReservationResult,
+    ReserveTimelineDay,
+    StartTimeline,
+    Timeline,
+    TimelineDay,
+    TimelineGroup,
+    TimelineNavigation,
+    TimelineRevisionResult,
+    TimelineStartResult,
+)
 
 
 class IdentityRepository(Protocol):
@@ -518,6 +535,305 @@ class StorylineForkRepository(Protocol):
         Raises:
             StorylineForkConflictError:
                 If source state or target ownership changed before commit.
+        """
+
+        ...
+
+
+class TimelineRepository(Protocol):
+    """Manage Timeline ownership, navigation, and lifecycle atomically."""
+
+    def start(
+        self, request: StartTimeline, relationship: StartingRelationship
+    ) -> TimelineStartResult:
+        """Freeze profiles and start a Timeline without creating a day.
+
+        Args:
+            request:
+                Complete reviewed start and automatically captured timezone.
+            relationship:
+                Resolved starting relationship and provenance.
+
+        Returns:
+            Explicit success, idempotent, or active-slot-conflict result.
+
+        Raises:
+            ConfirmationConflictError:
+                If the request identifier has different persisted inputs.
+        """
+
+        ...
+
+    def find_confirmation(self, request: StartTimeline) -> TimelineStartResult | None:
+        """Read an identical start confirmation before slot preflight.
+
+        Args:
+            request:
+                Complete confirmed start request.
+
+        Returns:
+            Original result, or None for a new confirmation.
+
+        Raises:
+            ConfirmationConflictError:
+                If persisted confirmation inputs differ.
+        """
+
+        ...
+
+    def find_active(self, identity_id: UUID, persona_id: UUID) -> Timeline | None:
+        """Find the pair's sole active Timeline.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+
+        Returns:
+            Active Timeline, or None when its independent slot is free.
+        """
+
+        ...
+
+    def get(self, identity_id: UUID, persona_id: UUID, timeline_id: UUID) -> Timeline:
+        """Read a Timeline under complete profile ownership.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            timeline_id:
+                Timeline continuity identifier.
+
+        Returns:
+            Owned active or archived snapshot.
+
+        Raises:
+            ContinuityNotFoundError:
+                If no Timeline exists in the supplied scope.
+        """
+
+        ...
+
+    def list(self) -> tuple[TimelineGroup, ...]:
+        """List all Timelines grouped by profile pair deterministically.
+
+        Returns:
+            Identity/persona groups in stable repository order.
+        """
+
+        ...
+
+    def list_for_pair(self, identity_id: UUID, persona_id: UUID) -> TimelineGroup:
+        """List a pair's active and archived Timelines deterministically.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+
+        Returns:
+            Validated group with at most one active Timeline.
+        """
+
+        ...
+
+    def revise(
+        self,
+        identity_id: UUID,
+        persona_id: UUID,
+        timeline_id: UUID,
+        name: str,
+        expected_revision: int,
+    ) -> TimelineRevisionResult:
+        """Replace Timeline metadata under lifecycle and revision guards.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            timeline_id:
+                Timeline continuity identifier.
+            name:
+                Validated replacement name.
+            expected_revision:
+                Last observed optimistic revision.
+
+        Returns:
+            Explicit update, idempotent, stale, or archived result.
+        """
+
+        ...
+
+    def archive(
+        self,
+        identity_id: UUID,
+        persona_id: UUID,
+        timeline_id: UUID,
+        expected_revision: int,
+    ) -> TimelineRevisionResult:
+        """Permanently archive a Timeline under an optimistic guard.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            timeline_id:
+                Timeline continuity identifier.
+            expected_revision:
+                Last observed optimistic revision.
+
+        Returns:
+            Explicit archived, idempotent, or stale result.
+        """
+
+        ...
+
+
+class TimelineDayRepository(Protocol):
+    """Manage represented Timeline days and their atomic first interaction."""
+
+    def get(self, scope: ConversationScope, day_id: UUID) -> TimelineDay:
+        """Read one day under complete conversation ownership.
+
+        Args:
+            scope:
+                Expected profile, Timeline, and conversation ownership.
+            day_id:
+                Represented-day identifier.
+
+        Returns:
+            Owned day snapshot.
+        """
+
+        ...
+
+    def find_date(self, timeline: Timeline, local_date: date) -> TimelineDay | None:
+        """Look up one represented local date in a Timeline.
+
+        Args:
+            timeline:
+                Expected owning Timeline.
+            local_date:
+                Immutable represented local date.
+
+        Returns:
+            Existing day, or None when that date was not represented.
+        """
+
+        ...
+
+    def latest(self, timeline: Timeline) -> TimelineDay | None:
+        """Load the latest represented day in a Timeline.
+
+        Args:
+            timeline:
+                Expected owning Timeline.
+
+        Returns:
+            Latest day, or None before the first interaction.
+        """
+
+        ...
+
+    def list(self, timeline: Timeline) -> TimelineNavigation:
+        """Load every represented day in immutable navigation order.
+
+        Args:
+            timeline:
+                Expected owning Timeline.
+
+        Returns:
+            Validated Timeline and represented-day navigation snapshot.
+        """
+
+        ...
+
+    def reserve_first(
+        self, timeline: Timeline, request: ReserveTimelineDay
+    ) -> DayReservationResult:
+        """Atomically create a day, first input, and pending attempt.
+
+        Args:
+            timeline:
+                Last observed owning Timeline snapshot.
+            request:
+                Boundary, input, generation, revision, and leaf guards.
+
+        Returns:
+            Explicit reservation or race/conflict outcome with no partial write.
+        """
+
+        ...
+
+    def observe_closure(
+        self,
+        scope: ConversationScope,
+        day_id: UUID,
+        observed_at: datetime,
+        expected_timeline_revision: int,
+        expected_selected_leaf_id: UUID | None,
+    ) -> DayClosureResult:
+        """Observe and idempotently persist closure under graph guards.
+
+        Args:
+            scope:
+                Complete expected day ownership.
+            day_id:
+                Represented day being observed.
+            observed_at:
+                Injected aware UTC instant.
+            expected_timeline_revision:
+                Last observed Timeline revision.
+            expected_selected_leaf_id:
+                Last observed selected leaf.
+
+        Returns:
+            Explicit open, closed, idempotent, stale, or closure-race result.
+        """
+
+        ...
+
+
+class ResponseStyleRepository(Protocol):
+    """Read and update continuity-owned response settings atomically."""
+
+    def get(self, continuity_id: UUID) -> VersionedResponseStyleSettings:
+        """Read current requested settings and optimistic revision.
+
+        Args:
+            continuity_id:
+                Owning Characters continuity.
+
+        Returns:
+            Current committed requested settings.
+        """
+
+        ...
+
+    def update(
+        self,
+        continuity_id: UUID,
+        settings: ResponseStyleSettings,
+        expected_revision: int,
+    ) -> StyleUpdateResult:
+        """Replace all style controls under lifecycle and revision guards.
+
+        Args:
+            continuity_id:
+                Owning Characters continuity.
+            settings:
+                Complete replacement requested settings.
+            expected_revision:
+                Last observed style revision.
+
+        Returns:
+            Explicit update, idempotent, stale, or archived result.
         """
 
         ...

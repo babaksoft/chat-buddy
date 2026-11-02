@@ -46,6 +46,8 @@ class ConversationTarget(BaseModel):
             Mode whose policy and prompt assembly govern the conversation.
         scene_id:
             Required Storyline scene owner and absent for Ongoing.
+        day_id:
+            Required Timeline day owner and absent for other modes.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -54,6 +56,9 @@ class ConversationTarget(BaseModel):
     mode: ContinuityMode = Field(description="Governing continuity mode.")
     scene_id: UUID | None = Field(
         default=None, description="Owning Storyline scene when applicable."
+    )
+    day_id: UUID | None = Field(
+        default=None, description="Owning Timeline day when applicable."
     )
 
     @model_validator(mode="after")
@@ -65,15 +70,21 @@ class ConversationTarget(BaseModel):
 
         Raises:
             ValueError:
-                If Ongoing has a scene or Storyline has none.
+                If the target does not have exactly its mode-specific owner.
         """
 
-        if self.mode == ContinuityMode.ONGOING and self.scene_id is not None:
-            raise ValueError("Ongoing conversations do not belong to scenes")
-        if self.mode == ContinuityMode.STORYLINE and self.scene_id is None:
-            raise ValueError("Storyline conversations require a scene owner")
-        if self.mode == ContinuityMode.TIMELINE:
-            raise ValueError("Timeline conversation targets are not available")
+        if self.mode == ContinuityMode.ONGOING and (
+            self.scene_id is not None or self.day_id is not None
+        ):
+            raise ValueError("Ongoing conversations do not have a scene or day owner")
+        if self.mode == ContinuityMode.STORYLINE and (
+            self.scene_id is None or self.day_id is not None
+        ):
+            raise ValueError("Storyline conversations require only a scene owner")
+        if self.mode == ContinuityMode.TIMELINE and (
+            self.day_id is None or self.scene_id is not None
+        ):
+            raise ValueError("Timeline conversations require only a day owner")
         return self
 
 
