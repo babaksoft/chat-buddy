@@ -4,7 +4,7 @@
 - Date: 2026-09-09
 - Last revised: 2026-11-02
 - Scope: Characters area; area boundary clarified by ADR 013
-- Refined by: ADR 037
+- Refined by: ADRs 037 and 039
 
 ## Context
 
@@ -78,8 +78,8 @@ without changing day ownership or closure.
   zones without changing the test process timezone or waiting for wall-clock time.
 - Boundary observation and first-send reservation serialize on the Timeline
   revision and return explicit stale or closed results.
-- Exploring an alternate past from a closed day uses ADR 037's reviewed Timeline
-  fork rather than changing the source.
+- Closed history has no alternate-past workflow; ADR 039 limits retry, selection,
+  and branching to the latest open day.
 
 ## Alternatives considered
 

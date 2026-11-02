@@ -31,8 +31,9 @@ branch or its applicable ancestors.
 
 Timeline temporal eligibility uses immutable day position, not mutable local date
 or UTC order. Only the target day's transcript is short-term context. ADR 037
-defines Timeline extraction, evolution, and fork remapping; Storyline continues to
-use scene position under ADRs 031 and 032.
+defines Timeline extraction and evolution, while ADR 039 limits graph changes to
+the latest open day. Storyline continues to use scene position under ADRs 031 and
+032.
 
 ## Alternatives considered
 

@@ -4,7 +4,7 @@
 - Date: 2026-09-09
 - Last revised: 2026-11-02
 - Scope: Characters area; the former Chat mode is renamed Ongoing by ADR 013
-- Refined by: ADRs 033 and 037
+- Refined by: ADRs 033, 037, and 039
 
 ## Context
 
@@ -40,11 +40,13 @@ response-style snapshot, configured evolution-strategy identity, and completing
 attempt identifier.
 
 Branch mode policy is fail closed. Ongoing and a latest Storyline scene branch in
-place, as does an open Timeline day. Branching from an older Storyline scene with
-dependent later scenes or a closed Timeline day returns a fork-required decision.
-Retry and saved-future selection require a writable scene and never create a fork.
-Missing or contradictory branch facts also require a fork; persistence for those
-forks belongs to the stages that introduce Storylines and Timelines.
+place, as does the latest open Timeline day. Branching from an older Storyline
+scene with dependent later scenes returns a fork-required decision. A closed or
+non-latest Timeline day is read-only and returns an unavailable reason rather than
+a fork decision. Retry and saved-future selection require a writable scene or day
+and never create a fork. Missing or contradictory Timeline calendar facts are
+unavailable; persistence for Storyline forks belongs to the stage that introduces
+Storylines.
 
 A Storyline fork follows ADR 025. Because it leaves the active source Storyline
 unchanged and creates another active future, it uses a distinct pair created
@@ -58,8 +60,8 @@ chosen persona branch point.
   downstream state.
 - Mode-specific branching rules apply: Ongoing branches in place; the latest
   Storyline scene branches in place while branching from an older scene forks its
-  Storyline; an open Timeline day branches in place while a closed day requires
-  a Timeline fork.
+  Storyline; only the latest open Timeline day branches in place, while every
+  closed or older Timeline day remains read-only.
 
 ## Alternatives considered
 
@@ -74,3 +76,5 @@ chosen persona branch point.
   unselected alternative remains stored but has no downstream effect.
 - Branching an older Storyline scene with later scenes preserves the old future
   by creating a separate Storyline under a distinct profile pair.
+- Branching, retry, and alternative selection in Timeline are available only on
+  the latest open day and never copy the continuity.

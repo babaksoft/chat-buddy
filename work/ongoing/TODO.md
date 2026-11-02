@@ -1,6 +1,16 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 3 — Add Timeline domain and repository contracts.
+Next delivery focus: Stage 8, Slice 3 — Adapt Timeline domain and repository
+contracts to latest-open-day branching.
+
+Deferred product exploration:
+
+- Evaluate a future **Continue this moment in a new Storyline** action for closed
+  Timeline messages. Treat it as an explicit mode transition rather than a
+  Timeline branch, preserve the closed Timeline unchanged, and decide whether to
+  pursue it only after observing closed-message action attempts, mode switching,
+  abandonment, and related user feedback. Define privacy-conscious telemetry and
+  the exact context-transfer contract before scheduling implementation.
 
 Deferred engineering:
 

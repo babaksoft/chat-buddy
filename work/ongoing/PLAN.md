@@ -14,10 +14,11 @@ when the first user input and generation attempt are reserved atomically, stores
 the resolved local date and timezone with that day, and makes the day permanently
 read-only after its local boundary. Current-day messages provide short-term
 context; branch- and time-eligible Timeline memory, relationship state, and persona
-adaptations provide long-term continuity. Exploring an alternate past from a
-closed day creates an independent Timeline fork rather than changing history.
-Timeline start captures the local-first application's IANA timezone automatically;
-the pilot exposes no Timeline timezone control or persona-local clock.
+adaptations provide long-term continuity. Only the latest open day permits retry,
+alternative selection, and in-place branching; closed history is permanently
+read-only and never forks. Timeline start captures the local-first application's
+IANA timezone automatically; the pilot exposes no Timeline timezone control or
+persona-local clock.
 
 Response-style controls cover scene-description level, response length, and
 narrative placement. A fixed Markdown convention handles description, ordinary
@@ -40,9 +41,9 @@ The stage must preserve these boundaries:
 
 ## Baseline contract to record before implementation
 
-Slice 1 must reconcile ADRs 006, 008, 009, 011, 025, and 033 with the delivered
-Stage 6 and Stage 7 behavior. It should add or revise only the focused decisions
-needed to settle the following details before schema work:
+Slice 1 must reconcile ADRs 006, 008, 009, 011, 025, 033, and 039 with the
+delivered Stage 6 and Stage 7 behavior. It should add or revise only the focused
+decisions needed to settle the following details before schema work:
 
 - A Timeline is an independently owned continuity with one identity, persona,
   starting relationship, lifecycle, automatically captured immutable application-
@@ -64,18 +65,17 @@ needed to settle the following details before schema work:
   branch.
 - Persona-local clock display, inferred persona timezones, and sleep or
   availability rules remain outside Timeline calendar behavior and are deferred.
-- An open current day branches in place. A closed-day branch requires a reviewed
-  fork that preserves the source, copies only the eligible selected history through
-  the exact persona branch point, remaps all owned provenance, and then evolves
-  independently. The decision must settle active-slot and profile-duplication rules
-  consistently with Storyline forks.
+- Only the latest open day permits retry, saved-future selection, and Branch from
+  here. Closed and non-latest days return stable read-only reasons and never copy
+  the Timeline, profiles, history, derived state, identifiers, or provenance.
 - Timeline memory is continuity-scoped, branch-aware, and temporally eligible by
   immutable day position. Occurrence and learned positions cannot be later than
   the target day. Current-day messages are the only transcript used as short-term
   response context.
 - Relationship and persona evolution run after eligible complete Timeline turns,
-  cite exact selected evidence, and rebuild after branch selection or a fork under
-  the same replay rules as the other Characters modes.
+  cite exact selected evidence, and rebuild after open-day branch selection under
+  the same replay rules as the other Characters modes. Closure freezes the day's
+  selected ancestry for later eligibility.
 - Response style has a typed, versioned, safe vocabulary and deterministic prompt
   rendering for all three controls. The decision must define allowed values,
   defaults, and scope in Ongoing, Storyline, and Timeline. Dialogue formatting is
@@ -143,7 +143,7 @@ the same cap.
 
 | Slice | Self-contained outcome | Depends on | Database impact |
 |---|---|---:|---|
-| 1 | Record Timeline, calendar, fork, and style decisions | Stage 7 | None |
+| 1 | Record Timeline, calendar, branching, and style decisions | Stage 7 | None |
 | 2 | Add executable calendar and response-style values | 1 | None |
 | 3 | Add Timeline ownership, day, start, and repository contracts | 1–2 | None |
 | 4 | Persist Timelines, days, calendar facts, and style settings | 2–3 | Characters migration |
@@ -154,17 +154,17 @@ the same cap.
 | 9 | Add branch- and time-aware Timeline memory | 6, 8 | Existing memory records or additive migration if required by Slice 1 |
 | 10 | Add Timeline relationship and persona evolution | 6, 8–9 | Existing evolution records |
 | 11 | Assemble deterministic Timeline response context | 7–10 | Existing repository operations |
-| 12 | Enforce open-day graph actions and fork closed days | 6, 8–11 | Fork provenance in Timeline persistence |
+| 12 | Enforce latest-open-day graph actions and closed-history guards | 6, 8–11 | Existing graph and day records |
 | 13 | Ship Timeline creation, navigation, day, and archive UI | 5–6, 8 | Existing Timeline/day records |
-| 14 | Ship style, memory, evolution, and closed-day fork UI | 7, 9–13 | Existing records only |
+| 14 | Ship style, memory, evolution, and closed-history guidance UI | 7, 9–13 | Existing records only |
 | 15 | Add focused diagnostics and calendar recovery checks | 5–14 | None |
 | 16 | Update project documents for shipped Stage 8 behavior | 1–15 | None |
 | 17 | Prove the Stage 8 milestone and area isolation | 1–16 | Verification only |
 
-The split keeps schema ownership, calendar policy, derivation eligibility, fork
-copying, and Streamlit state out of the same change. Response-style work lands
-before Timeline prompting so every new persona response has correct provenance
-from its first end-to-end test.
+The split keeps schema ownership, calendar policy, derivation eligibility, graph
+action policy, and Streamlit state out of the same change. Response-style work
+lands before Timeline prompting so every new persona response has correct
+provenance from its first end-to-end test.
 
 ## Slice details
 
@@ -177,7 +177,7 @@ contract above. Reconcile the result with:
 
 - ADR 006 continuity ownership and mode isolation.
 - ADR 008 mode-specific context and memory.
-- ADRs 009 and 033 graph actions and fork semantics.
+- ADRs 009, 033, and 039 graph actions and mode-specific fork semantics.
 - ADR 025 Storyline lifecycle and exact profile duplication.
 - ADRs 031 and 032 memory lifecycle and extraction.
 - ADRs 034–036 adaptation, replayable evolution, and strategy versions.
@@ -185,13 +185,14 @@ contract above. Reconcile the result with:
 Include executable behavioral examples for first interaction, no-interaction days,
 offline reopening, DST gaps and folds, automatic application-local timezone
 capture, a persona in another location, concurrent first sends, concurrent
-boundary crossing, an open-day retry, a closed-day fork, a style update before
-send, a style update during an attempt, and a retry under a newer style.
+boundary crossing, an open-day retry and branch, a rejected closed-day graph
+action, a style update before send, a style update during an attempt, and a retry
+under a newer style.
 
 Complete when ownership, active-slot rules, day identity, closure, immutable
-calendar-zone capture, fork copying, memory/evolution eligibility, style scope,
-and attempt snapshot semantics are unambiguous enough to implement without schema
-guesses.
+calendar-zone capture, latest-open-day graph policy, memory/evolution eligibility,
+style scope, and attempt snapshot semantics are unambiguous enough to implement
+without schema guesses.
 
 ### Slice 2 — Add executable calendar and response-style values
 
@@ -227,9 +228,9 @@ text themselves.
 Status: Pending
 
 Add immutable Timeline, Timeline day, start request, group/navigation snapshot,
-and fork-review contracts. Extend conversation targets so Timeline requires a day
-owner just as Storyline requires a scene owner, while Ongoing remains ownerless at
-that level.
+and graph-action availability contracts. Extend conversation targets so Timeline
+requires a day owner just as Storyline requires a scene owner, while Ongoing
+remains ownerless at that level.
 
 Define Characters-owned repository protocols for:
 
@@ -237,12 +238,12 @@ Define Characters-owned repository protocols for:
 - Looking up represented days and loading the latest day.
 - Reserving the first input and attempt with a new day.
 - Observing and persisting closure idempotently.
-- Copying a reviewed closed-day fork with identifier remapping.
 - Reading and updating current style settings under an expected revision.
 
 Use explicit results for active-slot conflicts, stale revisions, closure races,
-duplicate dates, stale leaves, and fork-required decisions. Do not leak SQLAlchemy
-models or session types through the contracts.
+duplicate dates, stale leaves, and unavailable graph actions on closed or
+non-latest days. Do not leak SQLAlchemy models or session types through the
+contracts.
 
 Complete when invalid ownership, lifecycle, day order, captured calendar zone, and
 conversation targets fail in domain tests and application code has all persistence
@@ -256,11 +257,10 @@ Add one reviewed Characters migration and database repository implementations fo
 the accepted model. At minimum persist:
 
 - Timeline continuity identity, profile ownership, lifecycle, starting
-  relationship, captured immutable calendar timezone, revision, and fork
-  provenance.
+  relationship, captured immutable calendar timezone, and revision.
 - Timeline day continuity ownership, immutable position and local date, boundary
   timezone, UTC opening/closing facts, closure observation, conversation ownership,
-  and source-day fork provenance.
+  and settled selected-leaf guard.
 - Current response-style settings and revision at the ADR-defined scope.
 - The linkage needed for every generation attempt and persona message to retain its
   immutable effective style snapshot.
@@ -431,8 +431,8 @@ Ensure that:
 - Strategy and policy versions remain attached to effects and events.
 
 Extend the native evaluation scenarios with day boundaries, offline gaps,
-alternative selection, and fork remapping. Do not add Timeline-only relationship
-dimensions or expose numeric scores.
+open-day alternative selection, and closure-frozen ancestry. Do not add
+Timeline-only relationship dimensions or expose numeric scores.
 
 Complete when Timeline evolution is conservative, replayable, temporally correct,
 and unable to affect another continuity or Chat.
@@ -471,33 +471,26 @@ evolution projections, and provider limits.
 Complete when prompt assembly is deterministic and a Timeline response has the
 required long-term continuity without transcript or temporal leakage.
 
-### Slice 12 — Enforce graph actions and fork closed days
+### Slice 12 — Enforce latest-open-day graph actions and closed-history guards
 
 Status: Pending
 
 Complete Timeline graph policy:
 
-- An open day permits retry, saved-future selection, and in-place branch under the
-  existing expected-leaf and retry-limit rules.
-- A closed day rejects retry and saved-future selection and returns fork-required
-  for branch-from-here.
+- Only the latest open day permits retry, saved-future selection, and in-place
+  Branch from here under the existing expected-leaf and retry-limit rules.
+- A closed or non-latest day rejects input, continuation, completion, retry,
+  selection, and Branch from here with a stable read-only reason.
 - Missing, stale, foreign, or contradictory calendar facts fail closed.
 
-Implement the reviewed closed-day fork accepted in Slice 1. Copy only the day
-metadata and selected histories required through the exact persona branch point,
-assign new ownership identifiers, and remap compatible summaries, completed
-attempt provenance, memory evidence/lineages, evolution events/effects,
-corrections, style state, and fork provenance. Exclude later days, later nodes,
-unselected alternatives, open attempts, ineligible memory, and unsupported derived
-state. Leave the source unchanged and validate the target active slot/profile
-duplication transactionally.
+Run closure policy before every graph action and serialize it with attempt,
+selection, and completion writes. Preserve every saved node for inspection while
+freezing the selected ancestry at closure. Add PostgreSQL race tests for retry,
+selection, and Branch from here crossing the boundary, plus stale callers acting
+on a formerly open day.
 
-Add exhaustive mapping assertions and PostgreSQL race tests. Prove that no mutable
-row or continuity-owned identifier is shared and that source and fork evolve
-independently after restart.
-
-Complete when open-day exploration is non-destructive and every alternate closed
-past is an explicit, independently owned fork with branch-correct derived state.
+Complete when latest-open-day exploration is non-destructive, every historical
+graph is permanently read-only, and no Timeline history-copy path exists.
 
 ### Slice 13 — Ship Timeline creation, navigation, day, and archive UI
 
@@ -523,15 +516,18 @@ archive, and lazy area initialization.
 Complete when a user can create, find, understand, resume, and archive a Timeline
 without timezone setup or hidden calendar side effects.
 
-### Slice 14 — Ship Timeline chat, style, memory, evolution, and fork UI
+### Slice 14 — Ship Timeline chat, style, memory, evolution, and history guidance UI
 
 Status: Pending
 
 Add the complete interaction surface:
 
 - Send, stream, recover, retry, choose alternatives, and branch on an open day.
-- Display closed days as read-only and route branch-from-here through the reviewed
-  fork flow rather than presenting an action that will fail late.
+- Establish before Timeline start that previous days become read-only, distinguish
+  the latest open day from closed history, and expose graph actions only on that
+  open day.
+- Explain at a closed message why retry, selection, and Branch from here are
+  unavailable rather than presenting an action that fails late.
 - Edit all three response-style controls, preview their effective meaning, save
   under a revision, and state that changes apply to the next response.
 - Show each persona message's effective style alongside existing generation
@@ -546,8 +542,8 @@ snapshots.
 
 Test widget isolation across pages and continuities, stale style revisions,
 style-save/send ordering, retry under a changed style, exact-boundary closure,
-closed-day fork review/cancel/confirm, memory management, evolution correction,
-and restart.
+closed-day action guidance, absence of historical graph actions, memory
+management, evolution correction, and restart.
 
 Complete when all Stage 8 behavior is usable through focused Characters pages and
 the UI cannot bypass calendar, ownership, or revision guards.
@@ -557,12 +553,13 @@ the UI cannot bypass calendar, ownership, or revision guards.
 Status: Pending
 
 Add low-cardinality structured diagnostics for Timeline start, day creation,
-closure observation, rejected closed-day operations, fork completion, style
-revision, context assembly, extraction/evolution terminal state, and recovery after
-interrupted attempts. Include identifiers, mode, local date, boundary timezone,
+closure observation, rejected historical operations, style revision, context
+assembly, extraction/evolution terminal state, and recovery after interrupted
+attempts. Include identifiers, mode, local date, boundary timezone,
 policy/version, terminal reason, and latency where appropriate; do not log
 conversation text, persona details, memory content, rendered style instructions,
-or raw prompts.
+or raw prompts. Keep any product analytics for attempted closed-message actions
+privacy-conscious and separate from diagnostic content.
 
 Add startup/read-path recovery checks that idempotently observe overdue closure
 and incomplete attempts without scanning or mutating unrelated continuities. Keep
@@ -570,7 +567,8 @@ broad production observability, export, deletion, and extraction-readiness work 
 Stage 9.
 
 Complete when maintainers can distinguish calendar, style, generation, memory,
-evolution, and fork failures without sensitive content or cross-area coupling.
+evolution, and historical-action failures without sensitive content or cross-area
+coupling.
 
 ### Slice 16 — Update project documents for shipped Stage 8 behavior
 
@@ -582,8 +580,9 @@ UI behavior are final.
 Update `README.md` with only shipped, user-visible behavior:
 
 - Add Timeline to current Characters capabilities and the product model.
-- Explain application-local day creation, missing days, closure, closed-day forks,
-  and response-style controls in concise product language.
+- Explain application-local day creation, missing days, permanent closure,
+  latest-open-day branching, and response-style controls in concise product
+  language.
 - Extend the Characters quick-start flow with Timeline start/resume and style
   editing without duplicating the canonical setup path.
 - Update local/cloud data-flow and configuration text only where the final code
@@ -593,7 +592,7 @@ Update `README.md` with only shipped, user-visible behavior:
 
 Reconcile `DESIGN.md` with the accepted ADRs and final implementation, especially
 Timeline ownership, day closure, captured local timezone, temporal memory/evolution,
-fork remapping, context order, and message-boundary style behavior. Remove
+open-day graph actions, context order, and message-boundary style behavior. Remove
 superseded fixed-style statements, check nearby sections for contradictions, and
 update its `Last updated` date for the material design change.
 
@@ -633,8 +632,8 @@ Add one deterministic acceptance journey that:
    proves prior knowledge is eligible only on valid selected later days.
 7. Switches an open-day alternative and rebuilds derived state.
 8. Rejects input, retry, selection, and in-place branching on a closed day.
-9. Reviews and creates a closed-day fork, verifies complete identifier/provenance
-   remapping, and evolves source and fork independently.
+9. Proves closed history exposes no Timeline fork, copy, or remapping path and
+   explains unavailable actions without mutating history.
 10. Restarts, resumes, archives, and proves the archived Timeline is read-only.
 
 Run the complete Characters migration chain beside populated Chat data, exercise
@@ -649,9 +648,9 @@ all modes snapshot effective response style, and Chat remains unchanged. Record
 any Black timeout or unavailable optional smoke dependency honestly.
 
 Complete when closure, missing-day behavior, captured-zone stability, temporal
-memory and evolution, open/closed graph rules, closed-day forks, and response-style
-controls are deterministic and tested across DST boundaries, and the full required
-suite passes.
+memory and evolution, latest-open-day graph rules, closed-history immutability, and
+response-style controls are deterministic and tested across DST boundaries, and
+the full required suite passes.
 
 ## Explicitly deferred
 
@@ -667,8 +666,11 @@ Keep the following outside Stage 8:
   the pilot uses the local-first application runtime's injected IANA zone.
 - Placeholder days, calendar streaks, synthetic missed-day summaries, reminders,
   scheduled persona messages, and background day creation.
-- Merging Timeline forks or moving memory/evolution between unrelated
-  continuities.
+- Timeline continuity forks, historical day reopening or rebasing, and moving
+  memory/evolution between unrelated continuities.
+- Continuing a closed Timeline moment in a new Storyline; evaluate that explicit
+  mode transition only after observed behavior and privacy-conscious telemetry
+  justify a context-transfer contract.
 - Cross-area memory, prompts, identifiers, repositories, or data transfer.
 - Model-generated style changes, automatic style optimization, arbitrary prompt
   injection through style controls, per-message editing of historical style, and

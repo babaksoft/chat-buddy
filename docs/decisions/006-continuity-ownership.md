@@ -18,10 +18,10 @@ owns its mode, conversations, eligible memories, relationship state, and persona
 adaptation. Information never crosses continuities unless an accepted workflow
 makes the transfer explicit to the user.
 
-Storyline and Timeline forks are the only history-copying workflows currently
-accepted. They create distinct continuities and remap copied ownership and
-provenance under ADRs 025, 033, and 037; they never make one record belong to two
-continuities.
+Storyline forks are the only history-copying workflow currently accepted. They
+create distinct continuities and remap copied ownership and provenance under ADRs
+025 and 033; they never make one record belong to two continuities. Timeline does
+not copy history or create continuity forks under ADR 039.
 
 ## Consequences
 

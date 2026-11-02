@@ -1,10 +1,14 @@
 # ADR 037: Keep Timeline continuity append-only and fork alternate pasts
 
-- Status: Accepted
+- Status: Partially superseded by ADR 039
 - Date: 2026-11-02
 - Scope: Characters, Stage 8
 - Refines: ADRs 006, 008, 009, 011, 025, 033, and 035
 - Consistent with: ADRs 031, 032, 034, and 036
+
+ADR 039 supersedes every closed-day Timeline fork, profile-duplication, copying,
+and identifier-remapping provision in this record. Its continuity ownership,
+temporal memory, evolution, and context-eligibility decisions remain accepted.
 
 ## Context
 

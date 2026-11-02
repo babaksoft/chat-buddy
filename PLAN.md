@@ -181,7 +181,8 @@ Deliver this work through the small slices in the
 - Record response style, provider, model, strategy version, and generation
   metadata with persona messages.
 - Apply mode rules: Ongoing branches in place; an older Storyline scene forks its
-  Storyline; a closed Timeline day requires a Timeline fork.
+  Storyline; only the latest open Timeline day branches in place and closed
+  Timeline history remains read-only.
 
 **Complete when:** prior paths remain recoverable, unselected alternatives cannot
 affect current state, and branch selection is covered by repository and
@@ -225,7 +226,7 @@ visible to Chat.
 - Require explicit evidence for partnership, engagement, marriage, breakup, and
   reconciliation; use conservative thresholds and hysteresis for gradual change.
 - Add provenance and correction UI and rebuild derived state correctly after a
-  branch or continuity fork.
+  branch or Storyline fork.
 - Compare experimental strategies only within Characters and promote a strategy
   only after its behavioral scenarios pass.
 
@@ -240,7 +241,9 @@ has no Chat dependency or effect.
 - Capture the local-first application's IANA timezone automatically at Timeline
   start; expose no Timeline timezone selection or rezoning workflow.
 - Close days after their local boundary, including after offline periods, and
-  reject messages, retries, and in-place branches for closed days.
+  reject messages, retries, alternative selection, and branching for closed days.
+- Permit retry, selection, and Branch from here only within the latest open day;
+  do not copy or fork Timeline history.
 - Create no records for days without interaction. Keep persona-local clocks,
   inferred persona timezones, and sleep or availability policy outside the pilot.
 - Use current-day messages as short-term context and eligible prior memory and
@@ -253,8 +256,8 @@ has no Chat dependency or effect.
   style with every generated message.
 
 **Complete when:** closure, missing-day behavior, captured-zone stability,
-temporal memory, fork rules, and response styles are deterministic and tested,
-including DST boundaries.
+temporal memory, latest-open-day graph rules, closed-history immutability, and
+response styles are deterministic and tested, including DST boundaries.
 
 ## Stage 9 — Harden and prepare Characters extraction
 

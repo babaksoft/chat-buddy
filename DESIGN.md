@@ -221,8 +221,7 @@ Starting a continuity:
 - Creates an independent starting relationship without invented shared events.
 - Is idempotent for an identical confirmation and rejects conflicting reuse.
 - Does not transfer conversation, memory, relationship, or adaptation state from
-  another continuity unless it is an explicit remapped Storyline or Timeline fork
-  below.
+  another continuity unless it is an explicit remapped Storyline fork below.
 
 A confirmed Storyline start also supplies its user-authored name and initial
 scene. The initial scene owns a title, setup, conversation graph, and summary
@@ -277,7 +276,8 @@ for context and downstream derivation.
 - Selected-path reads are separate from graph inspection. Selection and append
   compare the caller's expected leaf so stale actions cannot replace the active
   path.
-- Branching from any exact owned persona message preserves every existing future.
+- Within a writable conversation, branching from any exact owned persona message
+  preserves every existing future.
 - Retrying a completed persona response creates a sibling response to the same
   user message; failed or interrupted attempts create no node and consume no retry.
 - A persona turn permits at most three retry alternatives in addition to its
@@ -296,14 +296,12 @@ for context and downstream derivation.
   continuity-owned identifiers, remaps compatible summary and completed-attempt
   provenance, excludes later scenes and nodes outside the copied ancestries, and
   changes only the fork.
-- A closed Timeline day cannot retry or branch in place; an alternate past requires
-  a Timeline fork.
-- A Timeline fork uses an exact profile duplication and a distinct pair with a free
-  Timeline slot. It copies earlier selected day histories and the chosen closed
-  day's exact ancestry through the persona branch point. It remaps all copied
-  ownership and eligible provenance, excludes later days and unsupported state,
-  preserves copied boundary facts, and retains the source Timeline's captured
-  calendar timezone for future days.
+- Only the latest open Timeline day permits retry, saved-future selection, and
+  Branch from here. These actions use that day's graph in place under expected-leaf
+  guards and may rebuild derived eligibility from the newly selected ancestry.
+- Closed and non-latest Timeline days are permanently read-only. They expose no
+  alternate-past or continuity-fork workflow and never copy profiles, days,
+  derived state, identifiers, or provenance.
 
 Persona messages retain their effective response style, provider, model,
 generation metadata and budget, strategy version, and completing attempt. Summary
@@ -358,8 +356,8 @@ branch rules with immutable day position replacing scene position. Occurrence
 cannot be later than learned position, and neither may be later than the target
 day. Only the target day's transcript is short-term context; eligible Timeline
 memory, relationship state, and persona adaptation carry long-term continuity.
-Timeline forks copy only eligible active lineages supported by copied evidence and
-remap all day and source provenance.
+Branch selection may change eligibility only while the latest day is open; closure
+freezes its selected ancestry for every later day.
 
 There is no source-scene, conversation, or message deletion. Any future
 source-deletion workflow must reject deletion while memory provenance refers to
@@ -582,10 +580,11 @@ context, memory, relationship projections, or persona adaptation.
 Relationship and adaptation evolution follows the same selected-history rule but
 uses its own append-only events. A branch switch makes events supported only by
 the deselected path inactive without deleting them and restores them if their
-evidence becomes selected again. A reviewed Storyline or Timeline fork copies
-only events supported by copied history, remaps ownership and provenance, and
-then evolves independently. A fresh continuity starts from its reviewed
-relationship and copies no events, projection, memory, or adaptation.
+evidence becomes selected again. A reviewed Storyline fork copies only events
+supported by copied history, remaps ownership and provenance, and then evolves
+independently. Timeline never copies events into an alternate continuity. A fresh
+continuity starts from its reviewed relationship and copies no events, projection,
+memory, or adaptation.
 
 Response style changes apply at the attempt-reservation boundary and affect only
 subsequent persona responses. They change presentation only and never rewrite
@@ -617,7 +616,7 @@ Important transaction boundaries include:
 - Replacing a current summary revision.
 - Correcting, excluding, reactivating, or deleting memory.
 - Applying a validated relationship or persona proposal and its projection.
-- Selecting a Characters branch or continuity fork.
+- Selecting a Characters branch or committing a Storyline fork.
 - Applying one validated Storyline or Timeline memory delta and its terminal
   extraction effect.
 
@@ -707,6 +706,9 @@ its own schema.
 - Characters shows the selected identity, persona, continuity, and mode.
 - Destructive actions require confirmation; archives and branches are preferred
   when history should remain recoverable.
+- Timeline distinguishes its latest open day from closed history, exposes graph
+  actions only on that open day, and explains why historical actions are
+  unavailable.
 - Incomplete output is visibly separate from committed history.
 - Retry limits, read-only state, provider limitations, and recovery options are
   explicit.

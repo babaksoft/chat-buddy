@@ -42,10 +42,11 @@ original event. Projections replay from the user-selected starting state and
 currently eligible events.
 
 Branch selection makes events supported only by deselected evidence inactive and
-restores them when that evidence is selected again. A reviewed Storyline or
-Timeline fork copies only events supported by copied history, remaps ownership
-and provenance, and evolves independently. A fresh continuity copies no events or
-projections. Timeline eligibility and copying use ADR 037's immutable day order.
+restores them when that evidence is selected again. A reviewed Storyline fork
+copies only events supported by copied history, remaps ownership and provenance,
+and evolves independently. A fresh continuity copies no events or projections.
+Timeline eligibility uses ADR 037's immutable day order, and ADR 039 permits
+selection changes only in the latest open day.
 
 ## Consequences
 
