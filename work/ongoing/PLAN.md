@@ -251,7 +251,7 @@ seams needed by later slices.
 
 ### Slice 4 — Persist Timeline, calendar, and style state
 
-Status: Pending
+Status: Complete
 
 Add one reviewed Characters migration and database repository implementations for
 the accepted model. At minimum persist:

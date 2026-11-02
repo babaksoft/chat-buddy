@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 4 — Persist Timeline, calendar, and style state.
+Next delivery focus: Stage 8, Slice 5 — Start, resume, and archive Timelines.
 
 Deferred product exploration:
 

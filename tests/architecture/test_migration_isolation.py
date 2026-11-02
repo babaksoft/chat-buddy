@@ -40,9 +40,13 @@ def test_characters_migrations_remain_independent_from_chat() -> None:
     assert "create table characters.memory_evidence" in sql
     assert "create table characters.memory_extraction_effects" in sql
     assert "create table characters.memory_conflicts" in sql
+    assert "create table characters.response_style_settings" in sql
+    assert "create table characters.timelines" in sql
+    assert "create table characters.timeline_days" in sql
     assert "create unique index uq_open_conversation_attempt" in sql
     assert "create unique index uq_active_conversation_summary" in sql
     assert "create unique index uq_active_ongoing_pair" in sql
+    assert "create unique index uq_active_timeline_pair" in sql
     assert "chat." not in sql
 
 

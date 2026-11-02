@@ -3,9 +3,12 @@
 from chat_buddy.characters.infrastructure.db.models.continuity import (
     ContinuityModel,
     ConversationModel,
+    ResponseStyleSettingsModel,
     SceneModel,
     StartingRelationshipModel,
     StorylineModel,
+    TimelineDayModel,
+    TimelineModel,
 )
 from chat_buddy.characters.infrastructure.db.models.evolution import (
     EvolutionCorrectionEventModel,
@@ -45,9 +48,12 @@ __all__ = [
     "PersonaAdaptationProjectionModel",
     "PersonaModel",
     "RelationshipProjectionModel",
+    "ResponseStyleSettingsModel",
     "SceneModel",
     "StartingRelationshipModel",
     "StorylineMemoryModel",
     "StorylineModel",
     "SummaryRevisionModel",
+    "TimelineDayModel",
+    "TimelineModel",
 ]

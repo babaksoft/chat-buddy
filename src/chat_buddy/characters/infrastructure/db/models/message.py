@@ -148,6 +148,9 @@ class GenerationAttemptModel(CharactersBase):
     generation: Mapped[dict[str, Any]] = mapped_column(
         JSON, doc="Immutable effective provider model and configuration."
     )
+    response_style: Mapped[dict[str, Any]] = mapped_column(
+        JSON, doc="Immutable effective response-style snapshot at reservation."
+    )
     status: Mapped[str] = mapped_column(String(16), doc="Attempt lifecycle.")
     incomplete_output: Mapped[str] = mapped_column(
         Text, default="", doc="Output separate from committed history."

@@ -53,6 +53,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     PersonaAdaptationProjectionModel,
     PersonaModel,
     RelationshipProjectionModel,
+    ResponseStyleSettingsModel,
     SceneModel,
     StartingRelationshipModel,
     StorylineMemoryModel,
@@ -308,6 +309,11 @@ class DbStorylineForkRepository:
                 StartingRelationshipModel.continuity_id == source.continuity_id
             )
         ).one()
+        source_style = session.scalars(
+            select(ResponseStyleSettingsModel).where(
+                ResponseStyleSettingsModel.continuity_id == source.continuity_id
+            )
+        ).one()
         session.add_all(
             [
                 target_storyline,
@@ -316,6 +322,15 @@ class DbStorylineForkRepository:
                     identity_id=target_identity.id,
                     persona_id=target_persona.id,
                     snapshot=deepcopy(relationship.snapshot),
+                ),
+                ResponseStyleSettingsModel(
+                    continuity_id=target_continuity.id,
+                    identity_id=target_identity.id,
+                    persona_id=target_persona.id,
+                    scene_description=source_style.scene_description,
+                    response_length=source_style.response_length,
+                    narrative_placement=source_style.narrative_placement,
+                    revision=1,
                 ),
             ]
         )
@@ -544,6 +559,7 @@ class DbStorylineForkRepository:
                     persona_message_id=message_ids[source_message_id],
                     submitted_input=source_attempt.submitted_input,
                     generation=deepcopy(source_attempt.generation),
+                    response_style=deepcopy(source_attempt.response_style),
                     status="completed",
                     incomplete_output=source_attempt.incomplete_output,
                     created_at=source_attempt.created_at,

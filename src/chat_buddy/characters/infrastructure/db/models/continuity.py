@@ -1,5 +1,6 @@
 """Characters-only continuity, conversation, and starting-state ownership."""
 
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -7,6 +8,8 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
+    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -58,6 +61,14 @@ class ContinuityModel(CharactersBase):
             postgresql_where=text("mode = 'storyline' AND lifecycle = 'active'"),
             sqlite_where=text("mode = 'storyline' AND lifecycle = 'active'"),
         ),
+        Index(
+            "uq_active_timeline_pair",
+            "identity_id",
+            "persona_id",
+            unique=True,
+            postgresql_where=text("mode = 'timeline' AND lifecycle = 'active'"),
+            sqlite_where=text("mode = 'timeline' AND lifecycle = 'active'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -106,7 +117,8 @@ class ConversationModel(CharactersBase):
             name="fk_conversation_ownership",
         ),
         CheckConstraint(
-            "mode IN ('ongoing', 'storyline')", name="ck_conversation_mode"
+            "mode IN ('ongoing', 'storyline', 'timeline')",
+            name="ck_conversation_mode",
         ),
         Index(
             "uq_ongoing_continuity_conversation",
@@ -184,6 +196,58 @@ class StartingRelationshipModel(CharactersBase):
     )
 
 
+class ResponseStyleSettingsModel(CharactersBase):
+    """Persist one current response-style setting per continuity."""
+
+    __tablename__ = "response_style_settings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["continuity_id", "identity_id", "persona_id"],
+            [
+                "characters.continuities.id",
+                "characters.continuities.identity_id",
+                "characters.continuities.persona_id",
+            ],
+            name="fk_response_style_owner",
+        ),
+        CheckConstraint("revision >= 1", name="ck_response_style_revision"),
+        CheckConstraint(
+            "scene_description IN ('none', 'light', 'balanced', 'rich')",
+            name="ck_response_style_scene_description",
+        ),
+        CheckConstraint(
+            "response_length IN ('concise', 'balanced', 'expansive')",
+            name="ck_response_style_response_length",
+        ),
+        CheckConstraint(
+            "narrative_placement IN ('before_dialogue', 'interleaved', 'after_dialogue')",
+            name="ck_response_style_narrative_placement",
+        ),
+    )
+
+    continuity_id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, doc="Unique owning continuity."
+    )
+    identity_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Identity matching continuity ownership."
+    )
+    persona_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Persona matching continuity ownership."
+    )
+    scene_description: Mapped[str] = mapped_column(
+        String(16), doc="Requested scene-description level."
+    )
+    response_length: Mapped[str] = mapped_column(
+        String(16), doc="Requested response length."
+    )
+    narrative_placement: Mapped[str] = mapped_column(
+        String(24), doc="Requested narrative placement."
+    )
+    revision: Mapped[int] = mapped_column(
+        Integer, default=1, doc="Optimistic style revision."
+    )
+
+
 class StorylineModel(CharactersBase):
     """Persist Storyline metadata and the optimistic mutation revision."""
 
@@ -227,6 +291,131 @@ class StorylineModel(CharactersBase):
     )
     fork_provenance: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, doc="Optional source-to-copy mapping for a reviewed fork."
+    )
+
+
+class TimelineModel(CharactersBase):
+    """Persist Timeline metadata and immutable calendar-zone ownership."""
+
+    __tablename__ = "timelines"
+    __table_args__ = (
+        UniqueConstraint(
+            "continuity_id", "identity_id", "persona_id", name="uq_timeline_ownership"
+        ),
+        ForeignKeyConstraint(
+            ["continuity_id", "identity_id", "persona_id", "mode"],
+            [
+                "characters.continuities.id",
+                "characters.continuities.identity_id",
+                "characters.continuities.persona_id",
+                "characters.continuities.mode",
+            ],
+            name="fk_timeline_continuity",
+        ),
+        CheckConstraint("mode = 'timeline'", name="ck_timeline_mode"),
+        CheckConstraint("revision >= 1", name="ck_timeline_revision"),
+    )
+
+    continuity_id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, doc="Owning Timeline continuity."
+    )
+    identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
+    persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
+    mode: Mapped[str] = mapped_column(
+        String(16), default="timeline", doc="Fixed Timeline mode discriminator."
+    )
+    name: Mapped[str] = mapped_column(String(128), doc="User-authored Timeline name.")
+    calendar_timezone: Mapped[str] = mapped_column(
+        String(64), doc="Immutable captured IANA calendar timezone."
+    )
+    revision: Mapped[int] = mapped_column(
+        Integer, default=1, doc="Optimistic Timeline mutation revision."
+    )
+
+
+class TimelineDayModel(CharactersBase):
+    """Persist an immutable represented local day and graph ownership."""
+
+    __tablename__ = "timeline_days"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "continuity_id",
+            "identity_id",
+            "persona_id",
+            name="uq_timeline_day_ownership",
+        ),
+        UniqueConstraint("continuity_id", "position", name="uq_timeline_day_position"),
+        UniqueConstraint("continuity_id", "local_date", name="uq_timeline_day_date"),
+        UniqueConstraint("conversation_id", name="uq_timeline_day_conversation"),
+        ForeignKeyConstraint(
+            ["continuity_id", "identity_id", "persona_id"],
+            [
+                "characters.timelines.continuity_id",
+                "characters.timelines.identity_id",
+                "characters.timelines.persona_id",
+            ],
+            name="fk_timeline_day_owner",
+        ),
+        ForeignKeyConstraint(
+            ["conversation_id", "continuity_id", "identity_id", "persona_id", "mode"],
+            [
+                "characters.conversations.id",
+                "characters.conversations.continuity_id",
+                "characters.conversations.identity_id",
+                "characters.conversations.persona_id",
+                "characters.conversations.mode",
+            ],
+            name="fk_timeline_day_conversation",
+        ),
+        ForeignKeyConstraint(
+            ["settled_selected_leaf_id", "conversation_id", "continuity_id"],
+            [
+                "characters.messages.id",
+                "characters.messages.conversation_id",
+                "characters.messages.continuity_id",
+            ],
+            name="fk_timeline_day_settled_leaf",
+            use_alter=True,
+        ),
+        CheckConstraint("mode = 'timeline'", name="ck_timeline_day_mode"),
+        CheckConstraint("position >= 1", name="ck_timeline_day_position"),
+        CheckConstraint("opens_at < closes_at", name="ck_timeline_day_boundary"),
+        CheckConstraint(
+            "(closed_at IS NULL AND settled_selected_leaf_id IS NULL) OR "
+            "(closed_at IS NOT NULL AND closed_at >= closes_at AND settled_selected_leaf_id IS NOT NULL)",
+            name="ck_timeline_day_closure",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid4, doc="Stable represented-day identifier."
+    )
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Timeline.")
+    identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
+    persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
+    conversation_id: Mapped[UUID] = mapped_column(Uuid, doc="Owned day conversation.")
+    mode: Mapped[str] = mapped_column(
+        String(16), default="timeline", doc="Fixed Timeline mode discriminator."
+    )
+    position: Mapped[int] = mapped_column(Integer, doc="Immutable one-based order.")
+    local_date: Mapped[date] = mapped_column(
+        Date, doc="Immutable represented local date."
+    )
+    boundary_timezone: Mapped[str] = mapped_column(
+        String(64), doc="Immutable IANA boundary timezone."
+    )
+    opens_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), doc="Immutable UTC opening instant."
+    )
+    closes_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), doc="Immutable UTC closing boundary."
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), doc="UTC closure observation instant."
+    )
+    settled_selected_leaf_id: Mapped[UUID | None] = mapped_column(
+        Uuid, doc="Selected graph leaf permanently settled at closure."
     )
 
 

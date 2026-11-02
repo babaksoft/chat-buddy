@@ -32,6 +32,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     ConversationModel,
     IdentityModel,
     PersonaModel,
+    ResponseStyleSettingsModel,
     SceneModel,
     StartingRelationshipModel,
     StorylineModel,
@@ -142,6 +143,15 @@ class DbStorylineRepository:
                             identity_id=identity.id,
                             persona_id=persona.id,
                             snapshot=relationship.model_dump(mode="json"),
+                        ),
+                        ResponseStyleSettingsModel(
+                            continuity_id=continuity.id,
+                            identity_id=identity.id,
+                            persona_id=persona.id,
+                            scene_description="balanced",
+                            response_length="balanced",
+                            narrative_placement="interleaved",
+                            revision=1,
                         ),
                     ]
                 )
