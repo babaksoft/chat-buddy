@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 6 — Create days atomically and close them deterministically.
+Next delivery focus: Stage 8, Slice 7 — Resolve, update, and snapshot effective response style.
 
 Deferred product exploration:
 

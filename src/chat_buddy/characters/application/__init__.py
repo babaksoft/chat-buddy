@@ -87,6 +87,7 @@ from chat_buddy.characters.application.storyline_fork_service import (
     StorylineForkService,
 )
 from chat_buddy.characters.application.storyline_service import StorylineService
+from chat_buddy.characters.application.timeline_day_service import TimelineDayService
 from chat_buddy.characters.application.timeline_service import TimelineService
 
 __all__ = [
@@ -133,6 +134,7 @@ __all__ = [
     "StorylineService",
     "StrictBaselineEvolutionThresholdPolicy",
     "TimelineCalendarPolicy",
+    "TimelineDayService",
     "TimelineService",
     "decide_branch_mode",
     "default_response_style",

@@ -302,7 +302,7 @@ setup, placeholder days, or effects on other continuity modes.
 
 ### Slice 6 — Create days atomically and close them deterministically
 
-Status: Pending
+Status: Complete
 
 Build one calendar orchestration service around the injected clock. On every
 write-capable Timeline operation it must:

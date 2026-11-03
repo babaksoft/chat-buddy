@@ -482,12 +482,14 @@ class DayReservationStatus(StrEnum):
     """Explicit outcomes of an atomic first-send reservation."""
 
     RESERVED = "reserved"
+    REUSED_OPEN_DAY = "reused_open_day"
     STALE_REVISION = "stale_revision"
     STALE_LEAF = "stale_leaf"
     DUPLICATE_DATE = "duplicate_date"
     DAY_CLOSED = "day_closed"
     OPEN_ATTEMPT = "open_attempt"
     ARCHIVED = "archived"
+    CLOCK_MOVED_BACKWARD = "clock_moved_backward"
 
 
 class DayReservationResult(BaseModel):
@@ -497,7 +499,7 @@ class DayReservationResult(BaseModel):
         status:
             Stable reservation outcome.
         day:
-            Newly reserved day on success.
+            Newly reserved or already open day on success.
         user_message:
             First committed user message on success.
         attempt:
@@ -530,7 +532,16 @@ class DayReservationResult(BaseModel):
         )
         if self.status == DayReservationStatus.RESERVED and not all(present):
             raise ValueError("A reserved day requires its message and attempt")
-        if self.status != DayReservationStatus.RESERVED and any(present):
+        if self.status == DayReservationStatus.REUSED_OPEN_DAY and present != (
+            True,
+            False,
+            False,
+        ):
+            raise ValueError("A reused open day cannot carry a new message or attempt")
+        if self.status not in {
+            DayReservationStatus.RESERVED,
+            DayReservationStatus.REUSED_OPEN_DAY,
+        } and any(present):
             raise ValueError("A failed reservation cannot expose partial writes")
         return self
 

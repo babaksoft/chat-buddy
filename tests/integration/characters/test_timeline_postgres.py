@@ -6,11 +6,14 @@ from uuid import uuid4
 
 import pytest
 from alembic import command
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from chat_buddy.characters.application import resolve_starting_relationship
+from chat_buddy.characters.application import (
+    TimelineDayService,
+    resolve_starting_relationship,
+)
 from chat_buddy.characters.domain import (
     DayBoundary,
     DayReservationStatus,
@@ -20,7 +23,13 @@ from chat_buddy.characters.domain import (
     TimelineStartResult,
     TimelineStartStatus,
 )
+from chat_buddy.characters.infrastructure.db.models import (
+    GenerationAttemptModel,
+    MessageModel,
+    TimelineDayModel,
+)
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbConversationRepository,
     DbTimelineDayRepository,
     DbTimelineRepository,
 )
@@ -28,6 +37,7 @@ from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
 )
+from tests.integration.characters.test_timeline_day_service import MutableClock
 from tests.integration.characters.test_timeline_repositories import (
     _generation,
     _request,
@@ -182,6 +192,77 @@ def test_archive_and_first_send_serialize_on_timeline_owner(
         (TimelineRevisionStatus.UPDATED, DayReservationStatus.ARCHIVED),
         (TimelineRevisionStatus.STALE_REVISION, DayReservationStatus.RESERVED),
     }
+
+
+def test_two_first_sends_create_one_atomic_day(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Serialize concurrent first sends without duplicate partial records.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    request = _request(factory)
+    started = DbTimelineRepository(factory).start(
+        request, resolve_starting_relationship(request.relationship)
+    )
+    assert started.timeline is not None
+    timeline = started.timeline
+    clock = MutableClock(datetime(2026, 11, 3, 8, tzinfo=UTC))
+
+    def reserve(content: str) -> DayReservationStatus:
+        """Reserve one racing first interaction.
+
+        Args:
+            content:
+                Distinct submitted input.
+
+        Returns:
+            Stable reservation outcome.
+        """
+
+        service = TimelineDayService(
+            DbTimelineRepository(factory),
+            DbTimelineDayRepository(factory),
+            DbConversationRepository(factory),
+            clock,
+        )
+        return service.reserve(
+            timeline.identity_id,
+            timeline.persona_id,
+            timeline.id,
+            SubmittedInput(content=content),
+            _generation(),
+        ).status
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = tuple(
+            future.result()
+            for future in (
+                executor.submit(reserve, "First racing send"),
+                executor.submit(reserve, "Second racing send"),
+            )
+        )
+
+    assert outcomes.count(DayReservationStatus.RESERVED) == 1
+    assert set(outcomes) <= {
+        DayReservationStatus.RESERVED,
+        DayReservationStatus.STALE_REVISION,
+        DayReservationStatus.DUPLICATE_DATE,
+        DayReservationStatus.REUSED_OPEN_DAY,
+    }
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(TimelineDayModel)) == 1
+        assert session.scalar(select(func.count()).select_from(MessageModel)) == 1
+        assert (
+            session.scalar(select(func.count()).select_from(GenerationAttemptModel))
+            == 1
+        )
 
 
 def _insert_stage_seven_continuity(engine: Engine) -> None:

@@ -370,9 +370,7 @@ class DbTimelineDayRepository:
             session.flush()
             return DayClosureResult(
                 status=(
-                    DayClosureStatus.CLOSURE_RACE
-                    if raced
-                    else DayClosureStatus.CLOSED
+                    DayClosureStatus.CLOSURE_RACE if raced else DayClosureStatus.CLOSED
                 ),
                 day=self._snapshot(day),
                 interrupted_attempt_id=interrupted_id,

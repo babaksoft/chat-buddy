@@ -174,9 +174,9 @@ class DbConversationRepository:
                 selection_guard_id=user_message_id,
                 submitted_input=content,
                 generation=generation.model_dump(mode="json"),
-                response_style=self._response_style(
-                    session, scope, row
-                ).model_dump(mode="json"),
+                response_style=self._response_style(session, scope, row).model_dump(
+                    mode="json"
+                ),
                 status="pending",
                 incomplete_output="",
                 created_at=now,
@@ -254,9 +254,9 @@ class DbConversationRepository:
                 selection_guard_id=target.id,
                 submitted_input=parent.content,
                 generation=generation.model_dump(mode="json"),
-                response_style=self._response_style(
-                    session, scope, row
-                ).model_dump(mode="json"),
+                response_style=self._response_style(session, scope, row).model_dump(
+                    mode="json"
+                ),
                 status="pending",
                 incomplete_output="",
                 created_at=now,

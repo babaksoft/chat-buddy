@@ -447,6 +447,27 @@ def test_failed_day_reservation_cannot_expose_partial_writes() -> None:
         )
 
 
+def test_reused_open_day_exposes_no_uncommitted_input_or_attempt() -> None:
+    """Return an existing day without pretending its new input was committed."""
+
+    day = _day(_timeline(), 1, date(2026, 11, 2), closed=False)
+    reused = DayReservationResult(
+        status=DayReservationStatus.REUSED_OPEN_DAY,
+        day=day,
+        user_message=None,
+        attempt=None,
+    )
+
+    assert reused.day == day
+    with pytest.raises(ValidationError, match="reused open day"):
+        DayReservationResult(
+            status=DayReservationStatus.REUSED_OPEN_DAY,
+            day=None,
+            user_message=None,
+            attempt=None,
+        )
+
+
 def test_closure_result_aligns_status_with_persisted_state() -> None:
     """Expose closure races while keeping day state self-consistent."""
 
