@@ -15,8 +15,10 @@ from chat_buddy.characters.application import (
     resolve_starting_relationship,
 )
 from chat_buddy.characters.domain import (
+    ArchivedContinuityError,
     DayBoundary,
     DayReservationStatus,
+    Message,
     NarrativePlacement,
     ReserveTimelineDay,
     ResponseLength,
@@ -198,6 +200,77 @@ def test_archive_and_first_send_serialize_on_timeline_owner(
         (TimelineRevisionStatus.UPDATED, DayReservationStatus.ARCHIVED),
         (TimelineRevisionStatus.STALE_REVISION, DayReservationStatus.RESERVED),
     }
+
+
+def test_archive_and_timeline_completion_serialize_without_deadlock(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Allow only a completion ordered before archive to commit a persona node.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    request = _request(factory)
+    timelines = DbTimelineRepository(factory)
+    started = timelines.start(
+        request, resolve_starting_relationship(request.relationship)
+    )
+    assert started.timeline is not None
+    timeline = started.timeline
+    reserved = TimelineDayService(
+        timelines,
+        DbTimelineDayRepository(factory),
+        DbConversationRepository(factory),
+        MutableClock(datetime(2026, 11, 3, 8, tzinfo=UTC)),
+    ).reserve(
+        timeline.identity_id,
+        timeline.persona_id,
+        timeline.id,
+        SubmittedInput(content="Race completion with archive"),
+        _generation(),
+    )
+    assert reserved.day is not None
+    assert reserved.attempt is not None
+    scope = reserved.day.scope
+    attempt_id = reserved.attempt.id
+    repository = DbConversationRepository(factory)
+    repository.claim(scope, attempt_id)
+    repository.append(scope, attempt_id, "Durable response")
+    current = timelines.get(timeline.identity_id, timeline.persona_id, timeline.id)
+
+    def complete() -> Message | ArchivedContinuityError:
+        """Complete the response or return the serialized archive loss.
+
+        Returns:
+            Committed persona message or typed archive failure.
+        """
+
+        try:
+            return DbConversationRepository(factory).complete(scope, attempt_id)
+        except ArchivedContinuityError as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        complete_future = executor.submit(complete)
+        archive_future = executor.submit(
+            DbTimelineRepository(factory).archive,
+            timeline.identity_id,
+            timeline.persona_id,
+            timeline.id,
+            current.revision,
+        )
+        completed = complete_future.result(timeout=10)
+        archived = archive_future.result(timeout=10)
+
+    assert archived.status == TimelineRevisionStatus.UPDATED
+    with factory() as session:
+        message_count = session.scalar(select(func.count()).select_from(MessageModel))
+    assert message_count == (2 if isinstance(completed, Message) else 1)
 
 
 def test_style_update_and_first_send_snapshot_one_complete_revision(

@@ -14,6 +14,7 @@ from chat_buddy.characters.application.context_service import (
     OngoingContextBudgeter,
     OngoingContextEligibility,
     StorylineContextBudgeter,
+    TimelineContextBudgeter,
 )
 from chat_buddy.characters.application.response_style import ResponseStyleService
 from chat_buddy.characters.application.rolling_summary_service import (
@@ -21,6 +22,9 @@ from chat_buddy.characters.application.rolling_summary_service import (
 )
 from chat_buddy.characters.application.storyline_conversation import (
     StorylineConversationAdapter,
+)
+from chat_buddy.characters.application.timeline_conversation import (
+    TimelineConversationAdapter,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
@@ -62,6 +66,7 @@ from chat_buddy.characters.domain import (
     Storyline,
     SubmittedInput,
     SummaryRepository,
+    Timeline,
     TokenCounter,
 )
 
@@ -175,6 +180,7 @@ class ConversationService:
         response_styles: ResponseStyleService,
         branch_mode_facts: BranchModeFactsResolver | None = None,
         storyline_adapter: StorylineConversationAdapter | None = None,
+        timeline_adapter: TimelineConversationAdapter | None = None,
         memory_extraction: _StorylineExtractionProcessor | None = None,
         response_memories: _StorylineResponseMemoryProvider | None = None,
         evolution: _EvolutionEffectProcessor | None = None,
@@ -202,6 +208,8 @@ class ConversationService:
                 Optional future-mode fact adapter; unavailable facts fail closed.
             storyline_adapter:
                 Optional exact Storyline scene ownership and policy adapter.
+            timeline_adapter:
+                Optional exact Timeline day ownership and calendar-policy adapter.
             memory_extraction:
                 Optional post-completion Storyline memory workflow.
             response_memories:
@@ -221,6 +229,7 @@ class ConversationService:
         self._models = models
         self._response_styles = response_styles
         self._storyline_adapter = storyline_adapter
+        self._timeline_adapter = timeline_adapter
         self._memory_extraction = memory_extraction
         self._response_memories = response_memories
         self._evolution = evolution
@@ -232,6 +241,7 @@ class ConversationService:
         self._eligibility = OngoingContextEligibility()
         self._budgeter = OngoingContextBudgeter()
         self._storyline_budgeter = StorylineContextBudgeter()
+        self._timeline_budgeter = TimelineContextBudgeter()
         self._summaries = RollingSummaryService(summaries, models)
 
     def response_models(self) -> tuple[ModelDescriptor, ...]:
@@ -295,6 +305,11 @@ class ConversationService:
             if storyline is None:
                 raise ValueError("Storyline target resolution failed")
             lifecycle = storyline.lifecycle
+        elif target.mode == ContinuityMode.TIMELINE:
+            if self._timeline_adapter is None:
+                raise ValueError("Timeline conversation support is not configured")
+            timeline, _ = self._timeline_adapter.inspect(target, history)
+            lifecycle = timeline.lifecycle
         else:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -638,6 +653,7 @@ class ConversationService:
             for chunk in output:
                 self._conversations.append(scope, attempt_id, chunk)
                 yield chunk
+            self._validate_write_target(target, self._conversations.history(scope))
             message = self._conversations.complete(scope, attempt_id)
             completed = True
             self._rebuild_evolution(target, EvolutionRebuildReason.RESPONSE_COMPLETION)
@@ -653,7 +669,7 @@ class ConversationService:
                         "outcome for persona message %s.",
                         message.id,
                     )
-            if self._evolution is not None:
+            if self._evolution is not None and target.mode != ContinuityMode.TIMELINE:
                 try:
                     self._evolution.process(target, message.id)
                 except Exception:
@@ -865,14 +881,23 @@ class ConversationService:
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
         current = self._summaries.current(scope, summary_path_leaf_id)
-        projections = self._response_projections(scope, history)
+        projections = (
+            None
+            if target.mode == ContinuityMode.TIMELINE
+            else self._response_projections(scope, history)
+        )
         storyline: Storyline | None = None
         scene: Scene | None = None
+        timeline: Timeline | None = None
         continuity = None
         if target.mode == ContinuityMode.STORYLINE:
             storyline, scene = self._validate_target(target, history, writable=True)
             if storyline is None or scene is None:
                 raise ValueError("Storyline target resolution failed")
+        elif target.mode == ContinuityMode.TIMELINE:
+            if self._timeline_adapter is None:
+                raise ValueError("Timeline conversation support is not configured")
+            timeline, _ = self._timeline_adapter.require_writable(target, history)
         else:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -901,6 +926,16 @@ class ConversationService:
                     counter,
                     memories,
                     projections,
+                )
+            elif timeline is not None:
+                selection = self._timeline_budgeter.assemble(
+                    persona,
+                    identity,
+                    timeline,
+                    response_style,
+                    eligible,
+                    generation,
+                    counter,
                 )
             else:
                 if continuity is None:
@@ -998,11 +1033,19 @@ class ConversationService:
             if writable and continuity.lifecycle != "active":
                 raise ArchivedContinuityError("Archived continuity is read-only")
             return None, None
-        if self._storyline_adapter is None:
-            raise ValueError("Storyline conversation support is not configured")
+        if target.mode == ContinuityMode.STORYLINE:
+            if self._storyline_adapter is None:
+                raise ValueError("Storyline conversation support is not configured")
+            if writable:
+                return self._storyline_adapter.require_writable(target, history)
+            return self._storyline_adapter.inspect(target, history)
+        if self._timeline_adapter is None:
+            raise ValueError("Timeline conversation support is not configured")
         if writable:
-            return self._storyline_adapter.require_writable(target, history)
-        return self._storyline_adapter.inspect(target, history)
+            self._timeline_adapter.require_writable(target, history)
+        else:
+            self._timeline_adapter.inspect(target, history)
+        return None, None
 
     def _validate_write_target(
         self,

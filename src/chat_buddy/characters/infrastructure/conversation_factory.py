@@ -20,8 +20,10 @@ from chat_buddy.characters.application import (
     StorylineMemoryExtractionService,
     StorylineResponseMemoryService,
     StrictBaselineEvolutionThresholdPolicy,
+    TimelineConversationAdapter,
 )
 from chat_buddy.characters.domain import (
+    Clock,
     EvolutionConfiguration,
     EvolutionSnapshotBudget,
     ExtractionBudget,
@@ -29,6 +31,7 @@ from chat_buddy.characters.domain import (
     ResponseMemoryBudget,
     StrategyIdentity,
 )
+from chat_buddy.characters.infrastructure.clock import SystemUtcClock
 from chat_buddy.characters.infrastructure.evolution_observability import (
     default_evolution_observer,
 )
@@ -44,12 +47,15 @@ _EVOLUTION_FIXED_OVERHEAD_TOKENS = 512
 
 def create_conversation_service(
     session_factory: sessionmaker[Session] | None = None,
+    clock: Clock | None = None,
 ) -> ConversationService:
     """Compose repositories and configured local providers only on explicit use.
 
     Args:
         session_factory:
             Optional isolated Characters sessions; otherwise use area settings.
+        clock:
+            Optional injected Timeline clock; otherwise use aware system UTC.
 
     Returns:
         Ready Ongoing application service without initializing Chat.
@@ -68,6 +74,8 @@ def create_conversation_service(
         DbStorylineMemoryRepository,
         DbStorylineRepository,
         DbSummaryRepository,
+        DbTimelineDayRepository,
+        DbTimelineRepository,
     )
 
     if session_factory is None:
@@ -75,6 +83,8 @@ def create_conversation_service(
 
     storylines = DbStorylineRepository(session_factory)
     scenes = DbSceneRepository(session_factory)
+    timelines = DbTimelineRepository(session_factory)
+    timeline_days = DbTimelineDayRepository(session_factory)
     conversations = DbConversationRepository(session_factory)
     identities = DbIdentityRepository(session_factory)
     personas = DbPersonaRepository(session_factory)
@@ -184,6 +194,12 @@ def create_conversation_service(
         models,
         ResponseStyleService(DbResponseStyleRepository(session_factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
+        timeline_adapter=TimelineConversationAdapter(
+            timelines,
+            timeline_days,
+            conversations,
+            clock or SystemUtcClock(),
+        ),
         memory_extraction=extraction,
         response_memories=response_memories,
         evolution=evolution,

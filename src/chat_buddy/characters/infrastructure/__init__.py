@@ -1,5 +1,6 @@
 """Infrastructure adapters for the Characters area."""
 
+from chat_buddy.characters.infrastructure.clock import SystemUtcClock
 from chat_buddy.characters.infrastructure.conversation_factory import (
     create_conversation_service,
 )
@@ -22,6 +23,7 @@ from chat_buddy.characters.infrastructure.profile_factory import (
 
 __all__ = [
     "LoggingMetricsEvolutionObserver",
+    "SystemUtcClock",
     "create_conversation_service",
     "create_evolution_inspection_service",
     "create_identity_service",

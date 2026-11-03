@@ -17,6 +17,7 @@ from chat_buddy.characters.prompts.storyline import (
     assemble_storyline_memory_blocks,
     assemble_storyline_prompt,
 )
+from chat_buddy.characters.prompts.timeline import assemble_timeline_prompt
 
 __all__ = [
     "EVOLUTION_PROMPT_SCHEMA_VERSION",
@@ -28,4 +29,5 @@ __all__ = [
     "assemble_storyline_memory_blocks",
     "assemble_storyline_prompt",
     "assemble_summary_prompt",
+    "assemble_timeline_prompt",
 ]

@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 8 — Converse and summarize within an open Timeline day.
+Next delivery focus: Stage 8, Slice 9 — Add branch- and time-aware Timeline memory.
 
 Deferred product exploration:
 

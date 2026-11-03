@@ -21,6 +21,8 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
     SceneModel,
     SummaryRevisionModel,
+    TimelineDayModel,
+    TimelineModel,
 )
 
 
@@ -207,14 +209,6 @@ class DbSummaryRepository:
                 If a write targets an archived continuity.
         """
 
-        statement = select(ContinuityModel).where(
-            ContinuityModel.id == scope.continuity_id,
-            ContinuityModel.identity_id == scope.identity_id,
-            ContinuityModel.persona_id == scope.persona_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        continuity = session.scalar(statement)
         conversation = session.scalar(
             select(ConversationModel).where(
                 ConversationModel.id == scope.conversation_id,
@@ -223,11 +217,36 @@ class DbSummaryRepository:
                 ConversationModel.persona_id == scope.persona_id,
             )
         )
-
-        if continuity is None or conversation is None:
+        if conversation is None:
             raise ConversationNotFoundError("Summary ownership does not match.")
+
+        if lock and conversation.mode == "timeline":
+            timeline = session.scalar(
+                select(TimelineModel)
+                .where(
+                    TimelineModel.continuity_id == scope.continuity_id,
+                    TimelineModel.identity_id == scope.identity_id,
+                    TimelineModel.persona_id == scope.persona_id,
+                )
+                .with_for_update()
+            )
+            if timeline is None:
+                raise ConversationNotFoundError("Summary ownership does not match.")
+
+        statement = select(ContinuityModel).where(
+            ContinuityModel.id == scope.continuity_id,
+            ContinuityModel.identity_id == scope.identity_id,
+            ContinuityModel.persona_id == scope.persona_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        continuity = session.scalar(statement)
+        if continuity is None:
+            raise ConversationNotFoundError("Summary ownership does not match.")
+
         if writable and continuity.lifecycle != "active":
             raise ArchivedContinuityError("Archived continuity is read-only.")
+
         if writable and conversation.mode == "storyline":
             scene_position = session.scalar(
                 select(SceneModel.position)
@@ -245,6 +264,34 @@ class DbSummaryRepository:
             if scene_position is None or scene_position != latest_position:
                 raise SummaryConflictError(
                     "A later Storyline scene prevents summary writes."
+                )
+
+        if writable and conversation.mode == "timeline":
+            owner = session.scalar(
+                select(TimelineModel)
+                .where(TimelineModel.continuity_id == scope.continuity_id)
+                .with_for_update()
+            )
+            day = session.scalar(
+                select(TimelineDayModel)
+                .where(
+                    TimelineDayModel.conversation_id == scope.conversation_id,
+                    TimelineDayModel.continuity_id == scope.continuity_id,
+                    TimelineDayModel.identity_id == scope.identity_id,
+                    TimelineDayModel.persona_id == scope.persona_id,
+                )
+                .with_for_update()
+            )
+            latest_position = session.scalar(
+                select(func.max(TimelineDayModel.position)).where(
+                    TimelineDayModel.continuity_id == scope.continuity_id
+                )
+            )
+            if owner is None or day is None or latest_position is None:
+                raise SummaryConflictError("Timeline day ownership changed.")
+            if day.position != latest_position or day.closed_at is not None:
+                raise SummaryConflictError(
+                    "Closed or historical Timeline days prevent summary writes."
                 )
 
     @staticmethod

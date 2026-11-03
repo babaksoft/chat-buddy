@@ -80,6 +80,10 @@ class HistoricalSceneReadOnlyError(ValueError):
     """A nonlatest Storyline scene cannot accept ordinary conversation writes."""
 
 
+class TimelineDayReadOnlyError(ValueError):
+    """A closed or nonlatest Timeline day cannot accept conversation writes."""
+
+
 class ModelResolutionError(ValueError):
     """The provider/model selection is not configured."""
 

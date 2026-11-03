@@ -357,7 +357,7 @@ snapshot.
 
 ### Slice 8 — Converse and summarize within an open Timeline day
 
-Status: Pending
+Status: Complete
 
 Extend Characters generation and branch-addressable summary services to Timeline
 day targets. Reuse the durable pending/streaming/completed/failed/interrupted

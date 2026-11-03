@@ -92,6 +92,7 @@ from chat_buddy.characters.domain.errors import (
     StaleStorylineError,
     StorylineForkConflictError,
     SummaryConflictError,
+    TimelineDayReadOnlyError,
     UnsupportedContinuityModeError,
     UnsupportedGenerationError,
 )
@@ -510,6 +511,7 @@ __all__ = [
     "SupersedeMemoryCommand",
     "Timeline",
     "TimelineDay",
+    "TimelineDayReadOnlyError",
     "TimelineDayRepository",
     "TimelineGraphActionAvailability",
     "TimelineGraphActionUnavailableReason",

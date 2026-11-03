@@ -48,6 +48,8 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
     ResponseStyleSettingsModel,
     SceneModel,
+    TimelineDayModel,
+    TimelineModel,
 )
 
 
@@ -80,7 +82,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_storyline_scene(session, scope, row)
+            self._writable_mode_owner(session, scope, row)
             row.generation_settings = settings.model_dump(mode="json")
 
     def begin(
@@ -114,7 +116,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            scene = self._writable_storyline_scene(session, scope, row)
+            scene = self._writable_mode_owner(session, scope, row)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -217,7 +219,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_storyline_scene(session, scope, row)
+            self._writable_mode_owner(session, scope, row)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -279,7 +281,8 @@ class DbConversationRepository:
         """
 
         with self._factory() as session, session.begin():
-            self._owned(session, scope, writable=True)
+            row = self._owned(session, scope, writable=True)
+            self._writable_mode_owner(session, scope, row)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "pending")
             attempt.status = "streaming"
@@ -300,7 +303,8 @@ class DbConversationRepository:
         """
 
         with self._factory() as session, session.begin():
-            self._owned(session, scope, writable=True)
+            row = self._owned(session, scope, writable=True)
+            self._writable_mode_owner(session, scope, row)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
             attempt.incomplete_output += chunk
@@ -321,6 +325,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
+            self._writable_mode_owner(session, scope, row)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
             if row.selected_leaf_id != attempt.selection_guard_id:
@@ -366,6 +371,67 @@ class DbConversationRepository:
             session.flush()
             path = self._selected_path(session, scope, row)
             return self._message(path.messages[-1], len(path.messages))
+
+    @classmethod
+    def _writable_mode_owner(
+        cls,
+        session: Session,
+        scope: ConversationScope,
+        conversation: ConversationModel,
+    ) -> SceneModel | None:
+        """Lock and require any mode-specific owner to remain writable.
+
+        Args:
+            session:
+                Current write transaction.
+            scope:
+                Complete conversation ownership.
+            conversation:
+                Locked owned conversation.
+
+        Returns:
+            Storyline scene when applicable, otherwise None.
+
+        Raises:
+            AttemptConflictError:
+                If the mode owner is closed, historical, or contradictory.
+        """
+
+        scene = cls._writable_storyline_scene(session, scope, conversation)
+        if conversation.mode != "timeline":
+            return scene
+
+        owner = session.scalar(
+            select(TimelineModel)
+            .where(
+                TimelineModel.continuity_id == scope.continuity_id,
+                TimelineModel.identity_id == scope.identity_id,
+                TimelineModel.persona_id == scope.persona_id,
+            )
+            .with_for_update()
+        )
+        day = session.scalar(
+            select(TimelineDayModel)
+            .where(
+                TimelineDayModel.conversation_id == scope.conversation_id,
+                TimelineDayModel.continuity_id == scope.continuity_id,
+                TimelineDayModel.identity_id == scope.identity_id,
+                TimelineDayModel.persona_id == scope.persona_id,
+            )
+            .with_for_update()
+        )
+        latest_position = session.scalar(
+            select(func.max(TimelineDayModel.position)).where(
+                TimelineDayModel.continuity_id == scope.continuity_id
+            )
+        )
+        if owner is None or day is None or latest_position is None:
+            raise AttemptConflictError("Timeline day ownership changed")
+        if day.position != latest_position:
+            raise AttemptConflictError("A later Timeline day makes this day read-only")
+        if day.closed_at is not None:
+            raise AttemptConflictError("The Timeline day is closed")
+        return None
 
     @classmethod
     def _writable_storyline_scene(
@@ -644,7 +710,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_storyline_scene(session, scope, row)
+            self._writable_mode_owner(session, scope, row)
             if row.selected_leaf_id != expected_selected_leaf_id:
                 raise StaleSelectionError("Selected conversation path changed")
 
@@ -692,7 +758,7 @@ class DbConversationRepository:
         scope = request.scope
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_storyline_scene(session, scope, row)
+            self._writable_mode_owner(session, scope, row)
             if row.selected_leaf_id != request.expected_selected_leaf_id:
                 raise StaleSelectionError("Selected conversation path changed")
             active_attempt = session.scalar(
@@ -796,6 +862,30 @@ class DbConversationRepository:
                 If a write targets an archive.
         """
 
+        row = session.scalar(
+            select(ConversationModel).where(
+                ConversationModel.id == scope.conversation_id,
+                ConversationModel.continuity_id == scope.continuity_id,
+                ConversationModel.identity_id == scope.identity_id,
+                ConversationModel.persona_id == scope.persona_id,
+            )
+        )
+        if row is None:
+            raise ConversationNotFoundError("Conversation ownership does not match")
+
+        if row.mode == "timeline":
+            timeline = session.scalar(
+                select(TimelineModel)
+                .where(
+                    TimelineModel.continuity_id == scope.continuity_id,
+                    TimelineModel.identity_id == scope.identity_id,
+                    TimelineModel.persona_id == scope.persona_id,
+                )
+                .with_for_update()
+            )
+            if timeline is None:
+                raise ConversationNotFoundError("Conversation ownership does not match")
+
         continuity = session.scalar(
             select(ContinuityModel)
             .where(
@@ -806,17 +896,6 @@ class DbConversationRepository:
             .with_for_update()
         )
         if continuity is None:
-            raise ConversationNotFoundError("Conversation ownership does not match")
-
-        row = session.scalar(
-            select(ConversationModel).where(
-                ConversationModel.id == scope.conversation_id,
-                ConversationModel.continuity_id == scope.continuity_id,
-                ConversationModel.identity_id == scope.identity_id,
-                ConversationModel.persona_id == scope.persona_id,
-            )
-        )
-        if row is None:
             raise ConversationNotFoundError("Conversation ownership does not match")
 
         if writable and continuity.lifecycle != "active":
