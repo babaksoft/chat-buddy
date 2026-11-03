@@ -1,6 +1,8 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 10 — Add Timeline relationship and persona evolution.
+Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 1 —
+record the Entry decision and complete the structural inventory. This refactor is
+a prerequisite for Stage 8, Slice 10.
 
 Deferred product exploration:
 

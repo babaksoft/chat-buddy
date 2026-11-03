@@ -152,7 +152,7 @@ the same cap.
 | 7 | Resolve, update, and snapshot effective response style | 2, 4–6 | Existing style and attempt records |
 | 8 | Converse and summarize within an open Timeline day | 6–7 | Existing graph/summary records |
 | 9 | Add branch- and time-aware Timeline memory | 6, 8 | Existing memory records or additive migration if required by Slice 1 |
-| 10 | Add Timeline relationship and persona evolution | 6, 8–9 | Existing evolution records |
+| 10 | Add Timeline relationship and persona evolution | 6, 8–9, Continuity Entry refactor | Existing evolution records |
 | 11 | Assemble deterministic Timeline response context | 7–10 | Existing repository operations |
 | 12 | Enforce latest-open-day graph actions and closed-history guards | 6, 8–11 | Existing graph and day records |
 | 13 | Ship Timeline creation, navigation, day, and archive UI | 5–6, 8 | Existing Timeline/day records |
@@ -414,6 +414,11 @@ and mode-isolated.
 ### Slice 10 — Add Timeline relationship and persona evolution
 
 Status: Pending
+
+Prerequisite: complete the sliced
+[Continuity Entry structural refactor](CONTINUITY_ENTRY_REFACTOR_PLAN.md). Slice 10
+must build Timeline evolution on Entry-backed provenance rather than adding a
+second Scene/Day ownership shape.
 
 Make Timeline an eligible mode for the Stage 7 selector, snapshot, strategy,
 validation, idempotent effect, event, projection, correction, and replay services.
