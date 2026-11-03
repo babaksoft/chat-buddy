@@ -1,4 +1,4 @@
-"""Context selection and structured-delta contracts for Storyline memory."""
+"""Context selection and structured-delta contracts for continuity memory."""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ from chat_buddy.characters.domain.errors import (
     ProtectedMemoryCorrectionError,
 )
 from chat_buddy.characters.domain.memory import (
+    DayPosition,
     ExtractionProvenance,
     MemoryAuthorship,
     MemoryEvidence,
+    MemoryPosition,
     MemoryRevisionState,
     ScenePosition,
     StorylineMemory,
@@ -66,7 +68,9 @@ class MemoryExtractionContext(BaseModel):
         scope:
             Complete source scene conversation ownership.
         scene:
-            Source scene temporal position.
+            Source scene temporal position for Storyline extraction.
+        day:
+            Source day temporal position for Timeline extraction.
         identity_label:
             Identity label needed for reference resolution.
         persona_label:
@@ -74,7 +78,7 @@ class MemoryExtractionContext(BaseModel):
         starting_relationship:
             Continuity-owned starting relationship.
         scene_setup:
-            Frozen source-scene setup.
+            Frozen source-scene setup, absent for Timeline.
         summary:
             Compatible selected-branch summary, when present.
         recent_turns:
@@ -88,7 +92,12 @@ class MemoryExtractionContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene: ScenePosition = Field(description="Source scene position.")
+    scene: ScenePosition | None = Field(
+        default=None, description="Source Storyline scene position."
+    )
+    day: DayPosition | None = Field(
+        default=None, description="Source Timeline day position."
+    )
     identity_label: str = Field(
         min_length=1, max_length=128, description="Identity reference label."
     )
@@ -98,8 +107,11 @@ class MemoryExtractionContext(BaseModel):
     starting_relationship: StartingRelationship = Field(
         description="Continuity starting relationship."
     )
-    scene_setup: str = Field(
-        min_length=1, max_length=8192, description="Frozen scene setup."
+    scene_setup: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+        description="Frozen Storyline scene setup.",
     )
     summary: SummaryRevision | None = Field(
         description="Compatible selected-branch summary."
@@ -124,6 +136,13 @@ class MemoryExtractionContext(BaseModel):
                 If any context block is foreign, ineligible, or unordered.
         """
 
+        if (self.scene is None) == (self.day is None):
+            raise ValueError("Extraction context requires exactly one temporal owner")
+        if self.scene is None and self.scene_setup is not None:
+            raise ValueError("Timeline extraction cannot contain Storyline scene setup")
+        if self.scene is not None and self.scene_setup is None:
+            raise ValueError("Storyline extraction requires frozen scene setup")
+
         turns = (*self.recent_turns, self.source_turn)
         if any(turn.user.scope != self.scope for turn in turns):
             raise ValueError("Extraction turns must belong to the source scope")
@@ -141,10 +160,15 @@ class MemoryExtractionContext(BaseModel):
             for memory in self.eligible_memories
         ):
             raise ValueError("Extraction memories must belong to the Storyline")
+
+        temporal_owner = self.scene or self.day
+        if temporal_owner is None:
+            raise ValueError("Extraction context requires a temporal owner")
+        target_position = temporal_owner.position
         if any(
             memory.current.state != MemoryRevisionState.ACTIVE
-            or memory.current.source.occurrence.position > self.scene.position
-            or memory.current.source.learned.position > self.scene.position
+            or memory.current.source.occurrence.position > target_position
+            or memory.current.source.learned.position > target_position
             for memory in self.eligible_memories
         ):
             raise ValueError("Extraction context contains an ineligible memory")
@@ -311,7 +335,7 @@ class CreateMemoryCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Proposed assertion."
     )
-    occurrence: ScenePosition = Field(description="Asserted temporal position.")
+    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
 
@@ -377,7 +401,7 @@ class SupersedeMemoryCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Replacement assertion."
     )
-    occurrence: ScenePosition = Field(description="Asserted temporal position.")
+    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
 
@@ -416,7 +440,7 @@ class RecordMemoryConflictCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Conflicting assertion."
     )
-    occurrence: ScenePosition = Field(description="Asserted temporal position.")
+    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
     @model_validator(mode="after")

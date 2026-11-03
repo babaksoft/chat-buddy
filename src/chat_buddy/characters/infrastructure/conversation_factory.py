@@ -9,6 +9,7 @@ from chat_buddy.characters.application import (
     BaselineEvolutionStrategy,
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
+    BaselineTimelineMemoryContextSelector,
     ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
     EvolutionEffectService,
@@ -21,6 +22,9 @@ from chat_buddy.characters.application import (
     StorylineResponseMemoryService,
     StrictBaselineEvolutionThresholdPolicy,
     TimelineConversationAdapter,
+    TimelineExtractionContextService,
+    TimelineMemoryEligibility,
+    TimelineMemoryExtractionService,
 )
 from chat_buddy.characters.domain import (
     Clock,
@@ -112,6 +116,7 @@ def create_conversation_service(
         ResponseMemoryBudget(input_tokens=_RESPONSE_MEMORY_BUDGET_TOKENS),
     )
     extraction = None
+    timeline_extraction = None
     if any("memory_extraction" in model.capabilities for model in models.list_models()):
         extraction_generation = models.resolve_default("memory_extraction")
         extraction_contexts = StorylineExtractionContextService(
@@ -129,6 +134,35 @@ def create_conversation_service(
         )
         extraction = StorylineMemoryExtractionService(
             extraction_contexts,
+            ContextualMemoryDeltaExtractor(
+                models.memory_extraction_gateway(extraction_generation.model.provider),
+                extraction_generation,
+            ),
+            memories,
+            effects,
+            ExtractionBudget(
+                input_tokens=extraction_generation.input_tokens,
+                fixed_overhead_tokens=min(
+                    _EXTRACTION_FIXED_OVERHEAD_TOKENS,
+                    extraction_generation.input_tokens - 1,
+                ),
+            ),
+        )
+        timeline_extraction_contexts = TimelineExtractionContextService(
+            identities,
+            personas,
+            timelines,
+            timeline_days,
+            conversations,
+            summaries,
+            memories,
+            TimelineMemoryEligibility(),
+            BaselineTimelineMemoryContextSelector(
+                models.token_counter(extraction_generation.model.provider)
+            ),
+        )
+        timeline_extraction = TimelineMemoryExtractionService(
+            timeline_extraction_contexts,
             ContextualMemoryDeltaExtractor(
                 models.memory_extraction_gateway(extraction_generation.model.provider),
                 extraction_generation,
@@ -201,6 +235,7 @@ def create_conversation_service(
             clock or SystemUtcClock(),
         ),
         memory_extraction=extraction,
+        timeline_memory_extraction=timeline_extraction,
         response_memories=response_memories,
         evolution=evolution,
         evolution_projections=evolution_repository,

@@ -1155,6 +1155,29 @@ class MemoryExtractionRepository(Protocol):
 
         ...
 
+    def reserve_timeline(
+        self, scope: ConversationScope, day_id: UUID, source_persona_message_id: UUID
+    ) -> ExtractionEffect:
+        """Reserve or return the sole effect for a Timeline source message.
+
+        Args:
+            scope:
+                Complete source conversation ownership.
+            day_id:
+                Source represented-day identifier.
+            source_persona_message_id:
+                Complete selected turn checkpoint.
+
+        Returns:
+            Existing or newly reserved effect.
+
+        Raises:
+            ExtractionEffectConflictError:
+                If the source is not active, selected, complete, or eligible.
+        """
+
+        ...
+
     def apply(
         self,
         effect_id: UUID,
@@ -1218,6 +1241,10 @@ class MemoryExtractionRepository(Protocol):
         """
 
         ...
+
+
+ContinuityMemoryRepository = StorylineMemoryRepository
+TimelineMemoryRepository = StorylineMemoryRepository
 
 
 class ConversationGraphRepository(Protocol):

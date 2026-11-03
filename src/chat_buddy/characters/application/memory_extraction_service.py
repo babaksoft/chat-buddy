@@ -6,6 +6,7 @@ from uuid import UUID
 
 from chat_buddy.characters.application.memory_context import (
     StorylineExtractionContextService,
+    TimelineExtractionContextService,
 )
 from chat_buddy.characters.domain import (
     ContinuityMode,
@@ -35,6 +36,8 @@ from chat_buddy.characters.domain import (
 
 class StorylineMemoryExtractionService:
     """Turn one eligible completed Storyline response into one atomic effect."""
+
+    _contexts: StorylineExtractionContextService | TimelineExtractionContextService
 
     def __init__(
         self,
@@ -257,3 +260,84 @@ class StorylineMemoryExtractionService:
 
         subjects.pop(target.current.subject.casefold(), None)
         subjects[subject] = target.id
+
+
+class TimelineMemoryExtractionService(StorylineMemoryExtractionService):
+    """Turn one eligible completed Timeline response into one atomic effect."""
+
+    def __init__(
+        self,
+        contexts: TimelineExtractionContextService,
+        extractor: MemoryDeltaExtractor,
+        memories: StorylineMemoryRepository,
+        effects: MemoryExtractionRepository,
+        budget: ExtractionBudget,
+    ) -> None:
+        """Bind Timeline reads, interpretation, and transactional writes.
+
+        Args:
+            contexts:
+                Timeline contextual snapshot builder.
+            extractor:
+                Provider-backed proposal strategy without write authority.
+            memories:
+                Current lineage reader used for reconciliation.
+            effects:
+                Idempotent reservation and atomic delta repository.
+            budget:
+                Dedicated extraction input budget.
+        """
+
+        self._contexts = contexts
+        self._extractor = extractor
+        self._memories = memories
+        self._effects = effects
+        self._budget = budget
+
+    def process(
+        self, target: ConversationTarget, source_persona_message_id: UUID
+    ) -> ExtractionEffect:
+        """Extract and atomically apply memory for a completed Timeline turn.
+
+        Args:
+            target:
+                Exact Timeline day conversation.
+            source_persona_message_id:
+                Newly completed persona response.
+
+        Returns:
+            Existing or newly completed terminal extraction effect.
+
+        Raises:
+            UnsupportedContinuityModeError:
+                If the target is not a Timeline day.
+            ExtractionEffectConflictError:
+                If the source is no longer selected, complete, or owned.
+        """
+
+        if target.mode != ContinuityMode.TIMELINE or target.day_id is None:
+            raise UnsupportedContinuityModeError(
+                "Memory extraction requires a Timeline day target"
+            )
+
+        effect = self._effects.reserve_timeline(
+            target.scope, target.day_id, source_persona_message_id
+        )
+        if effect.state != ExtractionEffectState.RESERVED:
+            return effect
+
+        selection = self._contexts.build(
+            target, source_persona_message_id, self._budget
+        )
+        delta = self._extractor.extract(selection)
+        selection.validate_delta(delta)
+        provenance = self._extractor.provenance(selection)
+        self._validate_proposal(selection, delta, provenance)
+
+        try:
+            return self._effects.apply(effect.id, delta, provenance)
+        except ExtractionEffectConflictError:
+            current = self._effects.get_effect(target.scope, source_persona_message_id)
+            if current is not None and current.state != ExtractionEffectState.RESERVED:
+                return current
+            raise

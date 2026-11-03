@@ -112,15 +112,17 @@ class ScriptedDeltaExtractor:
         operation = self._operations.pop(0)
         self.selections.append(selection)
         provenance = self.provenance(selection)
+        scene = selection.context.scene
+        assert scene is not None
         evidence = MemoryEvidence(
             id=uuid4(),
             scope=selection.context.scope,
-            scene_id=selection.context.scene.scene_id,
+            scene_id=scene.scene_id,
             user_message_id=selection.context.source_turn.user.id,
             persona_message_id=selection.context.source_turn.persona.id,
             persona_checkpoint=selection.context.source_turn.persona.sequence,
-            occurrence=selection.context.scene,
-            learned=selection.context.scene,
+            occurrence=scene,
+            learned=scene,
             extraction=provenance,
             created_at=datetime.now(UTC),
         )
@@ -130,7 +132,7 @@ class ScriptedDeltaExtractor:
             command = CreateMemoryCommand(
                 subject="departure drink",
                 content="The traveler drinks jasmine tea before departure.",
-                occurrence=selection.context.scene,
+                occurrence=scene,
                 evidence=evidence,
             )
         elif operation == "create_future":
@@ -156,7 +158,7 @@ class ScriptedDeltaExtractor:
                 expected_revision_id=target.current.id,
                 subject=target.current.subject,
                 content="The traveler now drinks oolong tea before departure.",
-                occurrence=selection.context.scene,
+                occurrence=scene,
                 evidence=evidence,
             )
         elif operation == "conflict":
@@ -166,7 +168,7 @@ class ScriptedDeltaExtractor:
                 expected_revision_id=target.current.id,
                 subject=target.current.subject,
                 content="The traveler may still prefer jasmine tea.",
-                occurrence=selection.context.scene,
+                occurrence=scene,
                 evidence=evidence,
             )
         else:

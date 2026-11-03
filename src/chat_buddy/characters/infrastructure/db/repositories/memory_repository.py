@@ -9,9 +9,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
+    ContinuityMode,
     ConversationScope,
     CorrectMemoryCommand,
     CreateMemoryCommand,
+    DayPosition,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
     ExtractionEffect,
@@ -50,6 +52,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
     SceneModel,
     StorylineMemoryModel,
+    TimelineDayModel,
 )
 
 
@@ -542,7 +545,11 @@ class DbMemoryExtractionRepository:
                     return self._effect_snapshot(existing)
 
                 self._validate_reservation(
-                    session, scope, scene_id, source_persona_message_id
+                    session,
+                    scope,
+                    ContinuityMode.STORYLINE,
+                    scene_id,
+                    source_persona_message_id,
                 )
 
                 now = datetime.now(UTC)
@@ -553,6 +560,7 @@ class DbMemoryExtractionRepository:
                     conversation_id=scope.conversation_id,
                     mode="storyline",
                     scene_id=scene_id,
+                    day_id=None,
                     source_persona_message_id=source_persona_message_id,
                     state=ExtractionEffectState.RESERVED.value,
                     created_at=now,
@@ -569,6 +577,66 @@ class DbMemoryExtractionRepository:
 
             raise ExtractionEffectConflictError(
                 "The source checkpoint could not be reserved"
+            ) from error
+
+    def reserve_timeline(
+        self, scope: ConversationScope, day_id: UUID, source_persona_message_id: UUID
+    ) -> ExtractionEffect:
+        """Reserve or return one eligible Timeline extraction effect.
+
+        Args:
+            scope:
+                Complete source ownership.
+            day_id:
+                Source represented-day identifier.
+            source_persona_message_id:
+                Complete selected persona checkpoint.
+
+        Returns:
+            Existing or newly reserved effect.
+
+        Raises:
+            ExtractionEffectConflictError:
+                If source ownership, lifecycle, selection, or turn shape is invalid.
+        """
+
+        try:
+            with self._factory() as session, session.begin():
+                existing = self._effect_row(session, scope, source_persona_message_id)
+                if existing is not None:
+                    return self._effect_snapshot(existing)
+
+                self._validate_reservation(
+                    session,
+                    scope,
+                    ContinuityMode.TIMELINE,
+                    day_id,
+                    source_persona_message_id,
+                )
+                row = MemoryExtractionEffectModel(
+                    continuity_id=scope.continuity_id,
+                    identity_id=scope.identity_id,
+                    persona_id=scope.persona_id,
+                    conversation_id=scope.conversation_id,
+                    mode=ContinuityMode.TIMELINE.value,
+                    scene_id=None,
+                    day_id=day_id,
+                    source_persona_message_id=source_persona_message_id,
+                    state=ExtractionEffectState.RESERVED.value,
+                    created_at=datetime.now(UTC),
+                )
+                session.add(row)
+                session.flush()
+
+                return self._effect_snapshot(row)
+        except IntegrityError as error:
+            with self._factory() as session:
+                existing = self._effect_row(session, scope, source_persona_message_id)
+                if existing is not None:
+                    return self._effect_snapshot(existing)
+
+            raise ExtractionEffectConflictError(
+                "The Timeline source checkpoint could not be reserved"
             ) from error
 
     def get_effect(
@@ -641,7 +709,8 @@ class DbMemoryExtractionRepository:
                 self._validate_reservation(
                     session,
                     delta.scope,
-                    effect.scene_id,
+                    ContinuityMode(effect.mode),
+                    effect.scene_id if effect.scene_id is not None else effect.day_id,
                     effect.source_persona_message_id,
                 )
 
@@ -779,7 +848,8 @@ class DbMemoryExtractionRepository:
     def _validate_reservation(
         session: Session,
         scope: ConversationScope,
-        scene_id: UUID,
+        mode: ContinuityMode,
+        temporal_owner_id: UUID | None,
         source_persona_message_id: UUID,
     ) -> None:
         """Validate active Storyline ownership and selected complete-turn ancestry.
@@ -789,8 +859,10 @@ class DbMemoryExtractionRepository:
                 Current transaction.
             scope:
                 Complete source ownership.
-            scene_id:
-                Expected source scene.
+            mode:
+                Expected memory-bearing continuity mode.
+            temporal_owner_id:
+                Expected source scene or represented day.
             source_persona_message_id:
                 Expected selected persona checkpoint.
 
@@ -806,7 +878,7 @@ class DbMemoryExtractionRepository:
                 ConversationModel.continuity_id == scope.continuity_id,
                 ConversationModel.identity_id == scope.identity_id,
                 ConversationModel.persona_id == scope.persona_id,
-                ConversationModel.mode == "storyline",
+                ConversationModel.mode == mode.value,
             )
             .with_for_update()
         )
@@ -815,17 +887,20 @@ class DbMemoryExtractionRepository:
                 ContinuityModel.id == scope.continuity_id,
                 ContinuityModel.identity_id == scope.identity_id,
                 ContinuityModel.persona_id == scope.persona_id,
-                ContinuityModel.mode == "storyline",
+                ContinuityModel.mode == mode.value,
                 ContinuityModel.lifecycle == "active",
             )
         )
-        scene = session.scalar(
-            select(SceneModel).where(
-                SceneModel.id == scene_id,
-                SceneModel.continuity_id == scope.continuity_id,
-                SceneModel.identity_id == scope.identity_id,
-                SceneModel.persona_id == scope.persona_id,
-                SceneModel.conversation_id == scope.conversation_id,
+        owner_model = (
+            SceneModel if mode == ContinuityMode.STORYLINE else TimelineDayModel
+        )
+        owner = session.scalar(
+            select(owner_model).where(
+                owner_model.id == temporal_owner_id,
+                owner_model.continuity_id == scope.continuity_id,
+                owner_model.identity_id == scope.identity_id,
+                owner_model.persona_id == scope.persona_id,
+                owner_model.conversation_id == scope.conversation_id,
             )
         )
         source = session.scalar(
@@ -839,13 +914,13 @@ class DbMemoryExtractionRepository:
         if (
             conversation is None
             or continuity is None
-            or scene is None
+            or owner is None
             or source is None
             or source.parent_id is None
             or conversation.selected_leaf_id is None
         ):
             raise ExtractionEffectConflictError(
-                "Source is not an active complete Storyline turn"
+                "Source is not an active complete memory-bearing turn"
             )
 
         parent = session.scalar(
@@ -926,6 +1001,7 @@ class DbMemoryExtractionRepository:
             continuity_id=effect.continuity_id,
             identity_id=effect.identity_id,
             persona_id=effect.persona_id,
+            mode=effect.mode,
             current_revision_id=None,
             subject_key=command.subject.casefold(),
         )
@@ -1152,19 +1228,39 @@ class DbMemoryExtractionRepository:
         if (
             evidence.scope != _scope(effect)
             or evidence.scene_id != effect.scene_id
+            or evidence.day_id != effect.day_id
             or evidence.persona_message_id != effect.source_persona_message_id
-            or evidence.learned.scene_id != effect.scene_id
         ):
             raise InvalidTemporalProvenanceError(
                 "Evidence does not match the reserved source"
             )
 
-        scene = session.get(SceneModel, effect.scene_id)
+        owner = (
+            session.get(SceneModel, effect.scene_id)
+            if effect.mode == ContinuityMode.STORYLINE
+            else session.get(TimelineDayModel, effect.day_id)
+        )
         persona = session.get(MessageModel, effect.source_persona_message_id)
         user = session.get(MessageModel, evidence.user_message_id)
-        occurrence = session.get(SceneModel, evidence.occurrence.scene_id)
+        occurrence: SceneModel | TimelineDayModel | None
+        if effect.mode == ContinuityMode.STORYLINE:
+            if not isinstance(evidence.occurrence, ScenePosition) or not isinstance(
+                evidence.learned, ScenePosition
+            ):
+                raise InvalidTemporalProvenanceError(
+                    "Storyline evidence requires scene positions"
+                )
+            occurrence = session.get(SceneModel, evidence.occurrence.scene_id)
+        else:
+            if not isinstance(evidence.occurrence, DayPosition) or not isinstance(
+                evidence.learned, DayPosition
+            ):
+                raise InvalidTemporalProvenanceError(
+                    "Timeline evidence requires day positions"
+                )
+            occurrence = session.get(TimelineDayModel, evidence.occurrence.day_id)
         if (
-            scene is None
+            owner is None
             or persona is None
             or user is None
             or occurrence is None
@@ -1172,7 +1268,7 @@ class DbMemoryExtractionRepository:
             or user.role != "user"
             or persona.parent_id != user.id
             or _message_position(session, persona) != evidence.persona_checkpoint
-            or scene.position != evidence.learned.position
+            or owner.position != evidence.learned.position
             or occurrence.continuity_id != effect.continuity_id
             or occurrence.position != evidence.occurrence.position
         ):
@@ -1187,15 +1283,34 @@ class DbMemoryExtractionRepository:
             identity_id=effect.identity_id,
             persona_id=effect.persona_id,
             conversation_id=effect.conversation_id,
-            mode="storyline",
+            mode=effect.mode,
             purpose=purpose,
             scene_id=effect.scene_id,
+            day_id=effect.day_id,
             user_message_id=evidence.user_message_id,
             source_persona_message_id=evidence.persona_message_id,
             persona_checkpoint=evidence.persona_checkpoint,
-            occurrence_scene_id=evidence.occurrence.scene_id,
+            occurrence_scene_id=(
+                evidence.occurrence.scene_id
+                if isinstance(evidence.occurrence, ScenePosition)
+                else None
+            ),
+            occurrence_day_id=(
+                evidence.occurrence.day_id
+                if isinstance(evidence.occurrence, DayPosition)
+                else None
+            ),
             occurrence_position=evidence.occurrence.position,
-            learned_scene_id=evidence.learned.scene_id,
+            learned_scene_id=(
+                evidence.learned.scene_id
+                if isinstance(evidence.learned, ScenePosition)
+                else None
+            ),
+            learned_day_id=(
+                evidence.learned.day_id
+                if isinstance(evidence.learned, DayPosition)
+                else None
+            ),
             learned_position=evidence.learned.position,
             extraction=evidence.extraction.model_dump(mode="json"),
             created_at=evidence.created_at,
@@ -1217,6 +1332,7 @@ class DbMemoryExtractionRepository:
             Detached evidence snapshot.
         """
 
+        storyline = row.mode == ContinuityMode.STORYLINE
         return MemoryEvidence(
             id=row.id,
             scope=ConversationScope(
@@ -1226,14 +1342,31 @@ class DbMemoryExtractionRepository:
                 conversation_id=row.conversation_id,
             ),
             scene_id=row.scene_id,
+            day_id=row.day_id,
             user_message_id=row.user_message_id,
             persona_message_id=row.source_persona_message_id,
             persona_checkpoint=row.persona_checkpoint,
-            occurrence=ScenePosition(
-                scene_id=row.occurrence_scene_id, position=row.occurrence_position
+            occurrence=(
+                ScenePosition(
+                    scene_id=_required_uuid(row.occurrence_scene_id),
+                    position=row.occurrence_position,
+                )
+                if storyline
+                else DayPosition(
+                    day_id=_required_uuid(row.occurrence_day_id),
+                    position=row.occurrence_position,
+                )
             ),
-            learned=ScenePosition(
-                scene_id=row.learned_scene_id, position=row.learned_position
+            learned=(
+                ScenePosition(
+                    scene_id=_required_uuid(row.learned_scene_id),
+                    position=row.learned_position,
+                )
+                if storyline
+                else DayPosition(
+                    day_id=_required_uuid(row.learned_day_id),
+                    position=row.learned_position,
+                )
             ),
             extraction=ExtractionProvenance.model_validate(row.extraction),
             created_at=_aware(row.created_at),
@@ -1255,6 +1388,7 @@ class DbMemoryExtractionRepository:
             id=row.id,
             scope=_scope(row),
             scene_id=row.scene_id,
+            day_id=row.day_id,
             source_persona_message_id=row.source_persona_message_id,
             state=ExtractionEffectState(row.state),
             provenance=(
@@ -1357,6 +1491,28 @@ def _required_current(row: StorylineMemoryModel) -> UUID:
     return row.current_revision_id
 
 
+def _required_uuid(value: UUID | None) -> UUID:
+    """Return a required temporal identifier from validated persistence.
+
+    Args:
+        value:
+            Nullable persistence value protected by a mode constraint.
+
+    Returns:
+        Required UUID.
+
+    Raises:
+        InvalidTemporalProvenanceError:
+            If persistence is missing the mode-specific identifier.
+    """
+
+    if value is None:
+        raise InvalidTemporalProvenanceError(
+            "Memory persistence is missing temporal provenance"
+        )
+    return value
+
+
 def _message_position(session: Session, message: MessageModel) -> int:
     """Return one message's one-based position on its parent ancestry.
 
@@ -1388,3 +1544,7 @@ def _message_position(session: Session, message: MessageModel) -> int:
         if current is None:
             raise InvalidTemporalProvenanceError("Source ancestry is incomplete")
     return position
+
+
+DbContinuityMemoryRepository = DbStorylineMemoryRepository
+DbTimelineMemoryRepository = DbStorylineMemoryRepository

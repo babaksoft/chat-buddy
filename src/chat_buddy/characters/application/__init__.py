@@ -55,19 +55,28 @@ from chat_buddy.characters.application.identity_service import (
 )
 from chat_buddy.characters.application.memory_context import (
     BaselineMemoryContextSelector,
+    BaselineTimelineMemoryContextSelector,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
+    TimelineExtractionContextService,
+    TimelineMemoryEligibility,
 )
 from chat_buddy.characters.application.memory_extraction_service import (
     StorylineMemoryExtractionService,
+    TimelineMemoryExtractionService,
 )
-from chat_buddy.characters.application.memory_service import StorylineMemoryService
+from chat_buddy.characters.application.memory_service import (
+    StorylineMemoryService,
+    TimelineMemoryService,
+)
 from chat_buddy.characters.application.persona_service import (
     PersonaService,
 )
 from chat_buddy.characters.application.response_memory import (
     BaselineResponseMemorySelector,
+    BaselineTimelineResponseMemorySelector,
     StorylineResponseMemoryService,
+    TimelineResponseMemoryService,
 )
 from chat_buddy.characters.application.response_style import (
     RESPONSE_STYLE_RENDERER_NAME,
@@ -105,6 +114,8 @@ __all__ = [
     "BaselineEvolutionStrategy",
     "BaselineMemoryContextSelector",
     "BaselineResponseMemorySelector",
+    "BaselineTimelineMemoryContextSelector",
+    "BaselineTimelineResponseMemorySelector",
     "ContinuityService",
     "ContinuityStableEvolutionConfigurationResolver",
     "ConversationService",
@@ -143,6 +154,11 @@ __all__ = [
     "TimelineContextBudgeter",
     "TimelineConversationAdapter",
     "TimelineDayService",
+    "TimelineExtractionContextService",
+    "TimelineMemoryEligibility",
+    "TimelineMemoryExtractionService",
+    "TimelineMemoryService",
+    "TimelineResponseMemoryService",
     "TimelineService",
     "decide_branch_mode",
     "default_response_style",

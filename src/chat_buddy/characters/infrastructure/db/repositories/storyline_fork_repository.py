@@ -692,6 +692,7 @@ class DbStorylineForkRepository:
                 continuity_id=target_continuity.id,
                 identity_id=target_continuity.identity_id,
                 persona_id=target_continuity.persona_id,
+                mode="storyline",
                 current_revision_id=None,
                 subject_key=source_memory.subject_key,
             )
@@ -707,6 +708,15 @@ class DbStorylineForkRepository:
 
             evidence_ids: dict[UUID, UUID] = {}
             for source_evidence in copyable_evidence:
+                if (
+                    source_evidence.scene_id is None
+                    or source_evidence.occurrence_scene_id is None
+                    or source_evidence.learned_scene_id is None
+                ):
+                    raise StorylineForkConflictError(
+                        "Storyline memory evidence has invalid temporal provenance"
+                    )
+
                 target_evidence_id = uuid4()
                 evidence_ids[source_evidence.id] = target_evidence_id
                 session.add(

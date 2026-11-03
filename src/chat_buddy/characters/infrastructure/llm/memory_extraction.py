@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from chat_buddy.characters.domain import (
     MAX_DELTA_COMMANDS,
     CreateMemoryCommand,
+    DayPosition,
     EffectiveGeneration,
     ExtractionProvenance,
     InvalidProviderResponseError,
@@ -48,7 +49,9 @@ class _EvidenceReference(BaseModel):
 
     user_message_id: UUID = Field(description="Source user-message identifier.")
     persona_message_id: UUID = Field(description="Source persona-message identifier.")
-    occurrence: ScenePosition = Field(description="Supplied occurrence position.")
+    occurrence: ScenePosition | DayPosition = Field(
+        description="Supplied occurrence position."
+    )
 
 
 class _CreateProposal(BaseModel):
@@ -369,7 +372,11 @@ class ContextualMemoryDeltaExtractor:
         ):
             raise ValueError("Provider evidence does not match the exact source turn")
 
-        allowed_occurrences = {selection.context.scene}
+        temporal_owner = selection.context.scene or selection.context.day
+        if temporal_owner is None:
+            raise ValueError("Memory extraction context has no temporal owner")
+        
+        allowed_occurrences = {temporal_owner}
         allowed_occurrences.update(
             memory.current.source.occurrence
             for memory in selection.context.eligible_memories
@@ -381,12 +388,21 @@ class ContextualMemoryDeltaExtractor:
         return MemoryEvidence(
             id=self._id_factory(),
             scope=selection.context.scope,
-            scene_id=selection.context.scene.scene_id,
+            scene_id=(
+                selection.context.scene.scene_id
+                if selection.context.scene is not None
+                else None
+            ),
+            day_id=(
+                selection.context.day.day_id
+                if selection.context.day is not None
+                else None
+            ),
             user_message_id=source.user.id,
             persona_message_id=source.persona.id,
             persona_checkpoint=source.persona.sequence,
             occurrence=reference.occurrence,
-            learned=selection.context.scene,
+            learned=temporal_owner,
             extraction=self.provenance(selection),
             created_at=created_at,
         )

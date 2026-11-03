@@ -250,18 +250,35 @@ def _source_evidence(context: MemoryExtractionContext) -> MemoryEvidence:
         Valid exact-turn evidence.
     """
 
+    scene = _storyline_position(context)
     return MemoryEvidence(
         id=uuid4(),
         scope=context.scope,
-        scene_id=context.scene.scene_id,
+        scene_id=scene.scene_id,
         user_message_id=context.source_turn.user.id,
         persona_message_id=context.source_turn.persona.id,
         persona_checkpoint=context.source_turn.persona.sequence,
-        occurrence=context.scene,
-        learned=context.scene,
+        occurrence=scene,
+        learned=scene,
         extraction=context.eligible_memories[0].current.source.extraction,
         created_at=NOW,
     )
+
+
+def _storyline_position(context: MemoryExtractionContext) -> ScenePosition:
+    """Return the required scene position from a Storyline fixture.
+
+    Args:
+        context:
+            Storyline extraction context.
+
+    Returns:
+        Required source scene position.
+    """
+
+    scene = context.scene
+    assert scene is not None
+    return scene
 
 
 def _delta(
@@ -363,7 +380,7 @@ def test_delta_accepts_every_operation_and_no_change_alone() -> None:
         CreateMemoryCommand(
             subject="usual order",
             content="The user usually orders tea.",
-            occurrence=context.scene,
+            occurrence=_storyline_position(context),
             evidence=evidence,
         ),
         ReinforceMemoryCommand(
@@ -377,7 +394,7 @@ def test_delta_accepts_every_operation_and_no_change_alone() -> None:
             expected_revision_id=None,
             subject="cafe preference",
             content="The user might dislike busy cafes.",
-            occurrence=context.scene,
+            occurrence=_storyline_position(context),
             evidence=evidence,
         ),
     )
@@ -412,7 +429,7 @@ def test_delta_rejects_contradictory_targets_subjects_and_mixed_no_change() -> N
         expected_revision_id=target.current.id,
         subject="favorite drink",
         content="The user's favorite drink is coffee.",
-        occurrence=context.scene,
+        occurrence=_storyline_position(context),
         evidence=evidence,
     )
     with pytest.raises(ValidationError, match="twice"):
@@ -423,13 +440,13 @@ def test_delta_rejects_contradictory_targets_subjects_and_mixed_no_change() -> N
     first = CreateMemoryCommand(
         subject="Usual Order",
         content="The user orders tea.",
-        occurrence=context.scene,
+        occurrence=_storyline_position(context),
         evidence=evidence,
     )
     second = CreateMemoryCommand(
         subject="usual order",
         content="The user orders coffee.",
-        occurrence=context.scene,
+        occurrence=_storyline_position(context),
         evidence=evidence,
     )
     with pytest.raises(ValidationError, match="competing normalized subjects"):
@@ -448,7 +465,7 @@ def test_selection_blocks_omitted_stale_and_user_protected_targets() -> None:
         expected_revision_id=target.current.id,
         subject="favorite drink",
         content="The user's favorite drink is coffee.",
-        occurrence=protected_context.scene,
+        occurrence=_storyline_position(protected_context),
         evidence=evidence,
     )
     delta = _delta(selection, (supersede,))

@@ -77,8 +77,8 @@ class _ConversationPersistence(
     """Combined persistence capabilities required by conversation orchestration."""
 
 
-class _StorylineExtractionProcessor(Protocol):
-    """Post-completion Storyline extraction seam."""
+class _MemoryExtractionProcessor(Protocol):
+    """Post-completion continuity memory extraction seam."""
 
     def process(
         self, target: ConversationTarget, source_persona_message_id: UUID
@@ -87,7 +87,7 @@ class _StorylineExtractionProcessor(Protocol):
 
         Args:
             target:
-                Exact Storyline scene target.
+                Exact memory-bearing conversation target.
             source_persona_message_id:
                 Newly committed persona response.
 
@@ -181,7 +181,8 @@ class ConversationService:
         branch_mode_facts: BranchModeFactsResolver | None = None,
         storyline_adapter: StorylineConversationAdapter | None = None,
         timeline_adapter: TimelineConversationAdapter | None = None,
-        memory_extraction: _StorylineExtractionProcessor | None = None,
+        memory_extraction: _MemoryExtractionProcessor | None = None,
+        timeline_memory_extraction: _MemoryExtractionProcessor | None = None,
         response_memories: _StorylineResponseMemoryProvider | None = None,
         evolution: _EvolutionEffectProcessor | None = None,
         evolution_projections: EvolutionRepository | None = None,
@@ -212,6 +213,8 @@ class ConversationService:
                 Optional exact Timeline day ownership and calendar-policy adapter.
             memory_extraction:
                 Optional post-completion Storyline memory workflow.
+            timeline_memory_extraction:
+                Optional post-completion Timeline memory workflow.
             response_memories:
                 Optional branch-aware Storyline response-memory workflow.
             evolution:
@@ -231,6 +234,7 @@ class ConversationService:
         self._storyline_adapter = storyline_adapter
         self._timeline_adapter = timeline_adapter
         self._memory_extraction = memory_extraction
+        self._timeline_memory_extraction = timeline_memory_extraction
         self._response_memories = response_memories
         self._evolution = evolution
         self._evolution_projections = evolution_projections
@@ -666,6 +670,18 @@ class ConversationService:
                 except Exception:
                     logger.exception(
                         "Storyline memory extraction did not reach a terminal "
+                        "outcome for persona message %s.",
+                        message.id,
+                    )
+            if (
+                self._timeline_memory_extraction is not None
+                and target.mode == ContinuityMode.TIMELINE
+            ):
+                try:
+                    self._timeline_memory_extraction.process(target, message.id)
+                except Exception:
+                    logger.exception(
+                        "Timeline memory extraction did not reach a terminal "
                         "outcome for persona message %s.",
                         message.id,
                     )

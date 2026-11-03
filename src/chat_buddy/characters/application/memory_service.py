@@ -150,3 +150,7 @@ class StorylineMemoryService:
         """
 
         return self._extraction_records.dismiss_conflict(command)
+
+
+class TimelineMemoryService(StorylineMemoryService):
+    """Inspect and manage one Timeline's isolated durable memory boundary."""

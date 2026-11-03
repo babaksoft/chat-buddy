@@ -381,7 +381,7 @@ without weakening Ongoing or Storyline behavior.
 
 ### Slice 9 — Add branch- and time-aware Timeline memory
 
-Status: Pending
+Status: Complete
 
 Generalize the existing Characters memory contracts only as far as required for a
 Timeline temporal position. Preserve one continuity-owned logical lineage,

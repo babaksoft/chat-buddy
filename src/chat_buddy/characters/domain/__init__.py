@@ -173,7 +173,9 @@ from chat_buddy.characters.domain.llm import (
 )
 from chat_buddy.characters.domain.memory import (
     ChangeMemoryStateCommand,
+    ContinuityMemory,
     CorrectMemoryCommand,
+    DayPosition,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
     ExtractionEffect,
@@ -189,6 +191,7 @@ from chat_buddy.characters.domain.memory import (
     MemoryRevisionState,
     ScenePosition,
     StorylineMemory,
+    TimelineMemory,
 )
 from chat_buddy.characters.domain.memory_extraction import (
     MAX_DELTA_COMMANDS,
@@ -210,6 +213,7 @@ from chat_buddy.characters.domain.persona import (
     PersonaCore,
 )
 from chat_buddy.characters.domain.repositories import (
+    ContinuityMemoryRepository,
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationRepository,
@@ -224,6 +228,7 @@ from chat_buddy.characters.domain.repositories import (
     StorylineRepository,
     SummaryRepository,
     TimelineDayRepository,
+    TimelineMemoryRepository,
     TimelineRepository,
 )
 from chat_buddy.characters.domain.response_memory import (
@@ -311,6 +316,8 @@ __all__ = [
     "Continuity",
     "ContinuityGroup",
     "ContinuityLifecycle",
+    "ContinuityMemory",
+    "ContinuityMemoryRepository",
     "ContinuityMode",
     "ContinuityNotFoundError",
     "ContinuityRepository",
@@ -328,6 +335,7 @@ __all__ = [
     "DayBoundary",
     "DayClosureResult",
     "DayClosureStatus",
+    "DayPosition",
     "DayReservationResult",
     "DayReservationStatus",
     "DeleteMemoryCommand",
@@ -516,6 +524,8 @@ __all__ = [
     "TimelineGraphActionAvailability",
     "TimelineGraphActionUnavailableReason",
     "TimelineGroup",
+    "TimelineMemory",
+    "TimelineMemoryRepository",
     "TimelineNavigation",
     "TimelineRepository",
     "TimelineRevisionResult",

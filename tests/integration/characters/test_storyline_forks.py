@@ -438,6 +438,7 @@ def test_fork_copies_active_memory_with_remapped_provenance(
         corrected.evidence, copied.evidence, strict=True
     ):
         assert copied_item.scope.continuity_id == result.storyline.id
+        assert source_item.scene_id is not None
         assert copied_item.scene_id == mapping[("scene", source_item.scene_id)]
         assert (
             copied_item.user_message_id

@@ -12,6 +12,7 @@ from chat_buddy.characters.domain import (
     ContinuityMode,
     ConversationGraphRepository,
     ConversationTarget,
+    DayPosition,
     ExtractionBudget,
     IdentityRepository,
     MemoryContextSelector,
@@ -28,6 +29,8 @@ from chat_buddy.characters.domain import (
     StorylineRepository,
     StrategyIdentity,
     SummaryRepository,
+    TimelineDayRepository,
+    TimelineRepository,
     TokenCounter,
     UnsupportedContinuityModeError,
 )
@@ -67,6 +70,45 @@ class StorylineMemoryEligibility:
             and memory.current.source.persona_message_id in selected_persona_message_ids
             and memory.current.source.occurrence.position <= target_scene.position
             and memory.current.source.learned.position <= target_scene.position
+            and memory.current.source.scene_id is not None
+        )
+
+
+class TimelineMemoryEligibility:
+    """Apply Timeline branch and immutable day-position eligibility rules."""
+
+    def select(
+        self,
+        memories: tuple[StorylineMemory, ...],
+        continuity_id: UUID,
+        target_day: DayPosition,
+        selected_persona_message_ids: frozenset[UUID],
+    ) -> tuple[StorylineMemory, ...]:
+        """Return active owned memories supported on the selected past.
+
+        Args:
+            memories:
+                Candidate memories in deterministic repository order.
+            continuity_id:
+                Expected Timeline owner.
+            target_day:
+                Day whose immutable position governs visibility.
+            selected_persona_message_ids:
+                Persona checkpoints selected through the target day.
+
+        Returns:
+            Eligible memories preserving candidate order.
+        """
+
+        return tuple(
+            memory
+            for memory in memories
+            if memory.continuity_id == continuity_id
+            and memory.current.state == MemoryRevisionState.ACTIVE
+            and memory.current.source.day_id is not None
+            and memory.current.source.persona_message_id in selected_persona_message_ids
+            and memory.current.source.occurrence.position <= target_day.position
+            and memory.current.source.learned.position <= target_day.position
         )
 
 
@@ -281,8 +323,9 @@ class BaselineMemoryContextSelector:
             f"[persona]\n{context.persona_label}",
             "[starting relationship]\n"
             + context.starting_relationship.model_dump_json(),
-            f"[scene setup]\n{context.scene_setup}",
         ]
+        if context.scene_setup is not None:
+            blocks.append(f"[scene setup]\n{context.scene_setup}")
         if summary_included and context.summary is not None:
             blocks.append(f"[summary]\n{context.summary.content}")
 
@@ -344,6 +387,14 @@ class BaselineMemoryContextSelector:
                 f"Persona: {turn.persona.content}",
             )
         )
+
+
+class BaselineTimelineMemoryContextSelector(BaselineMemoryContextSelector):
+    """Select whole Timeline extraction records with a versioned strategy."""
+
+    _STRATEGY_ID = StrategyIdentity(
+        name="baseline.timeline_memory_context", version="1.0.0"
+    )
 
 
 class StorylineExtractionContextService:
@@ -530,6 +581,197 @@ class StorylineExtractionContextService:
             persona_label=persona.core.name,
             starting_relationship=storyline.relationship,
             scene_setup=scene.details.setup,
+            summary=summary,
+            recent_turns=recent_turns,
+            eligible_memories=eligible_memories,
+            source_turn=source_turn,
+        )
+
+        return self._selector.select(context, budget)
+
+
+class TimelineExtractionContextService:
+    """Build one extraction snapshot from selected Timeline day histories."""
+
+    def __init__(
+        self,
+        identities: IdentityRepository,
+        personas: PersonaRepository,
+        timelines: TimelineRepository,
+        days: TimelineDayRepository,
+        conversations: ConversationGraphRepository,
+        summaries: SummaryRepository,
+        memories: StorylineMemoryRepository,
+        eligibility: TimelineMemoryEligibility,
+        selector: MemoryContextSelector,
+    ) -> None:
+        """Bind owned readers and pure Timeline selection policies.
+
+        Args:
+            identities:
+                Identity snapshot reader.
+            personas:
+                Persona snapshot reader.
+            timelines:
+                Timeline ownership reader.
+            days:
+                Ordered represented-day reader.
+            conversations:
+                Selected graph-path reader.
+            summaries:
+                Current-day branch-compatible summary reader.
+            memories:
+                Continuity-owned memory reader.
+            eligibility:
+                Timeline branch and temporal policy.
+            selector:
+                Versioned dedicated-budget selector.
+        """
+
+        self._identities = identities
+        self._personas = personas
+        self._timelines = timelines
+        self._days = days
+        self._conversations = conversations
+        self._summaries = summaries
+        self._memories = memories
+        self._eligibility = eligibility
+        self._selector = selector
+
+    def build(
+        self,
+        target: ConversationTarget,
+        source_persona_message_id: UUID,
+        budget: ExtractionBudget,
+    ) -> MemorySelectionResult:
+        """Build a bounded snapshot for one selected complete Timeline turn.
+
+        Args:
+            target:
+                Exact Timeline day ownership.
+            source_persona_message_id:
+                Selected completed response serving as new evidence.
+            budget:
+                Dedicated extraction input budget.
+
+        Returns:
+            Reproducible provider-independent extraction selection.
+
+        Raises:
+            UnsupportedContinuityModeError:
+                If the target is not a Timeline day.
+            ArchivedContinuityError:
+                If the Timeline is no longer active.
+            ValueError:
+                If the source is not a complete selected turn.
+        """
+
+        if target.mode != ContinuityMode.TIMELINE or target.day_id is None:
+            raise UnsupportedContinuityModeError(
+                "Memory extraction snapshots require a Timeline day"
+            )
+
+        timeline = self._timelines.get(
+            target.scope.identity_id,
+            target.scope.persona_id,
+            target.scope.continuity_id,
+        )
+        if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
+            raise ArchivedContinuityError(
+                "Archived Timelines cannot request extraction snapshots"
+            )
+
+        day = self._days.get(target.scope, target.day_id)
+        navigation = self._days.list(timeline)
+        selected_paths = {
+            candidate.id: self._conversations.selected_path(candidate.scope)
+            for candidate in navigation.days
+            if candidate.position <= day.position
+        }
+        source_path = selected_paths[day.id]
+        source_index = next(
+            (
+                index
+                for index, node in enumerate(source_path.messages)
+                if node.id == source_persona_message_id
+            ),
+            None,
+        )
+        if (
+            source_index is None
+            or source_index == 0
+            or source_path.messages[source_index].role != "persona"
+            or source_path.messages[source_index - 1].role != "user"
+        ):
+            raise ValueError("Extraction source must be a complete selected turn")
+
+        source_messages = tuple(
+            Message(
+                id=node.id,
+                scope=node.scope,
+                sequence=index + 1,
+                role=node.role,
+                content=node.content,
+                created_at=node.created_at,
+            )
+            for index, node in enumerate(source_path.messages[: source_index + 1])
+        )
+        source_turn = CompletedTurn(
+            user=source_messages[-2], persona=source_messages[-1]
+        )
+        summary = self._summaries.get_current(
+            target.scope, path_leaf_id=source_persona_message_id
+        )
+        checkpoint = 0
+        if summary is not None:
+            checkpoint_message = next(
+                (
+                    message
+                    for message in source_messages[:-2]
+                    if message.id == summary.checkpoint_message_id
+                    and message.sequence == summary.checkpoint_sequence
+                    and message.role == "persona"
+                ),
+                None,
+            )
+            if checkpoint_message is None:
+                summary = None
+            else:
+                checkpoint = checkpoint_message.sequence
+
+        recent_messages = tuple(
+            message for message in source_messages[:-2] if message.sequence > checkpoint
+        )
+        if len(recent_messages) % 2:
+            raise ValueError("Selected extraction ancestry is not made of whole turns")
+        recent_turns = tuple(
+            CompletedTurn(
+                user=recent_messages[index], persona=recent_messages[index + 1]
+            )
+            for index in range(0, len(recent_messages), 2)
+        )
+        selected_persona_ids = frozenset(
+            node.id
+            for path in selected_paths.values()
+            for node in path.messages
+            if node.role == "persona"
+        )
+        day_position = DayPosition(day_id=day.id, position=day.position)
+        eligible_memories = self._eligibility.select(
+            self._memories.list(timeline.id),
+            timeline.id,
+            day_position,
+            selected_persona_ids,
+        )
+        identity = self._identities.get(timeline.identity_id)
+        persona = self._personas.get(timeline.persona_id)
+        context = MemoryExtractionContext(
+            scope=target.scope,
+            day=day_position,
+            identity_label=identity.details.name,
+            persona_label=persona.core.name,
+            starting_relationship=timeline.relationship,
+            scene_setup=None,
             summary=summary,
             recent_turns=recent_turns,
             eligible_memories=eligible_memories,

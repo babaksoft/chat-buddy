@@ -1,4 +1,4 @@
-"""Strict prompt assembly for contextual Storyline memory deltas."""
+"""Strict prompt assembly for contextual continuity memory deltas."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from chat_buddy.characters.domain import MemorySelectionResult, PromptMessage
 
 MEMORY_DELTA_PROMPT_SCHEMA_VERSION = "1.0.0"
 
-_SYSTEM_INSTRUCTION = """You propose Storyline memory changes as strict JSON.
+_SYSTEM_INSTRUCTION = """You propose continuity memory changes as strict JSON.
 Use only the block marked [new evidence] as support for every non-empty command.
 Older context may resolve references, detect duplication, or identify change, but
 facts found only in older context must never become new source claims.
@@ -33,17 +33,29 @@ def assemble_memory_extraction_prompt(
         Two provider-neutral messages separating policy from snapshot data.
     """
 
-    occurrences = {selection.context.scene}
+    temporal_owner = selection.context.scene or selection.context.day
+    if temporal_owner is None:
+        raise ValueError("Memory extraction context has no temporal owner")
+
+    occurrences = {temporal_owner}
     occurrences.update(
         memory.current.source.occurrence
         for memory in selection.context.eligible_memories
         if memory.id in selection.included_memory_ids
     )
     ordered_occurrences = sorted(
-        occurrences, key=lambda item: (item.position, str(item.scene_id))
+        occurrences,
+        key=lambda item: (
+            item.position,
+            str(getattr(item, "scene_id", getattr(item, "day_id", ""))),
+        ),
     )
     occurrence_lines = "\n".join(
-        f"- scene_id={item.scene_id}; position={item.position}"
+        (
+            f"- scene_id={item.scene_id}; position={item.position}"
+            if hasattr(item, "scene_id")
+            else f"- day_id={item.day_id}; position={item.position}"
+        )
         for item in ordered_occurrences
     )
     user_content = "\n\n".join(

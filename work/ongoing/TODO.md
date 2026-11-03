@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 9 — Add branch- and time-aware Timeline memory.
+Next delivery focus: Stage 8, Slice 10 — Add Timeline relationship and persona evolution.
 
 Deferred product exploration:
 

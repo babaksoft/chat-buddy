@@ -11,6 +11,9 @@ from chat_buddy.characters.domain import (
     StorylineMemory,
     StorylineMemoryRepository,
     StrategyIdentity,
+    Timeline,
+    TimelineDay,
+    TimelineDayRepository,
     TokenCounter,
 )
 from chat_buddy.characters.prompts import assemble_storyline_memory_blocks
@@ -86,6 +89,14 @@ class BaselineResponseMemorySelector:
         )
 
 
+class BaselineTimelineResponseMemorySelector(BaselineResponseMemorySelector):
+    """Select complete Timeline response memories under a dedicated budget."""
+
+    _STRATEGY_ID = StrategyIdentity(
+        name="baseline.timeline_response_memory", version="1.0.0"
+    )
+
+
 class StorylineResponseMemoryService:
     """Load eligible response memory from selected Storyline histories."""
 
@@ -147,6 +158,75 @@ class StorylineResponseMemoryService:
             storyline.id,
             scene.position,
             selected_persona_ids,
+        )
+
+        return self._selector.select(eligible, self._budget, counter)
+
+
+class TimelineResponseMemoryService:
+    """Load eligible response memory from selected Timeline day histories."""
+
+    def __init__(
+        self,
+        days: TimelineDayRepository,
+        conversations: ConversationGraphRepository,
+        memories: StorylineMemoryRepository,
+        selector: ResponseMemorySelector,
+        budget: ResponseMemoryBudget,
+    ) -> None:
+        """Bind Timeline readers and the independent response selector.
+
+        Args:
+            days:
+                Ordered represented-day reader.
+            conversations:
+                Selected graph-path reader.
+            memories:
+                Continuity-scoped eligible-memory reader.
+            selector:
+                Independently versioned response-memory selector.
+            budget:
+                Dedicated memory capacity for every response.
+        """
+
+        self._days = days
+        self._conversations = conversations
+        self._memories = memories
+        self._selector = selector
+        self._budget = budget
+
+    def select(
+        self, timeline: Timeline, day: TimelineDay, counter: TokenCounter
+    ) -> ResponseMemorySelection:
+        """Select eligible memory as of an exact day and selected past.
+
+        Args:
+            timeline:
+                Owning Timeline snapshot.
+            day:
+                Target represented day.
+            counter:
+                Active response provider's token counter.
+
+        Returns:
+            Bounded versioned response-memory selection.
+        """
+
+        navigation = self._days.list(timeline)
+        selected_persona_ids = frozenset(
+            node.id
+            for candidate in navigation.days
+            if candidate.position <= day.position
+            for node in self._conversations.selected_path(candidate.scope).messages
+            if node.role == "persona"
+        )
+        eligible = self._memories.list_eligible(
+            timeline.id,
+            day.position,
+            selected_persona_ids,
+        )
+        eligible = tuple(
+            memory for memory in eligible if memory.current.source.day_id is not None
         )
 
         return self._selector.select(eligible, self._budget, counter)

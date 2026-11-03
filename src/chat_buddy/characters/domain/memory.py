@@ -1,4 +1,4 @@
-"""Immutable Storyline memory lifecycle and management contracts."""
+"""Immutable continuity memory lifecycle and management contracts."""
 
 from __future__ import annotations
 
@@ -75,6 +75,27 @@ class ScenePosition(BaseModel):
     position: int = Field(gt=0, description="Append-only scene ordinal.")
 
 
+class DayPosition(BaseModel):
+    """Immutable temporal position inside one Timeline.
+
+    Attributes:
+        day_id:
+            Represented day occupying the position.
+        position:
+            Positive append-only day ordinal.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    day_id: UUID = Field(description="Timeline day identifier.")
+    position: int = Field(gt=0, description="Append-only day ordinal.")
+
+
+MemoryPosition = Annotated[
+    ScenePosition | DayPosition, Field(union_mode="left_to_right")
+]
+
+
 class ExtractionProvenance(BaseModel):
     """Reproducible non-secret configuration for a memory extraction.
 
@@ -119,7 +140,9 @@ class MemoryEvidence(BaseModel):
         scope:
             Complete source conversation ownership.
         scene_id:
-            Source scene identifier.
+            Source scene identifier for Storyline evidence.
+        day_id:
+            Source represented-day identifier for Timeline evidence.
         user_message_id:
             Source user-message identifier.
         persona_message_id:
@@ -127,9 +150,9 @@ class MemoryEvidence(BaseModel):
         persona_checkpoint:
             Even selected-path position of the persona message.
         occurrence:
-            Scene where the asserted event or state occurred.
+            Scene or represented day where the assertion occurred.
         learned:
-            Source scene where the persona learned the assertion.
+            Source scene or represented day where the assertion was learned.
         extraction:
             Exact extraction strategy and model configuration.
         created_at:
@@ -140,14 +163,19 @@ class MemoryEvidence(BaseModel):
 
     id: UUID = Field(description="Stable evidence-link identifier.")
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene_id: UUID = Field(description="Source scene identifier.")
+    scene_id: UUID | None = Field(
+        default=None, description="Source scene identifier for Storyline evidence."
+    )
+    day_id: UUID | None = Field(
+        default=None, description="Source day identifier for Timeline evidence."
+    )
     user_message_id: UUID = Field(description="Source user-message identifier.")
     persona_message_id: UUID = Field(description="Source persona-message checkpoint.")
     persona_checkpoint: int = Field(
         gt=0, description="Even selected-path persona-message position."
     )
-    occurrence: ScenePosition = Field(description="Asserted temporal position.")
-    learned: ScenePosition = Field(description="Learning temporal position.")
+    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
+    learned: MemoryPosition = Field(description="Learning temporal position.")
     extraction: ExtractionProvenance = Field(
         description="Extraction configuration provenance."
     )
@@ -167,8 +195,24 @@ class MemoryEvidence(BaseModel):
 
         if self.persona_checkpoint % 2 != 0:
             raise ValueError("Memory evidence checkpoints must be persona messages")
-        if self.learned.scene_id != self.scene_id:
-            raise ValueError("Learned position must identify the source scene")
+
+        if (self.scene_id is None) == (self.day_id is None):
+            raise ValueError("Memory evidence requires exactly one temporal owner")
+        if self.scene_id is not None:
+            if not isinstance(self.occurrence, ScenePosition) or not isinstance(
+                self.learned, ScenePosition
+            ):
+                raise ValueError("Storyline evidence requires scene positions")
+            if self.learned.scene_id != self.scene_id:
+                raise ValueError("Learned position must identify the source scene")
+        else:
+            if not isinstance(self.occurrence, DayPosition) or not isinstance(
+                self.learned, DayPosition
+            ):
+                raise ValueError("Timeline evidence requires day positions")
+            if self.learned.day_id != self.day_id:
+                raise ValueError("Learned position must identify the source day")
+
         if self.occurrence.position > self.learned.position:
             raise ValueError("Occurrence cannot be later than learning")
         return self
@@ -393,6 +437,10 @@ class StorylineMemory(BaseModel):
             raise ValueError("A source turn can support a memory only once")
 
         return self
+
+
+ContinuityMemory = StorylineMemory
+TimelineMemory = StorylineMemory
 
 
 class CorrectMemoryCommand(BaseModel):
@@ -621,7 +669,9 @@ class ExtractionEffect(BaseModel):
         scope:
             Complete source conversation ownership.
         scene_id:
-            Source scene identifier.
+            Source scene identifier for Storyline extraction.
+        day_id:
+            Source represented-day identifier for Timeline extraction.
         source_persona_message_id:
             Unique source persona-message checkpoint.
         state:
@@ -638,7 +688,12 @@ class ExtractionEffect(BaseModel):
 
     id: UUID = Field(description="Stable extraction-effect identifier.")
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene_id: UUID = Field(description="Source scene identifier.")
+    scene_id: UUID | None = Field(
+        default=None, description="Source scene identifier for Storyline extraction."
+    )
+    day_id: UUID | None = Field(
+        default=None, description="Source day identifier for Timeline extraction."
+    )
     source_persona_message_id: UUID = Field(
         description="Unique source persona-message checkpoint."
     )
@@ -660,6 +715,9 @@ class ExtractionEffect(BaseModel):
             ValueError:
                 If reservation and completion fields conflict.
         """
+
+        if (self.scene_id is None) == (self.day_id is None):
+            raise ValueError("Extraction effects require exactly one temporal owner")
 
         terminal = self.state != ExtractionEffectState.RESERVED
         if terminal != (self.completed_at is not None):
