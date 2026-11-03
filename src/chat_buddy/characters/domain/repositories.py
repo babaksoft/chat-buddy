@@ -79,6 +79,7 @@ from chat_buddy.characters.domain.timeline import (
     TimelineNavigation,
     TimelineRevisionResult,
     TimelineStartResult,
+    TimelineStartReview,
 )
 
 
@@ -577,6 +578,25 @@ class TimelineRepository(Protocol):
         Raises:
             ConfirmationConflictError:
                 If persisted confirmation inputs differ.
+        """
+
+        ...
+
+    def find_reviewed_confirmation(
+        self, review: TimelineStartReview
+    ) -> TimelineStartResult | None:
+        """Read a prior confirmation without recapturing its timezone.
+
+        Args:
+            review:
+                User-reviewed fields that exclude internal timezone provenance.
+
+        Returns:
+            Original result, or None for a new confirmation identifier.
+
+        Raises:
+            ConfirmationConflictError:
+                If the identifier was reused with different reviewed fields.
         """
 
         ...

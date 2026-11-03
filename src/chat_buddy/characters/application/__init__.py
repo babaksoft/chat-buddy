@@ -87,6 +87,7 @@ from chat_buddy.characters.application.storyline_fork_service import (
     StorylineForkService,
 )
 from chat_buddy.characters.application.storyline_service import StorylineService
+from chat_buddy.characters.application.timeline_service import TimelineService
 
 __all__ = [
     "BASELINE_EVOLUTION_CONFIGURATION",
@@ -132,6 +133,7 @@ __all__ = [
     "StorylineService",
     "StrictBaselineEvolutionThresholdPolicy",
     "TimelineCalendarPolicy",
+    "TimelineService",
     "decide_branch_mode",
     "default_response_style",
     "resolve_starting_relationship",

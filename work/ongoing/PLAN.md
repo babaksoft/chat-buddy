@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 
 ## Outcome
 
@@ -281,7 +281,7 @@ database boundary, and no migration or model references Chat.
 
 ### Slice 5 — Start, resume, and archive Timelines
 
-Status: Pending
+Status: Complete
 
 Implement application services that:
 

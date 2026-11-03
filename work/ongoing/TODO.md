@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 5 — Start, resume, and archive Timelines.
+Next delivery focus: Stage 8, Slice 6 — Create days atomically and close them deterministically.
 
 Deferred product exploration:
 

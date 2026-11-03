@@ -278,6 +278,7 @@ from chat_buddy.characters.domain.timeline import (
     TimelineRevisionResult,
     TimelineRevisionStatus,
     TimelineStartResult,
+    TimelineStartReview,
     TimelineStartStatus,
 )
 
@@ -518,6 +519,7 @@ __all__ = [
     "TimelineRevisionResult",
     "TimelineRevisionStatus",
     "TimelineStartResult",
+    "TimelineStartReview",
     "TimelineStartStatus",
     "TokenCounter",
     "Trust",

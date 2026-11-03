@@ -29,6 +29,7 @@ def resolve_starting_relationship(
         "boundaries": (),
     }
     origins = {}
+
     for field, default in defaults.items():
         value = getattr(selection, field)
         defaults[field] = default if value is None else value

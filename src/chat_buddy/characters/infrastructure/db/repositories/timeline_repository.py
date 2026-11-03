@@ -23,6 +23,7 @@ from chat_buddy.characters.domain import (
     TimelineRevisionResult,
     TimelineRevisionStatus,
     TimelineStartResult,
+    TimelineStartReview,
     TimelineStartStatus,
     VersionedResponseStyleSettings,
 )
@@ -177,6 +178,49 @@ class DbTimelineRepository:
                 None
                 if row is None
                 else self._start_snapshot(session, row, TimelineStartStatus.IDEMPOTENT)
+            )
+
+    def find_reviewed_confirmation(
+        self, review: TimelineStartReview
+    ) -> TimelineStartResult | None:
+        """Find a prior confirmation from user-reviewed fields only.
+
+        Args:
+            review:
+                Reviewed start input without internal timezone provenance.
+
+        Returns:
+            Idempotent prior result, or None.
+
+        Raises:
+            ConfirmationConflictError:
+                If the identifier was reused with different reviewed fields.
+        """
+
+        with self._factory() as session:
+            continuity = session.scalar(
+                select(ContinuityModel).where(
+                    ContinuityModel.request_id == review.request_id
+                )
+            )
+            if continuity is None:
+                return None
+            if continuity.mode != "timeline":
+                raise ConfirmationConflictError(
+                    "Use a new confirmation identifier for changed inputs"
+                )
+
+            persisted = StartTimeline.model_validate(continuity.confirmed_request)
+            persisted_review = TimelineStartReview.model_validate(
+                persisted.model_dump(exclude={"calendar_timezone"})
+            )
+            if persisted_review != review:
+                raise ConfirmationConflictError(
+                    "Use a new confirmation identifier for changed inputs"
+                )
+
+            return self._start_snapshot(
+                session, continuity, TimelineStartStatus.IDEMPOTENT
             )
 
     def find_active(self, identity_id: UUID, persona_id: UUID) -> Timeline | None:

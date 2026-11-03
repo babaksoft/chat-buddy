@@ -1,6 +1,7 @@
 """PostgreSQL migration and race coverage for Timeline persistence."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
@@ -10,13 +11,27 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from chat_buddy.characters.application import resolve_starting_relationship
-from chat_buddy.characters.domain import TimelineStartResult, TimelineStartStatus
-from chat_buddy.characters.infrastructure.db.repositories import DbTimelineRepository
+from chat_buddy.characters.domain import (
+    DayBoundary,
+    DayReservationStatus,
+    ReserveTimelineDay,
+    SubmittedInput,
+    TimelineRevisionStatus,
+    TimelineStartResult,
+    TimelineStartStatus,
+)
+from chat_buddy.characters.infrastructure.db.repositories import (
+    DbTimelineDayRepository,
+    DbTimelineRepository,
+)
 from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
 )
-from tests.integration.characters.test_timeline_repositories import _request
+from tests.integration.characters.test_timeline_repositories import (
+    _generation,
+    _request,
+)
 
 pytestmark = pytest.mark.characters_postgres
 PRIOR_HEAD = "7a9c2e4f6b81"
@@ -102,13 +117,71 @@ def test_concurrent_timeline_starts_have_one_active_slot_winner(
         )
 
     assert all(isinstance(result, TimelineStartResult) for result in results)
-    assert sum(
-        result.status == TimelineStartStatus.STARTED for result in results
-    ) == 1
-    assert sum(
-        result.status == TimelineStartStatus.ACTIVE_SLOT_CONFLICT
-        for result in results
-    ) == 1
+    assert sum(result.status == TimelineStartStatus.STARTED for result in results) == 1
+    assert (
+        sum(
+            result.status == TimelineStartStatus.ACTIVE_SLOT_CONFLICT
+            for result in results
+        )
+        == 1
+    )
+
+
+def test_archive_and_first_send_serialize_on_timeline_owner(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Let either archive or first send win without writing after archive.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    request = _request(factory)
+    timelines = DbTimelineRepository(factory)
+    started = timelines.start(
+        request, resolve_starting_relationship(request.relationship)
+    )
+    assert started.timeline is not None
+    timeline = started.timeline
+    reservation = ReserveTimelineDay(
+        timeline_id=timeline.id,
+        expected_timeline_revision=timeline.revision,
+        expected_selected_leaf_id=None,
+        boundary=DayBoundary(
+            local_date=date(2026, 11, 3),
+            timezone=timeline.calendar_timezone.name,
+            opens_at=datetime(2026, 11, 2, 20, 30, tzinfo=UTC),
+            closes_at=datetime(2026, 11, 3, 20, 30, tzinfo=UTC),
+        ),
+        submitted_input=SubmittedInput(content="Hello today"),
+        generation=_generation(),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        archive_future = executor.submit(
+            timelines.archive,
+            timeline.identity_id,
+            timeline.persona_id,
+            timeline.id,
+            timeline.revision,
+        )
+        send_future = executor.submit(
+            DbTimelineDayRepository(factory).reserve_first,
+            timeline,
+            reservation,
+        )
+        archived = archive_future.result()
+        sent = send_future.result()
+
+    outcomes = (archived.status, sent.status)
+    assert outcomes in {
+        (TimelineRevisionStatus.UPDATED, DayReservationStatus.ARCHIVED),
+        (TimelineRevisionStatus.STALE_REVISION, DayReservationStatus.RESERVED),
+    }
 
 
 def _insert_stage_seven_continuity(engine: Engine) -> None:
@@ -120,8 +193,7 @@ def _insert_stage_seven_continuity(engine: Engine) -> None:
     """
 
     with engine.begin() as connection:
-        connection.execute(
-            text("""
+        connection.execute(text("""
                 INSERT INTO characters.identities (id, name, revision, is_frozen)
                 VALUES ('22222222-2222-2222-2222-222222222222', 'You', 1, true);
                 INSERT INTO characters.personas
@@ -137,5 +209,4 @@ def _insert_stage_seven_continuity(engine: Engine) -> None:
                     'ongoing', 'active',
                     '55555555-5555-5555-5555-555555555555', '{}'
                 )
-                """)
-        )
+                """))

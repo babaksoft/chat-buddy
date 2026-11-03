@@ -29,6 +29,49 @@ from chat_buddy.characters.domain.response_style import (
 )
 
 
+class TimelineStartReview(BaseModel):
+    """User-reviewed input for confirming a Timeline start.
+
+    The application-local timezone is deliberately absent. The application
+    service captures it only after this review is confirmed.
+
+    Attributes:
+        request_id:
+            Unique confirmation identifier.
+        identity_id:
+            Reviewed identity owner.
+        persona_id:
+            Reviewed persona owner.
+        identity_revision:
+            Reviewed identity revision.
+        persona_revision:
+            Reviewed persona revision.
+        name:
+            User-authored Timeline name.
+        relationship:
+            Reviewed starting relationship selection.
+        response_style:
+            Initial requested presentation settings.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    request_id: UUID = Field(description="Confirmation identifier.")
+    identity_id: UUID = Field(description="Reviewed identity identifier.")
+    persona_id: UUID = Field(description="Reviewed persona identifier.")
+    identity_revision: int = Field(ge=1, description="Reviewed identity revision.")
+    persona_revision: int = Field(ge=1, description="Reviewed persona revision.")
+    name: str = Field(
+        min_length=1, max_length=128, description="Authored Timeline name."
+    )
+    relationship: RelationshipSelection = Field(
+        description="Reviewed relationship inputs."
+    )
+    response_style: ResponseStyleSettings = Field(
+        description="Initial requested response-presentation settings."
+    )
+
+
 class StartTimeline(BaseModel):
     """Complete input for an idempotent Timeline start.
 
