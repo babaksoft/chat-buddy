@@ -15,6 +15,7 @@ from chat_buddy.characters.application import (
     ConversationService,
     EvolutionEffectService,
     NoChangeEvolutionStrategy,
+    ResponseStyleService,
     StrictBaselineEvolutionThresholdPolicy,
 )
 from chat_buddy.characters.domain import (
@@ -38,6 +39,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbEvolutionRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSceneRepository,
     DbStorylineMemoryRepository,
     DbStorylineRepository,
@@ -316,5 +318,6 @@ def _conversation_service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(FakeResponse()),
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         evolution=evolution,
     )

@@ -13,6 +13,7 @@ from chat_buddy.characters.domain import (
     Message,
     Persona,
     PromptMessage,
+    ResponseStyle,
     Scene,
     Storyline,
     StorylineMemory,
@@ -112,6 +113,7 @@ class OngoingContextBudgeter:
         persona: Persona,
         identity: Identity,
         continuity: Continuity,
+        response_style: ResponseStyle,
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
@@ -126,6 +128,8 @@ class OngoingContextBudgeter:
                 Frozen authored identity.
             continuity:
                 Owned starting relationship.
+            response_style:
+                Effective presentation snapshot for the response.
             context:
                 Eligible summary, turns, and current input.
             generation:
@@ -147,7 +151,13 @@ class OngoingContextBudgeter:
         mandatory_count = min(1, len(turns))
         selected = turns[-mandatory_count:] if mandatory_count else ()
         prompt = self._render(
-            persona, identity, continuity, context, selected, projections
+            persona,
+            identity,
+            continuity,
+            response_style,
+            context,
+            selected,
+            projections,
         )
         tokens = counter.count(prompt)
         if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -162,6 +172,7 @@ class OngoingContextBudgeter:
                 persona,
                 identity,
                 continuity,
+                response_style,
                 context,
                 candidate_turns,
                 projections,
@@ -187,6 +198,7 @@ class OngoingContextBudgeter:
         persona: Persona,
         identity: Identity,
         continuity: Continuity,
+        response_style: ResponseStyle,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
         projections: EvolutionProjectionState | None,
@@ -200,6 +212,8 @@ class OngoingContextBudgeter:
                 Frozen authored identity.
             continuity:
                 Owned continuity state.
+            response_style:
+                Effective presentation snapshot for the response.
             context:
                 Summary and current input.
             turns:
@@ -219,6 +233,7 @@ class OngoingContextBudgeter:
             persona,
             identity,
             continuity,
+            response_style,
             messages,
             context.current_input,
             context.summary.content if context.summary is not None else None,
@@ -236,6 +251,7 @@ class StorylineContextBudgeter:
         identity: Identity,
         storyline: Storyline,
         scene: Scene,
+        response_style: ResponseStyle,
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
@@ -252,7 +268,9 @@ class StorylineContextBudgeter:
             storyline:
                 Owned Storyine continuity.
             scene:
-                Exact scene setup and response style.
+                Exact immutable scene setup.
+            response_style:
+                Effective presentation snapshot for the response.
             context:
                 Eligible scene summary, turns, and current input.
             generation:
@@ -281,6 +299,7 @@ class StorylineContextBudgeter:
             identity,
             storyline,
             scene,
+            response_style,
             context,
             selected,
             selected_memories,
@@ -299,6 +318,7 @@ class StorylineContextBudgeter:
                 identity,
                 storyline,
                 scene,
+                response_style,
                 context,
                 selected,
                 candidate_memories,
@@ -318,6 +338,7 @@ class StorylineContextBudgeter:
                 identity,
                 storyline,
                 scene,
+                response_style,
                 context,
                 candidate_turns,
                 selected_memories,
@@ -345,6 +366,7 @@ class StorylineContextBudgeter:
         identity: Identity,
         storyline: Storyline,
         scene: Scene,
+        response_style: ResponseStyle,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
         memories: tuple[StorylineMemory, ...],
@@ -361,6 +383,8 @@ class StorylineContextBudgeter:
                 Owned Storyline snapshot.
             scene:
                 Exact scene snapshot.
+            response_style:
+                Effective presentation snapshot for the response.
             context:
                 Summary and current input.
             turns:
@@ -383,6 +407,7 @@ class StorylineContextBudgeter:
             identity,
             storyline,
             scene,
+            response_style,
             messages,
             context.current_input,
             context.summary.content if context.summary is not None else None,

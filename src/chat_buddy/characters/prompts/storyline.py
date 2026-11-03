@@ -7,6 +7,7 @@ from chat_buddy.characters.domain import (
     PersonaAdaptationProjection,
     PromptMessage,
     RelationshipProjection,
+    ResponseStyle,
     Scene,
     Storyline,
     StorylineMemory,
@@ -44,6 +45,7 @@ def assemble_storyline_prompt(
     identity: Identity,
     storyline: Storyline,
     scene: Scene,
+    response_style: ResponseStyle,
     messages: tuple[Message, ...],
     current_input: str | None = None,
     summary: str | None = None,
@@ -61,7 +63,9 @@ def assemble_storyline_prompt(
         storyline:
             Owned starting relationship and lifecycle snapshot.
         scene:
-            Exact scene setup and fixed response-style snapshot.
+            Exact immutable scene setup.
+        response_style:
+            Effective presentation snapshot reserved for this response.
         messages:
             Selected complete turns from this scene only.
         current_input:
@@ -109,7 +113,7 @@ def assemble_storyline_prompt(
             role="system",
             content=(
                 "Response style:\n"
-                + scene.details.response_style.instruction
+                + response_style.instruction
                 + "\nPreserve the authored relationship boundaries and do not invent shared history."
             ),
         ),

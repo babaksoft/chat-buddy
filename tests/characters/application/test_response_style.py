@@ -1,5 +1,7 @@
 """Tests for response-style defaults and deterministic rendering."""
 
+from uuid import UUID, uuid4
+
 import pytest
 from pydantic import ValidationError
 
@@ -7,6 +9,7 @@ from chat_buddy.characters.application import (
     RESPONSE_STYLE_RENDERER_NAME,
     RESPONSE_STYLE_RENDERER_VERSION,
     ResponseStyleRenderer,
+    ResponseStyleService,
     default_response_style,
 )
 from chat_buddy.characters.domain import (
@@ -15,8 +18,66 @@ from chat_buddy.characters.domain import (
     ResponseLength,
     ResponseStyleSettings,
     SceneDescriptionLevel,
+    StyleUpdateResult,
+    StyleUpdateStatus,
     VersionedResponseStyleSettings,
 )
+
+
+class FakeStyleRepository:
+    """Store one in-memory style snapshot for application-service tests."""
+
+    def __init__(self, current: VersionedResponseStyleSettings) -> None:
+        """Capture initial settings.
+
+        Args:
+            current:
+                Initial committed settings.
+        """
+
+        self.current = current
+
+    def get(self, continuity_id: UUID) -> VersionedResponseStyleSettings:
+        """Return the current settings.
+
+        Args:
+            continuity_id:
+                Ignored test continuity identifier.
+
+        Returns:
+            Current in-memory settings.
+        """
+
+        return self.current
+
+    def update(
+        self,
+        continuity_id: UUID,
+        settings: ResponseStyleSettings,
+        expected_revision: int,
+    ) -> StyleUpdateResult:
+        """Replace settings when the expected revision matches.
+
+        Args:
+            continuity_id:
+                Ignored test continuity identifier.
+            settings:
+                Complete replacement settings.
+            expected_revision:
+                Last observed revision.
+
+        Returns:
+            Updated or stale test result.
+        """
+
+        if expected_revision != self.current.revision:
+            return StyleUpdateResult(
+                status=StyleUpdateStatus.STALE_REVISION, style=self.current
+            )
+        self.current = VersionedResponseStyleSettings(
+            settings=settings, revision=self.current.revision + 1
+        )
+        return StyleUpdateResult(status=StyleUpdateStatus.UPDATED, style=self.current)
 
 
 @pytest.mark.parametrize(
@@ -165,3 +226,29 @@ def test_style_revision_is_strict_and_positive() -> None:
         VersionedResponseStyleSettings(
             settings=settings, revision="1"  # type: ignore[arg-type]
         )
+
+
+def test_service_loads_updates_and_resolves_complete_settings() -> None:
+    """Expose one shared orchestration surface over persistence and rendering."""
+
+    initial = VersionedResponseStyleSettings(
+        settings=default_response_style(ContinuityMode.ONGOING), revision=1
+    )
+    repository = FakeStyleRepository(initial)
+    service = ResponseStyleService(repository)
+    continuity_id = uuid4()
+    replacement = ResponseStyleSettings(
+        scene_description=SceneDescriptionLevel.RICH,
+        response_length=ResponseLength.EXPANSIVE,
+        narrative_placement=NarrativePlacement.AFTER_DIALOGUE,
+    )
+
+    result = service.update(continuity_id, replacement, expected_revision=1)
+
+    assert result.status == StyleUpdateStatus.UPDATED
+    assert service.get(continuity_id) == result.style
+    effective = service.resolve(continuity_id)
+    assert effective.source_revision == 2
+    assert effective.scene_description == SceneDescriptionLevel.RICH
+    assert effective.response_length == ResponseLength.EXPANSIVE
+    assert effective.narrative_placement == NarrativePlacement.AFTER_DIALOGUE

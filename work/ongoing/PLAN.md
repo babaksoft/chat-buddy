@@ -329,7 +329,7 @@ day, no empty days exist, and closed-day writes cannot win a race.
 
 ### Slice 7 — Resolve, update, and snapshot effective response style
 
-Status: Pending
+Status: Complete
 
 Implement one Characters style service and prompt renderer shared by Ongoing,
 Storyline, and Timeline. It must:

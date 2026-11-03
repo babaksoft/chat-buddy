@@ -12,6 +12,7 @@ from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
     ConversationService,
+    ResponseStyleService,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineForkService,
@@ -50,6 +51,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
     DbMemoryExtractionRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSceneRepository,
     DbStorylineForkRepository,
     DbStorylineMemoryRepository,
@@ -541,6 +543,7 @@ def _acceptance_service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         memory_extraction=extraction,
         response_memories=StorylineResponseMemoryService(

@@ -242,6 +242,11 @@ def conversation_ui() -> Generator[tuple[AppTest, Mock], None, None]:
         user_message_id=uuid4(),
         submitted_input="Hi",
         generation=generation,
+        response_style=ResponseStyle(
+            name="characters.response_style",
+            version="1.0.0",
+            instruction="Use the saved presentation controls.",
+        ),
         status="pending",
         incomplete_output="",
         created_at=datetime.now(UTC),

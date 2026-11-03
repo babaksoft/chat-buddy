@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import event, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import ConversationService
+from chat_buddy.characters.application import ConversationService, ResponseStyleService
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     AttemptConflictError,
@@ -28,6 +28,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import (
@@ -411,6 +412,7 @@ def test_mocked_ollama_stream_uses_durable_service_contract(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         models,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
     )
     attempt = app.send(ongoing_target(scope), SubmittedInput(content="Hi"))
     assert list(app.stream(ongoing_target(scope), attempt.id)) == ["Ollama answer"]

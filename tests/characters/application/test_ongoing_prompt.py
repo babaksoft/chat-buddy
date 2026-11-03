@@ -10,10 +10,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import (
     ConversationService,
     OngoingContextEligibility,
+    ResponseStyleRenderer,
+    ResponseStyleService,
+    default_response_style,
 )
 from chat_buddy.characters.domain import (
     AdaptationFacet,
     ContextCapacityError,
+    ContinuityMode,
     ConversationHistory,
     EffectiveGeneration,
     EvolutionProjectionState,
@@ -33,12 +37,14 @@ from chat_buddy.characters.domain import (
     RelationshipTrust,
     SubmittedInput,
     SummaryRevision,
+    VersionedResponseStyleSettings,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import ConfiguredModelRegistry
@@ -152,6 +158,11 @@ def test_prompt_preserves_required_order_and_relationship_without_synthetic_hist
         persona,
         identity,
         continuity,
+        ResponseStyleRenderer().render(
+            VersionedResponseStyleSettings(
+                settings=default_response_style(ContinuityMode.ONGOING), revision=1
+            )
+        ),
         messages,
         "Next",
         relationship=relationship,
@@ -169,7 +180,8 @@ def test_prompt_preserves_required_order_and_relationship_without_synthetic_hist
     assert "Speak with candid warmth." in prompt[4].content
     assert '"revision"' not in prompt[4].content
     assert prompt[5].content.startswith("Response style:")
-    assert "Do not invent shared history" in prompt[5].content
+    assert "Markdown convention:" in prompt[5].content
+    assert "do not invent shared history" in prompt[5].content
     assert [p.role for p in prompt] == ["system"] * 6 + [
         "user",
         "assistant",
@@ -210,6 +222,7 @@ def test_capacity_boundary_includes_fixed_overhead_and_output_reserve(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         models,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
     )
     if extra:
         with pytest.raises(ContextCapacityError):
@@ -280,6 +293,7 @@ def test_service_reads_current_projections_for_the_next_response(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         models,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         evolution_projections=repository,
     )
 

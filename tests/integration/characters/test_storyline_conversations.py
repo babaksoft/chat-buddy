@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import (
     BaselineResponseMemorySelector,
     ConversationService,
+    ResponseStyleService,
     StorylineConversationAdapter,
     StorylineResponseMemoryService,
     StorylineService,
@@ -34,6 +35,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbIdentityRepository,
     DbMemoryExtractionRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSceneRepository,
     DbStorylineMemoryRepository,
     DbStorylineRepository,
@@ -181,7 +183,9 @@ def test_storyline_scene_supports_recovery_retries_selection_and_restart(
         if node.message.id == original.id
     )
     assert provenance is not None
-    assert provenance.response_style == request.initial_scene.response_style
+    assert provenance.response_style == ResponseStyleService(
+        DbResponseStyleRepository(factory)
+    ).resolve(storyline.id)
     assert storyline.id == target.scope.continuity_id
 
 
@@ -330,6 +334,7 @@ def _service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(responses),
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         response_memories=StorylineResponseMemoryService(
             scenes,
@@ -399,5 +404,6 @@ def _summary_service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         models_registry,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
     )

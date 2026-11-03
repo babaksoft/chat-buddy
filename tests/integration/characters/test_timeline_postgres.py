@@ -17,7 +17,12 @@ from chat_buddy.characters.application import (
 from chat_buddy.characters.domain import (
     DayBoundary,
     DayReservationStatus,
+    NarrativePlacement,
     ReserveTimelineDay,
+    ResponseLength,
+    ResponseStyleSettings,
+    SceneDescriptionLevel,
+    StyleUpdateStatus,
     SubmittedInput,
     TimelineRevisionStatus,
     TimelineStartResult,
@@ -30,6 +35,7 @@ from chat_buddy.characters.infrastructure.db.models import (
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
+    DbResponseStyleRepository,
     DbTimelineDayRepository,
     DbTimelineRepository,
 )
@@ -192,6 +198,82 @@ def test_archive_and_first_send_serialize_on_timeline_owner(
         (TimelineRevisionStatus.UPDATED, DayReservationStatus.ARCHIVED),
         (TimelineRevisionStatus.STALE_REVISION, DayReservationStatus.RESERVED),
     }
+
+
+def test_style_update_and_first_send_snapshot_one_complete_revision(
+    characters_postgres_engine: Engine,
+) -> None:
+    """Serialize a style save with atomic day, input, and attempt reservation.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    request = _request(factory)
+    started = DbTimelineRepository(factory).start(
+        request, resolve_starting_relationship(request.relationship)
+    )
+    assert started.timeline is not None
+    assert started.style is not None
+    timeline = started.timeline
+    replacement = ResponseStyleSettings(
+        scene_description=SceneDescriptionLevel.RICH,
+        response_length=ResponseLength.EXPANSIVE,
+        narrative_placement=NarrativePlacement.AFTER_DIALOGUE,
+    )
+    reservation = ReserveTimelineDay(
+        timeline_id=timeline.id,
+        expected_timeline_revision=timeline.revision,
+        expected_selected_leaf_id=None,
+        boundary=DayBoundary(
+            local_date=date(2026, 11, 3),
+            timezone=timeline.calendar_timezone.name,
+            opens_at=datetime(2026, 11, 2, 20, 30, tzinfo=UTC),
+            closes_at=datetime(2026, 11, 3, 20, 30, tzinfo=UTC),
+        ),
+        submitted_input=SubmittedInput(content="Race the style save"),
+        generation=_generation(),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        update_future = executor.submit(
+            DbResponseStyleRepository(factory).update,
+            timeline.id,
+            replacement,
+            started.style.revision,
+        )
+        reserve_future = executor.submit(
+            DbTimelineDayRepository(factory).reserve_first,
+            timeline,
+            reservation,
+        )
+        updated = update_future.result()
+        reserved = reserve_future.result()
+
+    assert updated.status == StyleUpdateStatus.UPDATED
+    assert reserved.status == DayReservationStatus.RESERVED
+    assert reserved.attempt is not None
+    attempt_style = reserved.attempt.response_style
+    assert attempt_style.source_revision in {1, 2}
+    assert attempt_style.scene_description == (
+        request.response_style.scene_description
+        if attempt_style.source_revision == 1
+        else replacement.scene_description
+    )
+    assert attempt_style.response_length == (
+        request.response_style.response_length
+        if attempt_style.source_revision == 1
+        else replacement.response_length
+    )
+    assert attempt_style.narrative_placement == (
+        request.response_style.narrative_placement
+        if attempt_style.source_revision == 1
+        else replacement.narrative_placement
+    )
 
 
 def test_two_first_sends_create_one_atomic_day(

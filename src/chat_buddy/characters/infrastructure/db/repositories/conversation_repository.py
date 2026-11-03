@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from chat_buddy.characters.application import ResponseStyleRenderer
 from chat_buddy.characters.domain import (
     AlternativeGroup,
     ArchivedContinuityError,
@@ -26,20 +27,26 @@ from chat_buddy.characters.domain import (
     InvalidProviderResponseError,
     Message,
     MessageNode,
+    NarrativePlacement,
+    ResponseLength,
     ResponseProvenance,
     ResponseStyle,
+    ResponseStyleSettings,
     RetryAvailability,
     RetryLimitError,
+    SceneDescriptionLevel,
     SelectedPath,
     StaleSelectionError,
     StrategyIdentity,
     SubmittedInput,
+    VersionedResponseStyleSettings,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityModel,
     ConversationModel,
     GenerationAttemptModel,
     MessageModel,
+    ResponseStyleSettingsModel,
     SceneModel,
 )
 
@@ -47,14 +54,6 @@ from chat_buddy.characters.infrastructure.db.models import (
 class DbConversationRepository:
     """Persist selected-path turns under the archive serialization lock."""
 
-    _RESPONSE_STYLE = ResponseStyle(
-        name="ongoing.default",
-        version="1.0.0",
-        instruction=(
-            "Respond as the persona in a natural conversation. Use clear text and "
-            "preserve the authored identity and relationship boundaries."
-        ),
-    )
     _EVOLUTION_STRATEGY = StrategyIdentity(name="baseline.no_change", version="1.0.0")
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
@@ -174,9 +173,9 @@ class DbConversationRepository:
                 selection_guard_id=user_message_id,
                 submitted_input=content,
                 generation=generation.model_dump(mode="json"),
-                response_style=self._response_style(session, scope, row).model_dump(
-                    mode="json"
-                ),
+                response_style=self._response_style(
+                    session, scope.continuity_id
+                ).model_dump(mode="json"),
                 status="pending",
                 incomplete_output="",
                 created_at=now,
@@ -254,9 +253,9 @@ class DbConversationRepository:
                 selection_guard_id=target.id,
                 submitted_input=parent.content,
                 generation=generation.model_dump(mode="json"),
-                response_style=self._response_style(session, scope, row).model_dump(
-                    mode="json"
-                ),
+                response_style=self._response_style(
+                    session, scope.continuity_id
+                ).model_dump(mode="json"),
                 status="pending",
                 incomplete_output="",
                 created_at=now,
@@ -418,40 +417,41 @@ class DbConversationRepository:
             )
         return scene
 
-    @classmethod
+    @staticmethod
     def _response_style(
-        cls,
         session: Session,
-        scope: ConversationScope,
-        conversation: ConversationModel,
+        continuity_id: UUID,
     ) -> ResponseStyle:
-        """Resolve immutable response-style provenance from the owning mode.
+        """Render current continuity settings at the reservation boundary.
 
         Args:
             session:
-                Current completion transaction.
-            scope:
-                Complete conversation ownership.
-            conversation:
-                Owned conversation row.
+                Current reservation transaction.
+            continuity_id:
+                Owning continuity identifier.
 
         Returns:
-            Ongoing default or the exact fixed scene response style.
+            Exact effective response-style snapshot.
         """
 
-        if conversation.mode != "storyline":
-            return cls._RESPONSE_STYLE
-        scene = session.scalar(
-            select(SceneModel).where(
-                SceneModel.conversation_id == scope.conversation_id,
-                SceneModel.continuity_id == scope.continuity_id,
-                SceneModel.identity_id == scope.identity_id,
-                SceneModel.persona_id == scope.persona_id,
-            )
+        row = session.scalar(
+            select(ResponseStyleSettingsModel)
+            .where(ResponseStyleSettingsModel.continuity_id == continuity_id)
+            .with_for_update()
         )
-        if scene is None:
-            raise AttemptConflictError("Storyline scene ownership changed")
-        return ResponseStyle.model_validate(scene.response_style)
+        if row is None:
+            raise AttemptConflictError("Response-style settings are missing")
+
+        current = VersionedResponseStyleSettings(
+            settings=ResponseStyleSettings(
+                scene_description=SceneDescriptionLevel(row.scene_description),
+                response_length=ResponseLength(row.response_length),
+                narrative_placement=NarrativePlacement(row.narrative_placement),
+            ),
+            revision=row.revision,
+        )
+
+        return ResponseStyleRenderer().render(current)
 
     def stop(
         self,
@@ -1124,6 +1124,7 @@ class DbConversationRepository:
             user_message_id=row.user_message_id,
             submitted_input=row.submitted_input,
             generation=EffectiveGeneration.model_validate(row.generation),
+            response_style=ResponseStyle.model_validate(row.response_style),
             status=cast(AttemptStatus, row.status),
             incomplete_output=row.incomplete_output,
             created_at=_utc(row.created_at),

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import (
     ConversationService,
     EvolutionProjectionService,
+    ResponseStyleService,
 )
 from chat_buddy.characters.domain import (
     AdaptationFacet,
@@ -48,6 +49,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbEvolutionRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSummaryRepository,
 )
 from tests.characters_support import (
@@ -276,6 +278,7 @@ def test_branch_replay_deactivates_and_restores_relationship_and_adaptation_even
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(gateway),
+        ResponseStyleService(DbResponseStyleRepository(factory)),
         evolution_rebuilder=projection_service,
     )
     first_attempt = app.send(target, SubmittedInput(content="First evidence."))

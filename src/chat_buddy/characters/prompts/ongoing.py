@@ -8,6 +8,7 @@ from chat_buddy.characters.domain import (
     PersonaAdaptationProjection,
     PromptMessage,
     RelationshipProjection,
+    ResponseStyle,
 )
 
 # Extra deterministic safety reserve beyond the provider counter's framing.
@@ -18,6 +19,7 @@ def assemble_ongoing_prompt(
     persona: Persona,
     identity: Identity,
     continuity: Continuity,
+    response_style: ResponseStyle,
     messages: tuple[Message, ...],
     current_input: str | None = None,
     summary: str | None = None,
@@ -33,6 +35,8 @@ def assemble_ongoing_prompt(
             Frozen authored identity.
         continuity:
             Owned intent and starting state; no inferred evolution.
+        response_style:
+            Effective presentation snapshot reserved for this response.
         messages:
             Committed complete turns and at most one unmatched user tail.
         current_input:
@@ -73,11 +77,10 @@ def assemble_ongoing_prompt(
         ),
         PromptMessage(
             role="system",
-            content=(
-                "Response style:\nRespond as the persona in a natural conversation. "
-                "Use clear text and preserve the authored identity and relationship "
-                "boundaries. Do not invent shared history."
-            ),
+            content="Response style:\n"
+            + response_style.instruction
+            + "\nPreserve the authored identity and relationship boundaries and "
+            "do not invent shared history.",
         ),
     )
     summary_block = (

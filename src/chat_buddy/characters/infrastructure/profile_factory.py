@@ -6,10 +6,26 @@ from chat_buddy.characters.application import (
     EvolutionProjectionService,
     IdentityService,
     PersonaService,
+    ResponseStyleService,
     StorylineForkService,
     StorylineMemoryService,
     StorylineService,
 )
+
+
+def create_response_style_service() -> ResponseStyleService:
+    """Build shared continuity-scoped response-style operations.
+
+    Returns:
+        Lazily configured response-style application service.
+    """
+
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbResponseStyleRepository,
+    )
+
+    return ResponseStyleService(DbResponseStyleRepository(CharactersSessionLocal))
 
 
 def create_identity_service() -> IdentityService:

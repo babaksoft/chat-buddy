@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 7 — Resolve, update, and snapshot effective response style.
+Next delivery focus: Stage 8, Slice 8 — Converse and summarize within an open Timeline day.
 
 Deferred product exploration:
 

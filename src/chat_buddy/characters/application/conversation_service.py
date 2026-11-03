@@ -15,6 +15,7 @@ from chat_buddy.characters.application.context_service import (
     OngoingContextEligibility,
     StorylineContextBudgeter,
 )
+from chat_buddy.characters.application.response_style import ResponseStyleService
 from chat_buddy.characters.application.rolling_summary_service import (
     RollingSummaryService,
 )
@@ -54,6 +55,7 @@ from chat_buddy.characters.domain import (
     PersonaRepository,
     PromptMessage,
     ResponseMemorySelection,
+    ResponseStyle,
     RetryAvailability,
     Scene,
     SelectedPath,
@@ -170,6 +172,7 @@ class ConversationService:
         personas: PersonaRepository,
         summaries: SummaryRepository,
         models: ModelRegistry,
+        response_styles: ResponseStyleService,
         branch_mode_facts: BranchModeFactsResolver | None = None,
         storyline_adapter: StorylineConversationAdapter | None = None,
         memory_extraction: _StorylineExtractionProcessor | None = None,
@@ -193,6 +196,8 @@ class ConversationService:
                 Owned rolling-summary persistence.
             models:
                 Replaceable provider/model capabilities.
+            response_styles:
+                Continuity-scoped settings and deterministic renderer.
             branch_mode_facts:
                 Optional future-mode fact adapter; unavailable facts fail closed.
             storyline_adapter:
@@ -214,6 +219,7 @@ class ConversationService:
         self._identities = identities
         self._personas = personas
         self._models = models
+        self._response_styles = response_styles
         self._storyline_adapter = storyline_adapter
         self._memory_extraction = memory_extraction
         self._response_memories = response_memories
@@ -551,10 +557,12 @@ class ConversationService:
                 settings.provider, settings.model, "response", settings.requested
             )
         retry_history = history.model_copy(update={"messages": history.messages[:-1]})
+        response_style = self._response_styles.resolve(scope.continuity_id)
         self._prompt(
             target,
             retry_history,
             generation,
+            response_style,
             None,
             retry_history.messages[-1].id,
         )
@@ -621,6 +629,7 @@ class ConversationService:
                 target,
                 history,
                 attempt.generation,
+                attempt.response_style,
                 None,
                 summary_path_leaf_id,
             )
@@ -738,8 +747,13 @@ class ConversationService:
                 settings.provider, settings.model, "response", settings.requested
             )
 
+        response_style = self._response_styles.resolve(scope.continuity_id)
         self._prompt(
-            target, history, generation, submitted.content if submitted else None
+            target,
+            history,
+            generation,
+            response_style,
+            submitted.content if submitted else None,
         )
         expected_selected_leaf_id = tail.id if tail is not None else None
 
@@ -816,6 +830,7 @@ class ConversationService:
         target: ConversationTarget,
         history: ConversationHistory,
         generation: EffectiveGeneration,
+        response_style: ResponseStyle,
         current_input: str | None,
         summary_path_leaf_id: UUID | None = None,
     ) -> tuple[PromptMessage, ...]:
@@ -828,6 +843,8 @@ class ConversationService:
                 Scoped committed messages, never partial attempt output.
             generation:
                 Immutable output-reserved budget.
+            response_style:
+                Effective presentation snapshot for this prompt.
             current_input:
                 New input, absent for continuation.
             summary_path_leaf_id:
@@ -878,6 +895,7 @@ class ConversationService:
                     identity,
                     storyline,
                     scene,
+                    response_style,
                     eligible,
                     generation,
                     counter,
@@ -891,6 +909,7 @@ class ConversationService:
                     persona,
                     identity,
                     continuity,
+                    response_style,
                     eligible,
                     generation,
                     counter,

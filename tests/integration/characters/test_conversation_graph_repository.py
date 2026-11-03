@@ -43,7 +43,7 @@ def test_completed_turn_persists_parent_graph_selection_and_provenance(
     assert provenance is not None
     assert provenance.attempt_id == attempt.id
     assert provenance.generation == attempt.generation
-    assert provenance.response_style.name == "ongoing.default"
+    assert provenance.response_style == attempt.response_style
     assert provenance.evolution_strategy.name == "baseline.no_change"
     assert [
         message.sequence for message in app.history(ongoing_target(scope)).messages

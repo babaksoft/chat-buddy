@@ -11,6 +11,7 @@ from chat_buddy.characters.domain.llm import (
     EffectiveGeneration,
     GenerationConfiguration,
 )
+from chat_buddy.characters.domain.response_style import ResponseStyle
 from chat_buddy.characters.domain.validation import NON_BLANK_TEXT_PATTERN
 
 
@@ -172,6 +173,8 @@ class GenerationAttempt(BaseModel):
             Exact input retained for provenance.
         generation:
             Immutable effective provider/model/configuration and budget.
+        response_style:
+            Immutable presentation snapshot rendered at reservation.
         status:
             Current lifecycle status.
         incomplete_output:
@@ -192,6 +195,9 @@ class GenerationAttempt(BaseModel):
     submitted_input: str = Field(description="Exact input provenance.")
     generation: EffectiveGeneration = Field(
         description="Immutable effective selection."
+    )
+    response_style: ResponseStyle = Field(
+        description="Immutable effective response presentation."
     )
     status: AttemptStatus = Field(description="Lifecycle status.")
     incomplete_output: str = Field(description="Accumulated output outside history.")

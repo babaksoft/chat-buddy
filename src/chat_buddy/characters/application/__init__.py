@@ -72,6 +72,7 @@ from chat_buddy.characters.application.response_style import (
     RESPONSE_STYLE_RENDERER_NAME,
     RESPONSE_STYLE_RENDERER_VERSION,
     ResponseStyleRenderer,
+    ResponseStyleService,
     default_response_style,
 )
 from chat_buddy.characters.application.rolling_summary_service import (
@@ -121,6 +122,7 @@ __all__ = [
     "OngoingContextEligibility",
     "PersonaService",
     "ResponseStyleRenderer",
+    "ResponseStyleService",
     "RollingSummaryService",
     "StartAvailability",
     "StorylineContextBudgeter",

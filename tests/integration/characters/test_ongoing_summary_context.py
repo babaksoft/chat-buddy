@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import ConversationService
+from chat_buddy.characters.application import ConversationService, ResponseStyleService
 from chat_buddy.characters.domain import (
     AttemptConflictError,
     ContextCapacityError,
@@ -26,6 +26,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import ConfiguredModelRegistry
@@ -439,4 +440,5 @@ def _service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
     )

@@ -5,7 +5,11 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import ContinuityService, ConversationService
+from chat_buddy.characters.application import (
+    ContinuityService,
+    ConversationService,
+    ResponseStyleService,
+)
 from chat_buddy.characters.domain import (
     BranchModeFactsResolver,
     ContinuityMode,
@@ -25,6 +29,7 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbConversationRepository,
     DbIdentityRepository,
     DbPersonaRepository,
+    DbResponseStyleRepository,
     DbSummaryRepository,
 )
 from chat_buddy.characters.infrastructure.llm import (
@@ -170,7 +175,8 @@ def service(
         DbPersonaRepository(factory),
         DbSummaryRepository(factory),
         registry(gateway, context),
-        branch_mode_facts,
+        ResponseStyleService(DbResponseStyleRepository(factory)),
+        branch_mode_facts=branch_mode_facts,
     )
 
 

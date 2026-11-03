@@ -1,12 +1,16 @@
 """Explicit defaults and deterministic rendering for response presentation."""
 
+from uuid import UUID
+
 from chat_buddy.characters.domain import (
     ContinuityMode,
     NarrativePlacement,
     ResponseLength,
     ResponseStyle,
+    ResponseStyleRepository,
     ResponseStyleSettings,
     SceneDescriptionLevel,
+    StyleUpdateResult,
     VersionedResponseStyleSettings,
 )
 
@@ -133,3 +137,72 @@ class ResponseStyleRenderer:
             source_revision=current.revision,
             instruction=instruction,
         )
+
+
+class ResponseStyleService:
+    """Resolve and update continuity-owned response presentation."""
+
+    def __init__(
+        self,
+        repository: ResponseStyleRepository,
+        renderer: ResponseStyleRenderer | None = None,
+    ) -> None:
+        """Initialize response-style operations.
+
+        Args:
+            repository:
+                Continuity-owned style persistence.
+            renderer:
+                Optional deterministic renderer override.
+        """
+
+        self._repository = repository
+        self._renderer = renderer or ResponseStyleRenderer()
+
+    def get(self, continuity_id: UUID) -> VersionedResponseStyleSettings:
+        """Load the current requested controls and revision.
+
+        Args:
+            continuity_id:
+                Owning Characters continuity.
+
+        Returns:
+            Current committed settings.
+        """
+
+        return self._repository.get(continuity_id)
+
+    def resolve(self, continuity_id: UUID) -> ResponseStyle:
+        """Render the current settings into an effective snapshot.
+
+        Args:
+            continuity_id:
+                Owning Characters continuity.
+
+        Returns:
+            Complete versioned response-style instruction.
+        """
+
+        return self._renderer.render(self.get(continuity_id))
+
+    def update(
+        self,
+        continuity_id: UUID,
+        settings: ResponseStyleSettings,
+        expected_revision: int,
+    ) -> StyleUpdateResult:
+        """Atomically replace all controls under an optimistic revision.
+
+        Args:
+            continuity_id:
+                Owning Characters continuity.
+            settings:
+                Complete replacement controls.
+            expected_revision:
+                Last observed positive style revision.
+
+        Returns:
+            Explicit updated, idempotent, stale, or archived outcome.
+        """
+
+        return self._repository.update(continuity_id, settings, expected_revision)
