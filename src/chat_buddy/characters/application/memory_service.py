@@ -150,8 +150,3 @@ class ContinuityMemoryService:
         """
 
         return self._extraction_records.dismiss_conflict(command)
-
-
-# Transitional import names are removed by Slice 7.
-StorylineMemoryService = ContinuityMemoryService
-TimelineMemoryService = ContinuityMemoryService

@@ -12,15 +12,15 @@ from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
     ContinuityExtractionContextService,
+    ContinuityMemoryEligibility,
     ContinuityMemoryExtractionService,
+    ContinuityMemoryService,
     ContinuityResponseMemoryService,
     ConversationService,
     ResponseStyleService,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineForkService,
-    StorylineMemoryEligibility,
-    StorylineMemoryService,
     StorylineService,
 )
 from chat_buddy.characters.domain import (
@@ -296,7 +296,7 @@ def prove_stage_six_milestone(factory: sessionmaker[Session]) -> None:
 
     conflicts = DbMemoryExtractionRepository(factory).list_conflicts(storyline.id)
     assert len(conflicts) == 1
-    memory_service = StorylineMemoryService(
+    memory_service = ContinuityMemoryService(
         memory_repository, DbMemoryExtractionRepository(factory)
     )
     memory_service.dismiss_conflict(
@@ -589,6 +589,6 @@ def _context_service(
         DbConversationRepository(factory),
         DbSummaryRepository(factory),
         DbContinuityMemoryRepository(factory),
-        StorylineMemoryEligibility(),
+        ContinuityMemoryEligibility(),
         BaselineMemoryContextSelector(counter or MessageCountCounter()),
     )

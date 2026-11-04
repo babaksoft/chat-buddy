@@ -5,12 +5,12 @@ from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 from chat_buddy.characters.application import (
+    BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
-    BaselineTimelineMemoryContextSelector,
     ContinuityExtractionContextService,
+    ContinuityMemoryEligibility,
+    ContinuityMemoryExtractionService,
     ContinuityResponseMemoryService,
-    TimelineMemoryEligibility,
-    TimelineMemoryExtractionService,
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -244,7 +244,7 @@ def test_timeline_eligibility_requires_selected_past_day_evidence() -> None:
     foreign_turn = _turn(foreign_scope, 1)
     foreign = _memory(foreign_scope, foreign_turn, occurrence=1, learned=1)
 
-    result = TimelineMemoryEligibility().select(
+    result = ContinuityMemoryEligibility().select(
         (eligible, future, deselected, inactive, foreign),
         scope.continuity_id,
         _position(scope, uuid4(), 2),
@@ -273,7 +273,7 @@ def test_timeline_extraction_selection_uses_day_and_current_day_history() -> Non
         source_turn=source,
     )
 
-    selection = BaselineTimelineMemoryContextSelector(_WordCounter()).select(
+    selection = BaselineMemoryContextSelector(_WordCounter()).select(
         context,
         ExtractionBudget(input_tokens=512, fixed_overhead_tokens=8),
     )
@@ -409,7 +409,7 @@ def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
     effects = Mock()
     effects.reserve.return_value = reserved
     effects.apply.return_value = terminal
-    service = TimelineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,

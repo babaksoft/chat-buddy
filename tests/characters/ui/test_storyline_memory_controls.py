@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from chat_buddy.characters.application import StorylineMemoryService
+from chat_buddy.characters.application import ContinuityMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityLifecycle,
@@ -52,12 +52,12 @@ def _render(service: object, storyline: object, selected_leaf_id: object) -> Non
     from typing import cast
     from uuid import UUID
 
-    from chat_buddy.characters.application import StorylineMemoryService
+    from chat_buddy.characters.application import ContinuityMemoryService
     from chat_buddy.characters.domain import Storyline
     from chat_buddy.characters.ui.storyline_memory import render_storyline_memory
 
     render_storyline_memory(
-        cast(StorylineMemoryService, service),
+        cast(ContinuityMemoryService, service),
         cast(Storyline, storyline),
         cast(UUID, selected_leaf_id),
     )
@@ -74,7 +74,7 @@ def memory_ui() -> tuple[Mock, Storyline, ContinuityMemory, MemoryConflict]:
     storyline = _storyline()
     memory = _memory(storyline, reinforcement=True)
     conflict = _conflict(memory)
-    service = Mock(spec=StorylineMemoryService)
+    service = Mock(spec=ContinuityMemoryService)
     service.list_memories.return_value = (memory,)
     service.list_conflicts.return_value = (conflict,)
     return service, storyline, memory, conflict

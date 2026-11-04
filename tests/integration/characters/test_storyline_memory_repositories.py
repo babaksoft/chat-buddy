@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.application import StorylineMemoryService
+from chat_buddy.characters.application import ContinuityMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityMode,
@@ -474,7 +474,7 @@ def test_management_workflows_preserve_provenance_and_enforce_guards(
     storyline, scene = storylines.start(request, _relationship())
     extraction = DbMemoryExtractionRepository(factory)
     memories = DbContinuityMemoryRepository(factory)
-    service = StorylineMemoryService(memories, extraction)
+    service = ContinuityMemoryService(memories, extraction)
     provenance = _provenance()
 
     persona_id = _complete_exchange(factory, scene.scope.conversation_id, storyline.id)

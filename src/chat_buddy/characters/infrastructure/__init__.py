@@ -18,9 +18,7 @@ from chat_buddy.characters.infrastructure.profile_factory import (
     create_profile_services,
     create_response_style_service,
     create_storyline_fork_service,
-    create_storyline_memory_service,
     create_storyline_services,
-    create_timeline_memory_service,
 )
 
 __all__ = [
@@ -36,8 +34,6 @@ __all__ = [
     "create_profile_services",
     "create_response_style_service",
     "create_storyline_fork_service",
-    "create_storyline_memory_service",
     "create_storyline_services",
-    "create_timeline_memory_service",
     "default_evolution_observer",
 ]

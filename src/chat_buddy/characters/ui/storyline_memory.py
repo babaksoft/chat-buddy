@@ -5,7 +5,7 @@ from uuid import UUID
 
 import streamlit as st
 
-from chat_buddy.characters.application import StorylineMemoryService
+from chat_buddy.characters.application import ContinuityMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityLifecycle,
@@ -31,7 +31,7 @@ _CORRECTION_TARGET_KEY = "characters_storyline_memory_correction_target"
 
 
 def render_storyline_memory(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
 ) -> None:
@@ -99,7 +99,7 @@ def clear_storyline_memory_state() -> None:
 
 
 def _render_memory(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
@@ -201,7 +201,7 @@ def _render_evidence(memory: ContinuityMemory) -> None:
 
 
 def _render_correction(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
@@ -247,7 +247,7 @@ def _render_correction(
 
 
 def _change_state(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     memory: ContinuityMemory,
     operation: Literal["exclude", "reactivate"],
 ) -> None:
@@ -280,7 +280,7 @@ def _change_state(
 
 
 def _render_deletion(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
@@ -324,7 +324,7 @@ def _render_deletion(
 
 
 def _render_conflict(
-    service: StorylineMemoryService,
+    service: ContinuityMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
     memories: tuple[ContinuityMemory, ...],

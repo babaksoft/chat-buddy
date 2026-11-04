@@ -117,7 +117,7 @@ class DbContinuityMemoryRepository:
     def list_eligible(
         self,
         continuity_id: UUID,
-        target_scene_position: int,
+        target_entry_position: int,
         selected_persona_message_ids: frozenset[UUID],
     ) -> tuple[ContinuityMemory, ...]:
         """List active memories whose current source is branch- and time-eligible.
@@ -125,8 +125,8 @@ class DbContinuityMemoryRepository:
         Args:
             continuity_id:
                 Expected continuity owner.
-            target_scene_position:
-                Positive target scene position.
+            target_entry_position:
+                Positive target Entry position.
             selected_persona_message_ids:
                 Persona checkpoints on the selected histories.
 
@@ -134,9 +134,9 @@ class DbContinuityMemoryRepository:
             Eligible complete lineages in deterministic order.
         """
 
-        if target_scene_position < 1:
+        if target_entry_position < 1:
             raise InvalidTemporalProvenanceError(
-                "Target scene position must be positive"
+                "Target Entry position must be positive"
             )
 
         return tuple(
@@ -144,8 +144,8 @@ class DbContinuityMemoryRepository:
             for memory in self.list(continuity_id)
             if memory.current.state == MemoryRevisionState.ACTIVE
             and memory.current.source.persona_message_id in selected_persona_message_ids
-            and memory.current.source.occurrence.position <= target_scene_position
-            and memory.current.source.learned.position <= target_scene_position
+            and memory.current.source.occurrence.position <= target_entry_position
+            and memory.current.source.learned.position <= target_entry_position
         )
 
     def correct(self, command: CorrectMemoryCommand) -> ContinuityMemory:
@@ -811,7 +811,7 @@ class DbMemoryExtractionRepository:
             mode:
                 Expected memory-bearing continuity mode.
             temporal_owner_id:
-                Expected source scene or represented day.
+                Expected source Entry.
             source_persona_message_id:
                 Expected selected persona checkpoint.
 

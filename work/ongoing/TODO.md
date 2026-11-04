@@ -1,7 +1,10 @@
 # Ongoing status
 
 Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 7 — 
-Remove transitional concepts and prove isolation. This refactor is a prerequisite for
+Remove transitional concepts and prove isolation. Cleanup is implemented; completion
+is blocked by invalid PostgreSQL backfill SQL in applied revision `9c4e7a1b2d30`.
+See the [refactor verification status](CONTINUITY_ENTRY_REFACTOR_PLAN.md#slice-7--remove-transitional-concepts-and-prove-isolation).
+This refactor is a prerequisite for
 Stage 8, Slice 10.
 
 Deferred product exploration:

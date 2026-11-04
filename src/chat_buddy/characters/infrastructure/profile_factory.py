@@ -9,9 +9,7 @@ from chat_buddy.characters.application import (
     PersonaService,
     ResponseStyleService,
     StorylineForkService,
-    StorylineMemoryService,
     StorylineService,
-    TimelineMemoryService,
 )
 
 
@@ -166,26 +164,6 @@ def create_continuity_memory_service() -> ContinuityMemoryService:
         DbContinuityMemoryRepository(CharactersSessionLocal),
         DbMemoryExtractionRepository(CharactersSessionLocal),
     )
-
-
-def create_timeline_memory_service() -> TimelineMemoryService:
-    """Build continuity-scoped Timeline memory management operations.
-
-    Returns:
-        Lazily configured Timeline memory application operations.
-    """
-
-    return create_continuity_memory_service()
-
-
-def create_storyline_memory_service() -> StorylineMemoryService:
-    """Build the transitional Storyline view of shared memory operations.
-
-    Returns:
-        Lazily configured shared memory application operations.
-    """
-
-    return create_continuity_memory_service()
 
 
 def create_evolution_inspection_service() -> EvolutionInspectionService:

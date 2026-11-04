@@ -9,9 +9,9 @@ import pytest
 from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
+    ContinuityMemoryEligibility,
     ContinuityResponseMemoryService,
     StorylineExtractionContextService,
-    StorylineMemoryEligibility,
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -342,7 +342,7 @@ def test_eligibility_applies_ownership_branch_time_and_lifecycle_matrix() -> Non
     foreign_scope = _scope()
     foreign_source = _turn(foreign_scope, 1, "foreign")
     foreign = _memory(foreign_scope, foreign_source, occurrence=1, learned=1)
-    policy = StorylineMemoryEligibility()
+    policy = ContinuityMemoryEligibility()
     target = _position(scope, uuid4(), 2)
 
     result = policy.select(
@@ -706,7 +706,7 @@ def test_snapshot_service_builds_owned_storyline_context_and_rejects_ongoing() -
         conversations,
         summaries,
         memories,
-        StorylineMemoryEligibility(),
+        ContinuityMemoryEligibility(),
         BaselineMemoryContextSelector(BlockTokenCounter()),
     )
 

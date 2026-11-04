@@ -266,8 +266,3 @@ class ContinuityMemoryExtractionService:
 
         subjects.pop(target.current.subject.casefold(), None)
         subjects[subject] = target.id
-
-
-# Transitional import names are removed by Slice 7.
-StorylineMemoryExtractionService = ContinuityMemoryExtractionService
-TimelineMemoryExtractionService = ContinuityMemoryExtractionService

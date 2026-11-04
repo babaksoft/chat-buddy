@@ -549,7 +549,25 @@ Timeline processing continues to fail with the stable unavailable result.
 
 ### Slice 7 — Remove transitional concepts and prove isolation
 
-Status: Pending
+Status: In progress
+
+Implementation cleanup and architecture guards are complete: obsolete memory
+aliases and forwarding factories are removed, shared memory lookup uses Entry
+terminology, and architecture coverage rejects obsolete symbols/exports/table
+names, paired subtype fields, prompt introspection, and Scene evolution provenance.
+Existing package export/import and area-isolation checks remain in force.
+
+Verification on 2026-11-04: architecture and Characters integration coverage
+passed (153 passed, 51 PostgreSQL tests skipped without a test URL). Explicit
+PostgreSQL validation was then attempted against disposable databases using the
+installed psycopg2 driver. All 13 selected migration and runtime tests failed in
+pre-existing revision `9c4e7a1b2d30`: the response-style backfill references the
+UPDATE target `attempt` in a LEFT JOIN condition, which PostgreSQL rejects.
+This blocks fresh upgrades and all subsequent migration proof. Applied migrations
+were left unchanged as required by repository policy. Slice 7 cannot be marked
+complete until an authorized migration-history repair permits these checks.
+Mypy and Ruff passed. The capped Black check timed out and was not retried.
+The full test suite was omitted per the requested focused-verification scope.
 
 Delete every temporary adapter, alias, deprecated export, paired identifier, and
 fallback path introduced to keep earlier slices runnable.

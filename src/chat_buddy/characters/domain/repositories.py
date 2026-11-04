@@ -1088,16 +1088,16 @@ class ContinuityMemoryRepository(Protocol):
     def list_eligible(
         self,
         continuity_id: UUID,
-        target_scene_position: int,
+        target_entry_position: int,
         selected_persona_message_ids: frozenset[UUID],
     ) -> tuple[ContinuityMemory, ...]:
-        """Read active branch- and time-eligible memory at one scene.
+        """Read active branch- and time-eligible memory at one Entry.
 
         Args:
             continuity_id:
                 Expected continuity owner.
-            target_scene_position:
-                Positive target scene ordinal.
+            target_entry_position:
+                Positive target Entry ordinal.
             selected_persona_message_ids:
                 Selected source checkpoints eligible for content.
 

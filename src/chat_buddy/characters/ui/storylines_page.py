@@ -36,10 +36,10 @@ from chat_buddy.characters.domain import (
     StorylineGroup,
 )
 from chat_buddy.characters.infrastructure import (
+    create_continuity_memory_service,
     create_conversation_service,
     create_evolution_inspection_service,
     create_storyline_fork_service,
-    create_storyline_memory_service,
     create_storyline_services,
 )
 from chat_buddy.characters.ui.evolution_inspection import (
@@ -268,7 +268,7 @@ def _render_storyline(
             st.rerun()
     selected_leaf_id = _render_scene(selected, sequence, service)
     render_storyline_memory(
-        create_storyline_memory_service(), storyline, selected_leaf_id
+        create_continuity_memory_service(), storyline, selected_leaf_id
     )
     render_evolution_inspection(
         create_evolution_inspection_service(),

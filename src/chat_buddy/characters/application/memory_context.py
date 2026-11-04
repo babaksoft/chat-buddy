@@ -828,8 +828,5 @@ class ContinuityExtractionContextService:
 
 # Transitional import names are removed by Slice 7. They refer to the shared
 # implementations and do not retain parallel behavior or strategy identities.
-StorylineMemoryEligibility = ContinuityMemoryEligibility
-TimelineMemoryEligibility = ContinuityMemoryEligibility
-BaselineTimelineMemoryContextSelector = BaselineMemoryContextSelector
 StorylineExtractionContextService = StorylineExtractionContextAdapter
 TimelineExtractionContextService = TimelineExtractionContextAdapter

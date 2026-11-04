@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from chat_buddy.characters.application import StorylineMemoryExtractionService
+from chat_buddy.characters.application import ContinuityMemoryExtractionService
 from chat_buddy.characters.domain import (
     ContinuityMode,
     ConversationScope,
@@ -174,7 +174,7 @@ def test_process_applies_no_change_once_and_returns_terminal_effect() -> None:
     effects = Mock()
     effects.reserve.return_value = reserved
     effects.apply.return_value = completed
-    service = StorylineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,
@@ -207,7 +207,7 @@ def test_terminal_effect_skips_context_and_provider() -> None:
     memories = Mock()
     effects = Mock()
     effects.reserve.return_value = completed
-    service = StorylineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,
@@ -241,7 +241,7 @@ def test_invalid_delta_is_rejected_whole_before_repository_apply() -> None:
     effects.reserve.return_value = _effect(
         scope, target.entry_id, source_id, ExtractionEffectState.RESERVED
     )
-    service = StorylineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,
@@ -291,7 +291,7 @@ def test_create_cannot_recreate_a_subject_found_only_in_prior_context() -> None:
     effects.reserve.return_value = _effect(
         scope, target.entry_id, source_id, ExtractionEffectState.RESERVED
     )
-    service = StorylineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,
@@ -314,7 +314,7 @@ def test_ongoing_target_never_reserves_or_invokes_extraction() -> None:
     extractor = Mock()
     memories = Mock()
     effects = Mock()
-    service = StorylineMemoryExtractionService(
+    service = ContinuityMemoryExtractionService(
         contexts,
         extractor,
         memories,
