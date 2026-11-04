@@ -5,6 +5,7 @@ from chat_buddy.characters.domain import (
     ContextCapacityError,
     ContextSelection,
     Continuity,
+    ContinuityMemory,
     ConversationHistory,
     EffectiveGeneration,
     EligibleContext,
@@ -16,7 +17,6 @@ from chat_buddy.characters.domain import (
     ResponseStyle,
     Scene,
     Storyline,
-    StorylineMemory,
     SummaryRevision,
     Timeline,
     TokenCounter,
@@ -257,7 +257,7 @@ class StorylineContextBudgeter:
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
-        memories: tuple[StorylineMemory, ...] = (),
+        memories: tuple[ContinuityMemory, ...] = (),
         projections: EvolutionProjectionState | None = None,
     ) -> ContextSelection:
         """Reserve Storyline blocks and greedily add whole turns newest first.
@@ -295,7 +295,7 @@ class StorylineContextBudgeter:
         turns = context.uncovered_turns
         mandatory_count = min(1, len(turns))
         selected = turns[-mandatory_count:] if mandatory_count else ()
-        selected_memories: tuple[StorylineMemory, ...] = ()
+        selected_memories: tuple[ContinuityMemory, ...] = ()
         prompt = self._render(
             persona,
             identity,
@@ -371,7 +371,7 @@ class StorylineContextBudgeter:
         response_style: ResponseStyle,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
-        memories: tuple[StorylineMemory, ...],
+        memories: tuple[ContinuityMemory, ...],
         projections: EvolutionProjectionState | None,
     ) -> tuple[PromptMessage, ...]:
         """Format one candidate from exact Storyline scene inputs.

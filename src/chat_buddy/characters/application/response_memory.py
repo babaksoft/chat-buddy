@@ -1,6 +1,9 @@
 """Storyline response-memory eligibility loading and bounded selection."""
 
 from chat_buddy.characters.domain import (
+    ContinuityMemory,
+    ContinuityMemoryRepository,
+    ContinuityMode,
     ConversationGraphRepository,
     ResponseMemoryBudget,
     ResponseMemorySelection,
@@ -8,8 +11,6 @@ from chat_buddy.characters.domain import (
     Scene,
     SceneRepository,
     Storyline,
-    StorylineMemory,
-    StorylineMemoryRepository,
     StrategyIdentity,
     Timeline,
     TimelineDay,
@@ -38,7 +39,7 @@ class BaselineResponseMemorySelector:
 
     def select(
         self,
-        memories: tuple[StorylineMemory, ...],
+        memories: tuple[ContinuityMemory, ...],
         budget: ResponseMemoryBudget,
         counter: TokenCounter,
     ) -> ResponseMemorySelection:
@@ -65,7 +66,7 @@ class BaselineResponseMemorySelector:
                 ),
             )
         )
-        included: tuple[StorylineMemory, ...] = ()
+        included: tuple[ContinuityMemory, ...] = ()
         tokens = 0
         for memory in ordered:
             candidate = (*included, memory)
@@ -104,7 +105,7 @@ class StorylineResponseMemoryService:
         self,
         scenes: SceneRepository,
         conversations: ConversationGraphRepository,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         selector: ResponseMemorySelector,
         budget: ResponseMemoryBudget,
     ) -> None:
@@ -170,7 +171,7 @@ class TimelineResponseMemoryService:
         self,
         days: TimelineDayRepository,
         conversations: ConversationGraphRepository,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         selector: ResponseMemorySelector,
         budget: ResponseMemoryBudget,
     ) -> None:
@@ -226,7 +227,9 @@ class TimelineResponseMemoryService:
             selected_persona_ids,
         )
         eligible = tuple(
-            memory for memory in eligible if memory.current.source.day_id is not None
+            memory
+            for memory in eligible
+            if memory.current.source.learned.mode == ContinuityMode.TIMELINE
         )
 
         return self._selector.select(eligible, self._budget, counter)

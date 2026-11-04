@@ -4,13 +4,13 @@ from uuid import UUID
 
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
+    ContinuityMemory,
+    ContinuityMemoryRepository,
     CorrectMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
     MemoryConflict,
     MemoryExtractionRepository,
-    StorylineMemory,
-    StorylineMemoryRepository,
 )
 
 
@@ -19,7 +19,7 @@ class StorylineMemoryService:
 
     def __init__(
         self,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         extraction_records: MemoryExtractionRepository,
     ) -> None:
         """Initialize memory management workflows.
@@ -34,7 +34,7 @@ class StorylineMemoryService:
         self._memories = memories
         self._extraction_records = extraction_records
 
-    def list_memories(self, continuity_id: UUID) -> tuple[StorylineMemory, ...]:
+    def list_memories(self, continuity_id: UUID) -> tuple[ContinuityMemory, ...]:
         """List every active and excluded memory in a Storyline.
 
         Args:
@@ -47,7 +47,7 @@ class StorylineMemoryService:
 
         return self._memories.list(continuity_id)
 
-    def inspect_memory(self, continuity_id: UUID, memory_id: UUID) -> StorylineMemory:
+    def inspect_memory(self, continuity_id: UUID, memory_id: UUID) -> ContinuityMemory:
         """Inspect one complete continuity-owned lineage.
 
         Args:
@@ -62,7 +62,7 @@ class StorylineMemoryService:
 
         return self._memories.get(continuity_id, memory_id)
 
-    def correct(self, command: CorrectMemoryCommand) -> StorylineMemory:
+    def correct(self, command: CorrectMemoryCommand) -> ContinuityMemory:
         """Apply a guarded user-authored correction.
 
         Args:
@@ -75,7 +75,7 @@ class StorylineMemoryService:
 
         return self._memories.correct(command)
 
-    def exclude(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+    def exclude(self, command: ChangeMemoryStateCommand) -> ContinuityMemory:
         """Exclude an active memory under its observed revision.
 
         Args:
@@ -95,7 +95,7 @@ class StorylineMemoryService:
 
         return self._memories.change_state(command)
 
-    def reactivate(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+    def reactivate(self, command: ChangeMemoryStateCommand) -> ContinuityMemory:
         """Reactivate an excluded memory under its observed revision.
 
         Args:

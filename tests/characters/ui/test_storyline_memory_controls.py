@@ -12,10 +12,13 @@ from chat_buddy.characters.application import StorylineMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityLifecycle,
+    ContinuityMemory,
+    ContinuityMode,
     ConversationScope,
     CorrectMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
+    EntryPosition,
     ExtractionProvenance,
     GenerationConfiguration,
     MemoryAuthorship,
@@ -25,10 +28,8 @@ from chat_buddy.characters.domain import (
     MemoryRevision,
     MemoryRevisionKind,
     MemoryRevisionState,
-    ScenePosition,
     StaleMemoryRevisionError,
     Storyline,
-    StorylineMemory,
     StrategyIdentity,
 )
 
@@ -63,7 +64,7 @@ def _render(service: object, storyline: object, selected_leaf_id: object) -> Non
 
 
 @pytest.fixture
-def memory_ui() -> tuple[Mock, Storyline, StorylineMemory, MemoryConflict]:
+def memory_ui() -> tuple[Mock, Storyline, ContinuityMemory, MemoryConflict]:
     """Provide one active Storyline with reinforced memory and a conflict.
 
     Returns:
@@ -80,7 +81,7 @@ def memory_ui() -> tuple[Mock, Storyline, StorylineMemory, MemoryConflict]:
 
 
 def test_shows_current_lineage_reinforcement_and_extraction_provenance(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Explain current state plus every durable source and strategy detail.
 
@@ -106,7 +107,7 @@ def test_shows_current_lineage_reinforcement_and_extraction_provenance(
 
 
 def test_correction_rerenders_the_new_user_revision_immediately(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Apply a guarded correction and expose its next-prompt value on rerun.
 
@@ -118,7 +119,7 @@ def test_correction_rerenders_the_new_user_revision_immediately(
     service, storyline, memory, _ = memory_ui
     corrected = _corrected(memory, "favorite drink", "The user prefers coffee.")
 
-    def correct(command: CorrectMemoryCommand) -> StorylineMemory:
+    def correct(command: CorrectMemoryCommand) -> ContinuityMemory:
         """Expose committed content to the automatic rerun.
 
         Args:
@@ -149,7 +150,7 @@ def test_correction_rerenders_the_new_user_revision_immediately(
 
 
 def test_exclusion_reactivation_and_stale_revision_are_guarded(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Use observed revisions for both lifecycle directions and surface staleness.
 
@@ -180,7 +181,7 @@ def test_exclusion_reactivation_and_stale_revision_are_guarded(
 
 
 def test_permanent_deletion_requires_confirmation_and_complete_ownership(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Keep hard deletion disabled until its explicit warning is accepted.
 
@@ -212,7 +213,7 @@ def test_permanent_deletion_requires_confirmation_and_complete_ownership(
 
 
 def test_conflict_separates_new_evidence_and_keeps_current_value(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Inspect both interpretations and dismiss without mutating memory.
 
@@ -239,7 +240,7 @@ def test_conflict_separates_new_evidence_and_keeps_current_value(
 
 
 def test_conflict_opens_normal_correction_for_the_exact_owned_revision(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Open the normal correction form for the exact target revision.
 
@@ -266,7 +267,7 @@ def test_conflict_opens_normal_correction_for_the_exact_owned_revision(
 
 
 def test_branch_change_invalidates_every_memory_widget_namespace(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Give the same revision fresh widget state after branch selection changes.
 
@@ -289,7 +290,7 @@ def test_branch_change_invalidates_every_memory_widget_namespace(
 
 
 def test_empty_and_archived_storylines_are_clear_and_read_only(
-    memory_ui: tuple[Mock, Storyline, StorylineMemory, MemoryConflict],
+    memory_ui: tuple[Mock, Storyline, ContinuityMemory, MemoryConflict],
 ) -> None:
     """Explain empty state and suppress all writes for archived continuity.
 
@@ -365,7 +366,7 @@ def _storyline() -> Storyline:
     )
 
 
-def _memory(storyline: Storyline, *, reinforcement: bool) -> StorylineMemory:
+def _memory(storyline: Storyline, *, reinforcement: bool) -> ContinuityMemory:
     """Create one extracted logical memory.
 
     Args:
@@ -382,7 +383,7 @@ def _memory(storyline: Storyline, *, reinforcement: bool) -> StorylineMemory:
     memory_id = uuid4()
     revision = _revision(memory_id, evidence)
     evidence_rows = (evidence, _evidence(storyline)) if reinforcement else (evidence,)
-    return StorylineMemory(
+    return ContinuityMemory(
         id=memory_id,
         continuity_id=storyline.id,
         current_revision_id=revision.id,
@@ -411,12 +412,22 @@ def _evidence(storyline: Storyline) -> MemoryEvidence:
             continuity_id=storyline.id,
             conversation_id=uuid4(),
         ),
-        scene_id=scene_id,
+        entry_id=scene_id,
         user_message_id=uuid4(),
         persona_message_id=uuid4(),
         persona_checkpoint=2,
-        occurrence=ScenePosition(scene_id=scene_id, position=1),
-        learned=ScenePosition(scene_id=scene_id, position=1),
+        occurrence=EntryPosition(
+            entry_id=scene_id,
+            continuity_id=storyline.id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
+        learned=EntryPosition(
+            entry_id=scene_id,
+            continuity_id=storyline.id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
         extraction=ExtractionProvenance(
             selector=StrategyIdentity(name="baseline.context", version="1.0.0"),
             extractor=StrategyIdentity(name="baseline.delta", version="1.0.0"),
@@ -458,7 +469,9 @@ def _revision(memory_id: UUID, evidence: MemoryEvidence) -> MemoryRevision:
     )
 
 
-def _corrected(memory: StorylineMemory, subject: str, content: str) -> StorylineMemory:
+def _corrected(
+    memory: ContinuityMemory, subject: str, content: str
+) -> ContinuityMemory:
     """Append a user-authored correction snapshot.
 
     Args:
@@ -490,7 +503,7 @@ def _corrected(memory: StorylineMemory, subject: str, content: str) -> Storyline
         source=previous.source,
         created_at=NOW + timedelta(minutes=1),
     )
-    return StorylineMemory(
+    return ContinuityMemory(
         id=memory.id,
         continuity_id=memory.continuity_id,
         current_revision_id=current.id,
@@ -499,7 +512,7 @@ def _corrected(memory: StorylineMemory, subject: str, content: str) -> Storyline
     )
 
 
-def _excluded(memory: StorylineMemory) -> StorylineMemory:
+def _excluded(memory: ContinuityMemory) -> ContinuityMemory:
     """Append an excluded lifecycle revision.
 
     Args:
@@ -523,7 +536,7 @@ def _excluded(memory: StorylineMemory) -> StorylineMemory:
             "created_at": NOW + timedelta(minutes=1),
         }
     )
-    return StorylineMemory(
+    return ContinuityMemory(
         id=memory.id,
         continuity_id=memory.continuity_id,
         current_revision_id=current.id,
@@ -532,7 +545,7 @@ def _excluded(memory: StorylineMemory) -> StorylineMemory:
     )
 
 
-def _conflict(memory: StorylineMemory) -> MemoryConflict:
+def _conflict(memory: ContinuityMemory) -> MemoryConflict:
     """Create an unresolved targeted conflict.
 
     Args:

@@ -6,17 +6,18 @@ from uuid import uuid4
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    ContinuityMode,
     CreateMemoryCommand,
-    DayPosition,
+    EntryPosition,
     ExtractionProvenance,
     MemoryDelta,
     MemoryEvidence,
     StrategyIdentity,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbMemoryExtractionRepository,
     DbTimelineDayRepository,
-    DbTimelineMemoryRepository,
 )
 from tests.characters_support import FakeResponse
 from tests.integration.characters.test_timeline_conversations import (
@@ -60,11 +61,16 @@ def test_timeline_memory_persists_day_provenance_and_as_of_eligibility(
         model=generation.model.model,
         configuration=generation.configuration,
     )
-    position = DayPosition(day_id=day.id, position=day.position)
+    position = EntryPosition(
+        entry_id=day.id,
+        continuity_id=target.scope.continuity_id,
+        mode=ContinuityMode.TIMELINE,
+        position=day.position,
+    )
     evidence = MemoryEvidence(
         id=uuid4(),
         scope=target.scope,
-        day_id=day.id,
+        entry_id=day.id,
         user_message_id=user.id,
         persona_message_id=persona.id,
         persona_checkpoint=2,
@@ -91,7 +97,7 @@ def test_timeline_memory_persists_day_provenance_and_as_of_eligibility(
         provenance,
     )
 
-    restarted = DbTimelineMemoryRepository(factory)
+    restarted = DbContinuityMemoryRepository(factory)
     memories = restarted.list_eligible(
         target.scope.continuity_id,
         day.position,
@@ -99,7 +105,7 @@ def test_timeline_memory_persists_day_provenance_and_as_of_eligibility(
     )
 
     assert len(memories) == 1
-    assert memories[0].current.source.day_id == day.id
+    assert memories[0].current.source.entry_id == day.id
     assert (
         restarted.list_eligible(
             target.scope.continuity_id,

@@ -76,7 +76,7 @@ def test_fresh_upgrade_downgrade_and_reupgrade_preserve_populated_chat(
         "personas",
         "scenes",
         "starting_relationships",
-        "storyline_memories",
+        "continuity_memories",
         "storylines",
         "summary_revisions",
     ]

@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import StorylineMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
+    ContinuityMode,
     ConversationScope,
     CorrectMemoryCommand,
     CreateMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
+    EntryPosition,
     ExtractionEffectConflictError,
     ExtractionEffectState,
     ExtractionProvenance,
@@ -30,7 +32,6 @@ from chat_buddy.characters.domain import (
     ProtectedMemoryCorrectionError,
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
-    ScenePosition,
     StaleMemoryConflictError,
     StaleMemoryRevisionError,
     StrategyIdentity,
@@ -41,8 +42,8 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbMemoryExtractionRepository,
-    DbStorylineMemoryRepository,
 )
 from tests.integration.characters.test_storyline_repositories import (
     _complete_exchange,
@@ -69,7 +70,7 @@ def test_create_reinforce_read_eligibility_and_hard_delete_round_trip(
     )
     first_user_id = _parent_id(factory, first_persona_id)
     extraction = DbMemoryExtractionRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     provenance = _provenance()
 
     reserved = extraction.reserve(scene.scope, scene.id, first_persona_id)
@@ -234,7 +235,7 @@ def test_reservation_and_apply_reject_foreign_or_stale_sources(
             provenance,
         )
 
-    memory = DbStorylineMemoryRepository(factory).list(storyline.id)[0]
+    memory = DbContinuityMemoryRepository(factory).list(storyline.id)[0]
     user_id, next_persona_id = _append_exchange(factory, scene.scope)
     next_effect = extraction.reserve(scene.scope, scene.id, next_persona_id)
     next_evidence = _evidence(
@@ -278,7 +279,7 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
     storylines, _, request = _repositories_and_request(factory)
     storyline, scene = storylines.start(request, _relationship())
     extraction = DbMemoryExtractionRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     provenance = _provenance()
 
     first_persona_id = _complete_exchange(
@@ -450,7 +451,7 @@ def test_management_workflows_preserve_provenance_and_enforce_guards(
     storylines, _, request = _repositories_and_request(factory)
     storyline, scene = storylines.start(request, _relationship())
     extraction = DbMemoryExtractionRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     service = StorylineMemoryService(memories, extraction)
     provenance = _provenance()
 
@@ -732,11 +733,16 @@ def _evidence(
         Valid immutable evidence.
     """
 
-    position = ScenePosition(scene_id=scene_id, position=1)
+    position = EntryPosition(
+        entry_id=scene_id,
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.STORYLINE,
+        position=1,
+    )
     return MemoryEvidence(
         id=uuid4(),
         scope=scope,
-        scene_id=scene_id,
+        entry_id=scene_id,
         user_message_id=user_id,
         persona_message_id=persona_id,
         persona_checkpoint=checkpoint,

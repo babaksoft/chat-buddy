@@ -9,6 +9,7 @@ from chat_buddy.characters.application import StorylineMemoryService
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityLifecycle,
+    ContinuityMemory,
     CorrectMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
@@ -24,7 +25,6 @@ from chat_buddy.characters.domain import (
     StaleMemoryConflictError,
     StaleMemoryRevisionError,
     Storyline,
-    StorylineMemory,
 )
 
 _CORRECTION_TARGET_KEY = "characters_storyline_memory_correction_target"
@@ -102,7 +102,7 @@ def _render_memory(
     service: StorylineMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
     read_only: bool,
 ) -> None:
     """Render one complete memory lineage and guarded lifecycle actions.
@@ -154,7 +154,7 @@ def _render_memory(
         _render_deletion(service, storyline, selected_leaf_id, memory)
 
 
-def _render_lineage(memory: StorylineMemory) -> None:
+def _render_lineage(memory: ContinuityMemory) -> None:
     """Render lifecycle and authorship provenance for every revision.
 
     Args:
@@ -172,7 +172,7 @@ def _render_lineage(memory: StorylineMemory) -> None:
             st.caption(f"Created {revision.created_at.isoformat()}")
 
 
-def _render_evidence(memory: StorylineMemory) -> None:
+def _render_evidence(memory: ContinuityMemory) -> None:
     """Render source, temporal, and extraction-strategy provenance.
 
     Args:
@@ -204,7 +204,7 @@ def _render_correction(
     service: StorylineMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
 ) -> None:
     """Render a revision-guarded normal correction form.
 
@@ -248,7 +248,7 @@ def _render_correction(
 
 def _change_state(
     service: StorylineMemoryService,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
     operation: Literal["exclude", "reactivate"],
 ) -> None:
     """Apply one guarded exclusion or reactivation.
@@ -283,7 +283,7 @@ def _render_deletion(
     service: StorylineMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
 ) -> None:
     """Require explicit confirmation before permanently deleting a lineage.
 
@@ -327,7 +327,7 @@ def _render_conflict(
     service: StorylineMemoryService,
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memories: tuple[StorylineMemory, ...],
+    memories: tuple[ContinuityMemory, ...],
     conflict: MemoryConflict,
     read_only: bool,
 ) -> None:
@@ -419,7 +419,7 @@ def _render_conflict_evidence(conflict: MemoryConflict) -> None:
 def _correction_target(
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
 ) -> bool:
     """Return whether a conflict action opened this exact correction snapshot.
 
@@ -449,7 +449,7 @@ def _correction_target(
 def _memory_key(
     storyline: Storyline,
     selected_leaf_id: UUID | None,
-    memory: StorylineMemory,
+    memory: ContinuityMemory,
 ) -> str:
     """Build a complete ownership- and revision-scoped widget namespace.
 

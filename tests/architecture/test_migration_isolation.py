@@ -35,7 +35,9 @@ def test_characters_migrations_remain_independent_from_chat() -> None:
     assert "create table characters.messages" in sql
     assert "create table characters.generation_attempts" in sql
     assert "create table characters.summary_revisions" in sql
-    assert "create table characters.storyline_memories" in sql
+    assert (
+        "alter table characters.storyline_memories rename to continuity_memories" in sql
+    )
     assert "create table characters.memory_revisions" in sql
     assert "create table characters.memory_evidence" in sql
     assert "create table characters.memory_extraction_effects" in sql

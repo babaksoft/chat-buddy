@@ -58,7 +58,7 @@ def test_complete_stage_six_chain_and_journey_preserve_populated_chat(
     expected_stage_six_tables = {
         "storylines",
         "scenes",
-        "storyline_memories",
+        "continuity_memories",
         "memory_revisions",
         "memory_evidence",
         "memory_extraction_effects",

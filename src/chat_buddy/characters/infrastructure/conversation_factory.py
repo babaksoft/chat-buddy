@@ -67,6 +67,7 @@ def create_conversation_service(
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityMemoryRepository,
         DbContinuityRepository,
         DbConversationRepository,
         DbEvolutionRepository,
@@ -75,7 +76,6 @@ def create_conversation_service(
         DbPersonaRepository,
         DbResponseStyleRepository,
         DbSceneRepository,
-        DbStorylineMemoryRepository,
         DbStorylineRepository,
         DbSummaryRepository,
         DbTimelineDayRepository,
@@ -93,7 +93,7 @@ def create_conversation_service(
     identities = DbIdentityRepository(session_factory)
     personas = DbPersonaRepository(session_factory)
     summaries = DbSummaryRepository(session_factory)
-    memories = DbStorylineMemoryRepository(session_factory)
+    memories = DbContinuityMemoryRepository(session_factory)
     effects = DbMemoryExtractionRepository(session_factory)
     evolution_repository = DbEvolutionRepository(session_factory)
     models = create_model_registry()

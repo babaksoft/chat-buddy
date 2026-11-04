@@ -157,12 +157,12 @@ def create_storyline_memory_service() -> StorylineMemoryService:
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityMemoryRepository,
         DbMemoryExtractionRepository,
-        DbStorylineMemoryRepository,
     )
 
     return StorylineMemoryService(
-        DbStorylineMemoryRepository(CharactersSessionLocal),
+        DbContinuityMemoryRepository(CharactersSessionLocal),
         DbMemoryExtractionRepository(CharactersSessionLocal),
     )
 
@@ -176,12 +176,12 @@ def create_timeline_memory_service() -> TimelineMemoryService:
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityMemoryRepository,
         DbMemoryExtractionRepository,
-        DbTimelineMemoryRepository,
     )
 
     return TimelineMemoryService(
-        DbTimelineMemoryRepository(CharactersSessionLocal),
+        DbContinuityMemoryRepository(CharactersSessionLocal),
         DbMemoryExtractionRepository(CharactersSessionLocal),
     )
 

@@ -34,6 +34,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
     DbEvolutionRepository,
@@ -41,7 +42,6 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
     DbResponseStyleRepository,
     DbSceneRepository,
-    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -278,7 +278,7 @@ def _processor(
         scenes,
         conversations,
         DbSummaryRepository(factory),
-        DbStorylineMemoryRepository(factory),
+        DbContinuityMemoryRepository(factory),
         evolution,
         Utf8TokenCounter(),
         EvolutionSnapshotBudget(input_tokens=200_000, fixed_overhead_tokens=64),

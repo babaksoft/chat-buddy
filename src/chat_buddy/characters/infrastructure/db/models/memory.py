@@ -21,23 +21,23 @@ from sqlalchemy.orm import Mapped, mapped_column
 from chat_buddy.characters.infrastructure.db import CharactersBase
 
 
-class StorylineMemoryModel(CharactersBase):
+class ContinuityMemoryModel(CharactersBase):
     """Persist one logical memory and its sole current revision pointer."""
 
-    __tablename__ = "storyline_memories"
+    __tablename__ = "continuity_memories"
     __table_args__ = (
-        UniqueConstraint("id", "continuity_id", name="uq_storyline_memory_ownership"),
+        UniqueConstraint("id", "continuity_id", name="uq_continuity_memory_ownership"),
         UniqueConstraint(
             "id",
             "continuity_id",
             "identity_id",
             "persona_id",
-            name="uq_storyline_memory_complete_ownership",
+            name="uq_continuity_memory_complete_ownership",
         ),
         UniqueConstraint(
             "continuity_id",
             "subject_key",
-            name="uq_storyline_memory_subject",
+            name="uq_continuity_memory_subject",
         ),
         ForeignKeyConstraint(
             ["continuity_id", "identity_id", "persona_id", "mode"],
@@ -47,10 +47,10 @@ class StorylineMemoryModel(CharactersBase):
                 "characters.continuities.persona_id",
                 "characters.continuities.mode",
             ],
-            name="fk_storyline_memory_owner",
+            name="fk_continuity_memory_owner",
         ),
         CheckConstraint(
-            "mode IN ('storyline', 'timeline')", name="ck_storyline_memory_mode"
+            "mode IN ('storyline', 'timeline')", name="ck_continuity_memory_mode"
         ),
         ForeignKeyConstraint(
             ["current_revision_id", "id", "continuity_id"],
@@ -59,7 +59,7 @@ class StorylineMemoryModel(CharactersBase):
                 "characters.memory_revisions.memory_id",
                 "characters.memory_revisions.continuity_id",
             ],
-            name="fk_storyline_memory_current_revision",
+            name="fk_continuity_memory_current_revision",
             use_alter=True,
         ),
     )
@@ -67,14 +67,12 @@ class StorylineMemoryModel(CharactersBase):
     id: Mapped[UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid4, doc="Stable logical-memory identifier."
     )
-    continuity_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Owning Storyline continuity."
-    )
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     identity_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Identity matching Storyline ownership."
+        Uuid, doc="Identity matching continuity ownership."
     )
     persona_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Persona matching Storyline ownership."
+        Uuid, doc="Persona matching continuity ownership."
     )
     mode: Mapped[str] = mapped_column(
         String(16), default="storyline", doc="Owning continuity mode."
@@ -107,10 +105,10 @@ class MemoryEvidenceModel(CharactersBase):
         ForeignKeyConstraint(
             ["memory_id", "continuity_id", "identity_id", "persona_id"],
             [
-                "characters.storyline_memories.id",
-                "characters.storyline_memories.continuity_id",
-                "characters.storyline_memories.identity_id",
-                "characters.storyline_memories.persona_id",
+                "characters.continuity_memories.id",
+                "characters.continuity_memories.continuity_id",
+                "characters.continuity_memories.identity_id",
+                "characters.continuity_memories.persona_id",
             ],
             name="fk_memory_evidence_memory",
             ondelete="CASCADE",
@@ -134,7 +132,7 @@ class MemoryEvidenceModel(CharactersBase):
         ),
         ForeignKeyConstraint(
             [
-                "scene_id",
+                "entry_id",
                 "continuity_id",
                 "identity_id",
                 "persona_id",
@@ -147,24 +145,12 @@ class MemoryEvidenceModel(CharactersBase):
                 "characters.continuity_entries.persona_id",
                 "characters.continuity_entries.conversation_id",
             ],
-            name="fk_memory_evidence_scene",
+            name="fk_memory_evidence_entry",
         ),
         ForeignKeyConstraint(
-            [
-                "day_id",
-                "continuity_id",
-                "identity_id",
-                "persona_id",
-                "conversation_id",
-            ],
-            [
-                "characters.continuity_entries.id",
-                "characters.continuity_entries.continuity_id",
-                "characters.continuity_entries.identity_id",
-                "characters.continuity_entries.persona_id",
-                "characters.continuity_entries.conversation_id",
-            ],
-            name="fk_memory_evidence_day",
+            ["entry_id", "mode"],
+            ["characters.continuity_entries.id", "characters.continuity_entries.mode"],
+            name="fk_memory_evidence_entry_mode",
         ),
         ForeignKeyConstraint(
             ["user_message_id", "conversation_id", "continuity_id"],
@@ -185,32 +171,37 @@ class MemoryEvidenceModel(CharactersBase):
             name="fk_memory_evidence_persona_message",
         ),
         ForeignKeyConstraint(
-            ["occurrence_scene_id", "continuity_id", "identity_id", "persona_id"],
+            ["occurrence_entry_id", "continuity_id", "identity_id", "persona_id"],
             [
                 "characters.continuity_entries.id",
                 "characters.continuity_entries.continuity_id",
                 "characters.continuity_entries.identity_id",
                 "characters.continuity_entries.persona_id",
             ],
-            name="fk_memory_evidence_occurrence_scene",
+            name="fk_memory_evidence_occurrence_entry",
         ),
         ForeignKeyConstraint(
-            ["occurrence_day_id", "continuity_id", "identity_id", "persona_id"],
+            ["occurrence_entry_id", "mode"],
+            ["characters.continuity_entries.id", "characters.continuity_entries.mode"],
+            name="fk_memory_evidence_occurrence_mode",
+        ),
+        ForeignKeyConstraint(
+            ["learned_entry_id", "continuity_id", "identity_id", "persona_id"],
             [
                 "characters.continuity_entries.id",
                 "characters.continuity_entries.continuity_id",
                 "characters.continuity_entries.identity_id",
                 "characters.continuity_entries.persona_id",
             ],
-            name="fk_memory_evidence_occurrence_day",
+            name="fk_memory_evidence_learned_entry",
+        ),
+        ForeignKeyConstraint(
+            ["learned_entry_id", "mode"],
+            ["characters.continuity_entries.id", "characters.continuity_entries.mode"],
+            name="fk_memory_evidence_learned_mode",
         ),
         CheckConstraint(
             "mode IN ('storyline', 'timeline')", name="ck_memory_evidence_mode"
-        ),
-        CheckConstraint(
-            "(mode = 'storyline' AND scene_id IS NOT NULL AND day_id IS NULL AND occurrence_scene_id IS NOT NULL AND occurrence_day_id IS NULL AND learned_scene_id IS NOT NULL AND learned_day_id IS NULL) OR "
-            "(mode = 'timeline' AND scene_id IS NULL AND day_id IS NOT NULL AND occurrence_scene_id IS NULL AND occurrence_day_id IS NOT NULL AND learned_scene_id IS NULL AND learned_day_id IS NOT NULL)",
-            name="ck_memory_evidence_temporal_owner",
         ),
         CheckConstraint(
             "purpose IN ('support', 'conflict')", name="ck_memory_evidence_purpose"
@@ -224,7 +215,7 @@ class MemoryEvidenceModel(CharactersBase):
             name="ck_memory_evidence_temporal_positions",
         ),
         CheckConstraint(
-            "(mode = 'storyline' AND learned_scene_id = scene_id) OR (mode = 'timeline' AND learned_day_id = day_id)",
+            "learned_entry_id = entry_id",
             name="ck_memory_evidence_learned_owner",
         ),
     )
@@ -235,24 +226,19 @@ class MemoryEvidenceModel(CharactersBase):
     memory_id: Mapped[UUID | None] = mapped_column(
         Uuid, doc="Supported logical memory, absent for targetless conflicts."
     )
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Storyline.")
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
     persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
     conversation_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Source scene conversation."
+        Uuid, doc="Source Entry conversation."
     )
     mode: Mapped[str] = mapped_column(
-        String(16), default="storyline", doc="Fixed Storyline mode discriminator."
+        String(16), default="storyline", doc="Owning continuity mode discriminator."
     )
     purpose: Mapped[str] = mapped_column(
         String(16), doc="Supporting or conflict evidence classification."
     )
-    scene_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source scene identifier for Storyline evidence."
-    )
-    day_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source represented day for Timeline evidence."
-    )
+    entry_id: Mapped[UUID] = mapped_column(Uuid, doc="Source Entry identifier.")
     user_message_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Source turn user-message identifier."
     )
@@ -262,23 +248,17 @@ class MemoryEvidenceModel(CharactersBase):
     persona_checkpoint: Mapped[int] = mapped_column(
         Integer, doc="Even selected-path checkpoint position."
     )
-    occurrence_scene_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Scene where the remembered assertion occurred."
-    )
-    occurrence_day_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Day where the remembered assertion occurred."
+    occurrence_entry_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Entry where the remembered assertion occurred."
     )
     occurrence_position: Mapped[int] = mapped_column(
-        Integer, doc="Chronological occurrence scene position."
+        Integer, doc="Chronological occurrence Entry position."
     )
-    learned_scene_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source scene where the assertion was learned."
-    )
-    learned_day_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source day where the assertion was learned."
+    learned_entry_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Source Entry where the assertion was learned."
     )
     learned_position: Mapped[int] = mapped_column(
-        Integer, doc="Chronological learned scene position."
+        Integer, doc="Chronological learned Entry position."
     )
     extraction: Mapped[dict[str, Any]] = mapped_column(
         JSON, doc="Immutable selector extractor prompt and model provenance."
@@ -307,8 +287,8 @@ class MemoryRevisionModel(CharactersBase):
         ForeignKeyConstraint(
             ["memory_id", "continuity_id"],
             [
-                "characters.storyline_memories.id",
-                "characters.storyline_memories.continuity_id",
+                "characters.continuity_memories.id",
+                "characters.continuity_memories.continuity_id",
             ],
             name="fk_memory_revision_memory",
             ondelete="CASCADE",
@@ -354,7 +334,7 @@ class MemoryRevisionModel(CharactersBase):
         Uuid, primary_key=True, default=uuid4, doc="Stable revision identifier."
     )
     memory_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning logical memory.")
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Storyline.")
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     revision: Mapped[int] = mapped_column(
         Integer, doc="Positive consecutive lineage position."
     )
@@ -405,7 +385,7 @@ class MemoryExtractionEffectModel(CharactersBase):
         ),
         ForeignKeyConstraint(
             [
-                "scene_id",
+                "entry_id",
                 "continuity_id",
                 "identity_id",
                 "persona_id",
@@ -418,24 +398,12 @@ class MemoryExtractionEffectModel(CharactersBase):
                 "characters.continuity_entries.persona_id",
                 "characters.continuity_entries.conversation_id",
             ],
-            name="fk_memory_effect_scene",
+            name="fk_memory_effect_entry",
         ),
         ForeignKeyConstraint(
-            [
-                "day_id",
-                "continuity_id",
-                "identity_id",
-                "persona_id",
-                "conversation_id",
-            ],
-            [
-                "characters.continuity_entries.id",
-                "characters.continuity_entries.continuity_id",
-                "characters.continuity_entries.identity_id",
-                "characters.continuity_entries.persona_id",
-                "characters.continuity_entries.conversation_id",
-            ],
-            name="fk_memory_effect_day",
+            ["entry_id", "mode"],
+            ["characters.continuity_entries.id", "characters.continuity_entries.mode"],
+            name="fk_memory_effect_entry_mode",
         ),
         ForeignKeyConstraint(
             ["source_persona_message_id", "conversation_id", "continuity_id"],
@@ -448,10 +416,6 @@ class MemoryExtractionEffectModel(CharactersBase):
         ),
         CheckConstraint(
             "mode IN ('storyline', 'timeline')", name="ck_memory_effect_mode"
-        ),
-        CheckConstraint(
-            "(mode = 'storyline' AND scene_id IS NOT NULL AND day_id IS NULL) OR (mode = 'timeline' AND scene_id IS NULL AND day_id IS NOT NULL)",
-            name="ck_memory_effect_temporal_owner",
         ),
         CheckConstraint(
             "state IN ('reserved', 'no_change', 'applied')",
@@ -469,20 +433,17 @@ class MemoryExtractionEffectModel(CharactersBase):
         default=uuid4,
         doc="Stable extraction-effect identifier.",
     )
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Storyline.")
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
     persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
     conversation_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Source scene conversation."
+        Uuid, doc="Source Entry conversation."
     )
     mode: Mapped[str] = mapped_column(
-        String(16), default="storyline", doc="Fixed Storyline mode discriminator."
+        String(16), default="storyline", doc="Owning continuity mode discriminator."
     )
-    scene_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source scene identifier for Storyline extraction."
-    )
-    day_id: Mapped[UUID | None] = mapped_column(
-        Uuid, doc="Source day identifier for Timeline extraction."
+    entry_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Source Entry identifier for extraction."
     )
     source_persona_message_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Unique complete persona-message checkpoint."
@@ -519,8 +480,8 @@ class MemoryConflictModel(CharactersBase):
         ForeignKeyConstraint(
             ["memory_id", "continuity_id"],
             [
-                "characters.storyline_memories.id",
-                "characters.storyline_memories.continuity_id",
+                "characters.continuity_memories.id",
+                "characters.continuity_memories.continuity_id",
             ],
             name="fk_memory_conflict_memory",
             ondelete="CASCADE",
@@ -563,7 +524,7 @@ class MemoryConflictModel(CharactersBase):
     id: Mapped[UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid4, doc="Stable conflict identifier."
     )
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Storyline.")
+    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning continuity.")
     identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
     persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
     memory_id: Mapped[UUID | None] = mapped_column(

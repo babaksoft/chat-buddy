@@ -110,7 +110,7 @@ def test_complete_migration_chain_and_milestone_preserve_populated_chat(
         "memory_extraction_effects",
         "memory_revisions",
         "scenes",
-        "storyline_memories",
+        "continuity_memories",
         "storylines",
     }
     assert _chat_snapshot(engine) == before

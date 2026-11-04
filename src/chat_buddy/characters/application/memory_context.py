@@ -9,10 +9,12 @@ from chat_buddy.characters.domain import (
     CompletedTurn,
     ContextCapacityError,
     ContinuityLifecycle,
+    ContinuityMemory,
+    ContinuityMemoryRepository,
     ContinuityMode,
     ConversationGraphRepository,
     ConversationTarget,
-    DayPosition,
+    EntryPosition,
     ExtractionBudget,
     IdentityRepository,
     MemoryContextSelector,
@@ -22,10 +24,7 @@ from chat_buddy.characters.domain import (
     Message,
     PersonaRepository,
     PromptMessage,
-    ScenePosition,
     SceneRepository,
-    StorylineMemory,
-    StorylineMemoryRepository,
     StorylineRepository,
     StrategyIdentity,
     SummaryRepository,
@@ -41,11 +40,11 @@ class StorylineMemoryEligibility:
 
     def select(
         self,
-        memories: tuple[StorylineMemory, ...],
+        memories: tuple[ContinuityMemory, ...],
         continuity_id: UUID,
-        target_scene: ScenePosition,
+        target_scene: EntryPosition,
         selected_persona_message_ids: frozenset[UUID],
-    ) -> tuple[StorylineMemory, ...]:
+    ) -> tuple[ContinuityMemory, ...]:
         """Return active owned memories supported on the selected past.
 
         Args:
@@ -70,7 +69,7 @@ class StorylineMemoryEligibility:
             and memory.current.source.persona_message_id in selected_persona_message_ids
             and memory.current.source.occurrence.position <= target_scene.position
             and memory.current.source.learned.position <= target_scene.position
-            and memory.current.source.scene_id is not None
+            and memory.current.source.learned.mode == ContinuityMode.STORYLINE
         )
 
 
@@ -79,11 +78,11 @@ class TimelineMemoryEligibility:
 
     def select(
         self,
-        memories: tuple[StorylineMemory, ...],
+        memories: tuple[ContinuityMemory, ...],
         continuity_id: UUID,
-        target_day: DayPosition,
+        target_day: EntryPosition,
         selected_persona_message_ids: frozenset[UUID],
-    ) -> tuple[StorylineMemory, ...]:
+    ) -> tuple[ContinuityMemory, ...]:
         """Return active owned memories supported on the selected past.
 
         Args:
@@ -105,7 +104,7 @@ class TimelineMemoryEligibility:
             for memory in memories
             if memory.continuity_id == continuity_id
             and memory.current.state == MemoryRevisionState.ACTIVE
-            and memory.current.source.day_id is not None
+            and memory.current.source.learned.mode == ContinuityMode.TIMELINE
             and memory.current.source.persona_message_id in selected_persona_message_ids
             and memory.current.source.occurrence.position <= target_day.position
             and memory.current.source.learned.position <= target_day.position
@@ -408,7 +407,7 @@ class StorylineExtractionContextService:
         scenes: SceneRepository,
         conversations: ConversationGraphRepository,
         summaries: SummaryRepository,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         eligibility: StorylineMemoryEligibility,
         selector: MemoryContextSelector,
     ) -> None:
@@ -565,7 +564,12 @@ class StorylineExtractionContextService:
             for node in path.messages
             if node.role == "persona"
         )
-        scene_position = ScenePosition(scene_id=scene.id, position=scene.position)
+        scene_position = EntryPosition(
+            entry_id=scene.id,
+            continuity_id=storyline.id,
+            mode=ContinuityMode.STORYLINE,
+            position=scene.position,
+        )
         eligible_memories = self._eligibility.select(
             self._memories.list(storyline.id),
             storyline.id,
@@ -576,7 +580,7 @@ class StorylineExtractionContextService:
         persona = self._personas.get(storyline.persona_id)
         context = MemoryExtractionContext(
             scope=target.scope,
-            scene=scene_position,
+            entry=scene_position,
             identity_label=identity.details.name,
             persona_label=persona.core.name,
             starting_relationship=storyline.relationship,
@@ -601,7 +605,7 @@ class TimelineExtractionContextService:
         days: TimelineDayRepository,
         conversations: ConversationGraphRepository,
         summaries: SummaryRepository,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         eligibility: TimelineMemoryEligibility,
         selector: MemoryContextSelector,
     ) -> None:
@@ -756,7 +760,12 @@ class TimelineExtractionContextService:
             for node in path.messages
             if node.role == "persona"
         )
-        day_position = DayPosition(day_id=day.id, position=day.position)
+        day_position = EntryPosition(
+            entry_id=day.id,
+            continuity_id=timeline.id,
+            mode=ContinuityMode.TIMELINE,
+            position=day.position,
+        )
         eligible_memories = self._eligibility.select(
             self._memories.list(timeline.id),
             timeline.id,
@@ -767,7 +776,7 @@ class TimelineExtractionContextService:
         persona = self._personas.get(timeline.persona_id)
         context = MemoryExtractionContext(
             scope=target.scope,
-            day=day_position,
+            entry=day_position,
             identity_label=identity.details.name,
             persona_label=persona.core.name,
             starting_relationship=timeline.relationship,

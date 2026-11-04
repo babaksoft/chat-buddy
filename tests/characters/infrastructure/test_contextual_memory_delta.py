@@ -8,8 +8,11 @@ import pytest
 
 from chat_buddy.characters.domain import (
     CompletedTurn,
+    ContinuityMemory,
+    ContinuityMode,
     ConversationScope,
     EffectiveGeneration,
+    EntryPosition,
     ExtractionBudget,
     GenerationConfiguration,
     InvalidProviderResponseError,
@@ -20,8 +23,6 @@ from chat_buddy.characters.domain import (
     Message,
     ModelDescriptor,
     PromptMessage,
-    ScenePosition,
-    StorylineMemory,
     StrategyIdentity,
 )
 from chat_buddy.characters.infrastructure.llm import ContextualMemoryDeltaExtractor
@@ -130,7 +131,12 @@ def _selection() -> MemorySelectionResult:
             created_at=NOW,
         ),
     )
-    position = ScenePosition(scene_id=SCENE_ID, position=2)
+    position = EntryPosition(
+        entry_id=SCENE_ID,
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.STORYLINE,
+        position=2,
+    )
     source_evidence = type("Source", (), {"occurrence": position})()
     revision = MemoryRevision.model_construct(
         id=REVISION_ID,
@@ -146,7 +152,7 @@ def _selection() -> MemorySelectionResult:
         source=source_evidence,
         created_at=NOW,
     )
-    memory = StorylineMemory.model_construct(
+    memory = ContinuityMemory.model_construct(
         id=MEMORY_ID,
         continuity_id=scope.continuity_id,
         current_revision_id=REVISION_ID,
@@ -155,7 +161,7 @@ def _selection() -> MemorySelectionResult:
     )
     context = MemoryExtractionContext.model_construct(
         scope=scope,
-        scene=position,
+        entry=position,
         identity_label="Alex",
         persona_label="Rin",
         starting_relationship=None,
@@ -201,7 +207,12 @@ def _evidence() -> dict[str, object]:
     return {
         "user_message_id": str(USER_ID),
         "persona_message_id": str(PERSONA_MESSAGE_ID),
-        "occurrence": {"scene_id": str(SCENE_ID), "position": 2},
+        "occurrence": {
+            "entry_id": str(SCENE_ID),
+            "continuity_id": "a0000000-0000-0000-0000-000000000001",
+            "mode": "storyline",
+            "position": 2,
+        },
     }
 
 

@@ -33,9 +33,7 @@ def assemble_memory_extraction_prompt(
         Two provider-neutral messages separating policy from snapshot data.
     """
 
-    temporal_owner = selection.context.scene or selection.context.day
-    if temporal_owner is None:
-        raise ValueError("Memory extraction context has no temporal owner")
+    temporal_owner = selection.context.entry
 
     occurrences = {temporal_owner}
     occurrences.update(
@@ -47,15 +45,11 @@ def assemble_memory_extraction_prompt(
         occurrences,
         key=lambda item: (
             item.position,
-            str(getattr(item, "scene_id", getattr(item, "day_id", ""))),
+            str(item.entry_id),
         ),
     )
     occurrence_lines = "\n".join(
-        (
-            f"- scene_id={item.scene_id}; position={item.position}"
-            if hasattr(item, "scene_id")
-            else f"- day_id={item.day_id}; position={item.position}"
-        )
+        f"- entry_id={item.entry_id}; position={item.position}"
         for item in ordered_occurrences
     )
     user_content = "\n\n".join(

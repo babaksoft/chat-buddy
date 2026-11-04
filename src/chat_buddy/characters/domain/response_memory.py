@@ -1,4 +1,4 @@
-"""Versioned whole-record selection for Storyline response memory."""
+"""Versioned whole-record selection for continuity response memory."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chat_buddy.characters.domain.llm import TokenCounter
-from chat_buddy.characters.domain.memory import StorylineMemory
+from chat_buddy.characters.domain.memory import ContinuityMemory
 from chat_buddy.characters.domain.strategy import StrategyIdentity
 
 
 class ResponseMemoryBudget(BaseModel):
-    """Dedicated capacity for optional Storyline response memories.
+    """Dedicated capacity for optional continuity response memories.
 
     Attributes:
         input_tokens:
@@ -49,7 +49,7 @@ class ResponseMemorySelection(BaseModel):
     eligible_memory_ids: tuple[UUID, ...] = Field(
         description="Ordered eligible memory identifiers."
     )
-    included_memories: tuple[StorylineMemory, ...] = Field(
+    included_memories: tuple[ContinuityMemory, ...] = Field(
         description="Included complete memory records."
     )
     omitted_memory_ids: tuple[UUID, ...] = Field(
@@ -103,7 +103,7 @@ class ResponseMemorySelector(Protocol):
 
     def select(
         self,
-        memories: tuple[StorylineMemory, ...],
+        memories: tuple[ContinuityMemory, ...],
         budget: ResponseMemoryBudget,
         counter: TokenCounter,
     ) -> ResponseMemorySelection:
@@ -111,7 +111,7 @@ class ResponseMemorySelector(Protocol):
 
         Args:
             memories:
-                Branch- and time-eligible Storyline memories.
+                Branch- and time-eligible continuity memories.
             budget:
                 Dedicated response-memory capacity.
             counter:

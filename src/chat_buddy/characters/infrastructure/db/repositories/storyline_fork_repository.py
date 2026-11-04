@@ -41,6 +41,7 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityEntryModel,
+    ContinuityMemoryModel,
     ContinuityModel,
     ConversationModel,
     EvolutionCorrectionEventModel,
@@ -57,7 +58,6 @@ from chat_buddy.characters.infrastructure.db.models import (
     ResponseStyleSettingsModel,
     SceneModel,
     StartingRelationshipModel,
-    StorylineMemoryModel,
     StorylineModel,
     SummaryRevisionModel,
 )
@@ -632,9 +632,9 @@ class DbStorylineForkRepository:
         }
         source_memories = tuple(
             session.scalars(
-                select(StorylineMemoryModel)
-                .where(StorylineMemoryModel.continuity_id == source_continuity_id)
-                .order_by(StorylineMemoryModel.id)
+                select(ContinuityMemoryModel)
+                .where(ContinuityMemoryModel.continuity_id == source_continuity_id)
+                .order_by(ContinuityMemoryModel.id)
                 .with_for_update()
             )
         )
@@ -678,9 +678,9 @@ class DbStorylineForkRepository:
             copyable_evidence = tuple(
                 item
                 for item in evidence
-                if item.scene_id in mapped["scene"]
-                and item.occurrence_scene_id in mapped["scene"]
-                and item.learned_scene_id in mapped["scene"]
+                if item.entry_id in mapped["scene"]
+                and item.occurrence_entry_id in mapped["scene"]
+                and item.learned_entry_id in mapped["scene"]
                 and item.conversation_id in mapped["conversation"]
                 and item.user_message_id in mapped["message"]
                 and item.source_persona_message_id in mapped["message"]
@@ -696,7 +696,7 @@ class DbStorylineForkRepository:
                 continue
 
             target_memory_id = uuid4()
-            target_memory = StorylineMemoryModel(
+            target_memory = ContinuityMemoryModel(
                 id=target_memory_id,
                 continuity_id=target_continuity.id,
                 identity_id=target_continuity.identity_id,
@@ -717,15 +717,6 @@ class DbStorylineForkRepository:
 
             evidence_ids: dict[UUID, UUID] = {}
             for source_evidence in copyable_evidence:
-                if (
-                    source_evidence.scene_id is None
-                    or source_evidence.occurrence_scene_id is None
-                    or source_evidence.learned_scene_id is None
-                ):
-                    raise StorylineForkConflictError(
-                        "Storyline memory evidence has invalid temporal provenance"
-                    )
-
                 target_evidence_id = uuid4()
                 evidence_ids[source_evidence.id] = target_evidence_id
                 session.add(
@@ -740,7 +731,7 @@ class DbStorylineForkRepository:
                         ],
                         mode="storyline",
                         purpose="support",
-                        scene_id=mapped["scene"][source_evidence.scene_id],
+                        entry_id=mapped["scene"][source_evidence.entry_id],
                         user_message_id=mapped["message"][
                             source_evidence.user_message_id
                         ],
@@ -748,12 +739,12 @@ class DbStorylineForkRepository:
                             source_evidence.source_persona_message_id
                         ],
                         persona_checkpoint=source_evidence.persona_checkpoint,
-                        occurrence_scene_id=mapped["scene"][
-                            source_evidence.occurrence_scene_id
+                        occurrence_entry_id=mapped["scene"][
+                            source_evidence.occurrence_entry_id
                         ],
                         occurrence_position=source_evidence.occurrence_position,
-                        learned_scene_id=mapped["scene"][
-                            source_evidence.learned_scene_id
+                        learned_entry_id=mapped["scene"][
+                            source_evidence.learned_entry_id
                         ],
                         learned_position=source_evidence.learned_position,
                         extraction=deepcopy(source_evidence.extraction),

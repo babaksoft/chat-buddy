@@ -30,6 +30,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
     DbIdentityRepository,
@@ -37,7 +38,6 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
     DbResponseStyleRepository,
     DbSceneRepository,
-    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -106,7 +106,7 @@ def test_storyline_response_prompt_reads_current_eligible_memory(
         ),
         provenance,
     )
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     app = _service(factory, responses, storylines, scenes)
     target = _target(scene.id, scene.scope)
 
@@ -339,7 +339,7 @@ def _service(
         response_memories=StorylineResponseMemoryService(
             scenes,
             conversations,
-            DbStorylineMemoryRepository(factory),
+            DbContinuityMemoryRepository(factory),
             BaselineResponseMemorySelector(),
             ResponseMemoryBudget(input_tokens=1024),
         ),

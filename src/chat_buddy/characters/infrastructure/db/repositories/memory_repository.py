@@ -1,4 +1,4 @@
-"""Transactional Storyline memory lineage and extraction persistence."""
+"""Transactional continuity memory lineage and extraction persistence."""
 
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -9,13 +9,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
+    ContinuityMemory,
     ContinuityMode,
     ConversationScope,
     CorrectMemoryCommand,
     CreateMemoryCommand,
-    DayPosition,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
+    EntryPosition,
     ExtractionEffect,
     ExtractionEffectConflictError,
     ExtractionEffectState,
@@ -36,14 +37,13 @@ from chat_buddy.characters.domain import (
     ProtectedMemoryCorrectionError,
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
-    ScenePosition,
     StaleMemoryConflictError,
     StaleMemoryRevisionError,
-    StorylineMemory,
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityEntryModel,
+    ContinuityMemoryModel,
     ContinuityModel,
     ConversationModel,
     MemoryConflictModel,
@@ -52,13 +52,12 @@ from chat_buddy.characters.infrastructure.db.models import (
     MemoryRevisionModel,
     MessageModel,
     SceneModel,
-    StorylineMemoryModel,
     TimelineDayModel,
 )
 
 
-class DbStorylineMemoryRepository:
-    """Read Storyline memory lineages and perform guarded hard deletion."""
+class DbContinuityMemoryRepository:
+    """Read continuity memory lineages and perform guarded hard deletion."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the repository.
@@ -70,12 +69,12 @@ class DbStorylineMemoryRepository:
 
         self._factory = session_factory
 
-    def get(self, continuity_id: UUID, memory_id: UUID) -> StorylineMemory:
-        """Read a complete lineage within its expected Storyline.
+    def get(self, continuity_id: UUID, memory_id: UUID) -> ContinuityMemory:
+        """Read a complete lineage within its expected continuity.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             memory_id:
                 Logical-memory identifier.
 
@@ -91,12 +90,12 @@ class DbStorylineMemoryRepository:
             row = self._owned(session, continuity_id, memory_id)
             return self._snapshot(session, row)
 
-    def list(self, continuity_id: UUID) -> tuple[StorylineMemory, ...]:
-        """List a Storyline's memories deterministically by subject and identifier.
+    def list(self, continuity_id: UUID) -> tuple[ContinuityMemory, ...]:
+        """List a continuity's memories deterministically by subject and identifier.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
 
         Returns:
             Complete detached memory lineages.
@@ -105,9 +104,11 @@ class DbStorylineMemoryRepository:
         with self._factory() as session:
             rows = tuple(
                 session.scalars(
-                    select(StorylineMemoryModel)
-                    .where(StorylineMemoryModel.continuity_id == continuity_id)
-                    .order_by(StorylineMemoryModel.subject_key, StorylineMemoryModel.id)
+                    select(ContinuityMemoryModel)
+                    .where(ContinuityMemoryModel.continuity_id == continuity_id)
+                    .order_by(
+                        ContinuityMemoryModel.subject_key, ContinuityMemoryModel.id
+                    )
                 )
             )
 
@@ -118,12 +119,12 @@ class DbStorylineMemoryRepository:
         continuity_id: UUID,
         target_scene_position: int,
         selected_persona_message_ids: frozenset[UUID],
-    ) -> tuple[StorylineMemory, ...]:
+    ) -> tuple[ContinuityMemory, ...]:
         """List active memories whose current source is branch- and time-eligible.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             target_scene_position:
                 Positive target scene position.
             selected_persona_message_ids:
@@ -147,7 +148,7 @@ class DbStorylineMemoryRepository:
             and memory.current.source.learned.position <= target_scene_position
         )
 
-    def correct(self, command: CorrectMemoryCommand) -> StorylineMemory:
+    def correct(self, command: CorrectMemoryCommand) -> ContinuityMemory:
         """Add a guarded user-authored correction to an active lineage.
 
         Args:
@@ -200,7 +201,7 @@ class DbStorylineMemoryRepository:
                 "Memory changed while the correction was committed"
             ) from error
 
-    def change_state(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+    def change_state(self, command: ChangeMemoryStateCommand) -> ContinuityMemory:
         """Add a guarded exclusion or reactivation revision.
 
         Args:
@@ -274,10 +275,10 @@ class DbStorylineMemoryRepository:
 
         with self._factory() as session, session.begin():
             row = session.scalar(
-                select(StorylineMemoryModel)
+                select(ContinuityMemoryModel)
                 .where(
-                    StorylineMemoryModel.id == command.memory_id,
-                    StorylineMemoryModel.continuity_id == command.continuity_id,
+                    ContinuityMemoryModel.id == command.memory_id,
+                    ContinuityMemoryModel.continuity_id == command.continuity_id,
                 )
                 .with_for_update()
             )
@@ -315,7 +316,7 @@ class DbStorylineMemoryRepository:
     def _locked_current(
         session: Session,
         command: CorrectMemoryCommand | ChangeMemoryStateCommand,
-    ) -> tuple[StorylineMemoryModel, MemoryRevisionModel]:
+    ) -> tuple[ContinuityMemoryModel, MemoryRevisionModel]:
         """Lock and validate the current revision named by a command.
 
         Args:
@@ -335,10 +336,10 @@ class DbStorylineMemoryRepository:
         """
 
         row = session.scalar(
-            select(StorylineMemoryModel)
+            select(ContinuityMemoryModel)
             .where(
-                StorylineMemoryModel.id == command.memory_id,
-                StorylineMemoryModel.continuity_id == command.continuity_id,
+                ContinuityMemoryModel.id == command.memory_id,
+                ContinuityMemoryModel.continuity_id == command.continuity_id,
             )
             .with_for_update()
         )
@@ -358,7 +359,7 @@ class DbStorylineMemoryRepository:
     @staticmethod
     def _append_revision(
         session: Session,
-        row: StorylineMemoryModel,
+        row: ContinuityMemoryModel,
         current: MemoryRevisionModel,
         *,
         subject: str,
@@ -414,14 +415,14 @@ class DbStorylineMemoryRepository:
     @staticmethod
     def _owned(
         session: Session, continuity_id: UUID, memory_id: UUID
-    ) -> StorylineMemoryModel:
+    ) -> ContinuityMemoryModel:
         """Return one owned row or raise the domain absence error.
 
         Args:
             session:
                 Current database session.
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             memory_id:
                 Logical-memory identifier.
 
@@ -434,9 +435,9 @@ class DbStorylineMemoryRepository:
         """
 
         row = session.scalar(
-            select(StorylineMemoryModel).where(
-                StorylineMemoryModel.id == memory_id,
-                StorylineMemoryModel.continuity_id == continuity_id,
+            select(ContinuityMemoryModel).where(
+                ContinuityMemoryModel.id == memory_id,
+                ContinuityMemoryModel.continuity_id == continuity_id,
             )
         )
         if row is None:
@@ -445,7 +446,9 @@ class DbStorylineMemoryRepository:
         return row
 
     @classmethod
-    def _snapshot(cls, session: Session, row: StorylineMemoryModel) -> StorylineMemory:
+    def _snapshot(
+        cls, session: Session, row: ContinuityMemoryModel
+    ) -> ContinuityMemory:
         """Build a validated complete domain lineage.
 
         Args:
@@ -480,7 +483,7 @@ class DbStorylineMemoryRepository:
             )
         )
 
-        return StorylineMemory(
+        return ContinuityMemory(
             id=row.id,
             continuity_id=row.continuity_id,
             current_revision_id=_required_current(row),
@@ -506,7 +509,7 @@ class DbStorylineMemoryRepository:
 
 
 class DbMemoryExtractionRepository:
-    """Reserve and atomically persist validated Storyline extraction deltas."""
+    """Reserve and atomically persist validated continuity extraction deltas."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         """Initialize the repository.
@@ -560,8 +563,7 @@ class DbMemoryExtractionRepository:
                     persona_id=scope.persona_id,
                     conversation_id=scope.conversation_id,
                     mode="storyline",
-                    scene_id=scene_id,
-                    day_id=None,
+                    entry_id=scene_id,
                     source_persona_message_id=source_persona_message_id,
                     state=ExtractionEffectState.RESERVED.value,
                     created_at=now,
@@ -620,8 +622,7 @@ class DbMemoryExtractionRepository:
                     persona_id=scope.persona_id,
                     conversation_id=scope.conversation_id,
                     mode=ContinuityMode.TIMELINE.value,
-                    scene_id=None,
-                    day_id=day_id,
+                    entry_id=day_id,
                     source_persona_message_id=source_persona_message_id,
                     state=ExtractionEffectState.RESERVED.value,
                     created_at=datetime.now(UTC),
@@ -711,7 +712,7 @@ class DbMemoryExtractionRepository:
                     session,
                     delta.scope,
                     ContinuityMode(effect.mode),
-                    effect.scene_id if effect.scene_id is not None else effect.day_id,
+                    effect.entry_id,
                     effect.source_persona_message_id,
                 )
 
@@ -759,11 +760,11 @@ class DbMemoryExtractionRepository:
             ) from error
 
     def list_conflicts(self, continuity_id: UUID) -> tuple[MemoryConflict, ...]:
-        """List all conflicts for one Storyline in stable creation order.
+        """List all conflicts for one continuity in stable creation order.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
 
         Returns:
             Detached conflict snapshots.
@@ -815,10 +816,10 @@ class DbMemoryExtractionRepository:
 
             if observed.memory_id is not None:
                 current = session.scalar(
-                    select(StorylineMemoryModel.current_revision_id)
+                    select(ContinuityMemoryModel.current_revision_id)
                     .where(
-                        StorylineMemoryModel.id == observed.memory_id,
-                        StorylineMemoryModel.continuity_id == command.continuity_id,
+                        ContinuityMemoryModel.id == observed.memory_id,
+                        ContinuityMemoryModel.continuity_id == command.continuity_id,
                     )
                     .with_for_update()
                 )
@@ -853,7 +854,7 @@ class DbMemoryExtractionRepository:
         temporal_owner_id: UUID | None,
         source_persona_message_id: UUID,
     ) -> None:
-        """Validate active Storyline ownership and selected complete-turn ancestry.
+        """Validate active continuity ownership and selected complete-turn ancestry.
 
         Args:
             session:
@@ -1000,7 +1001,7 @@ class DbMemoryExtractionRepository:
 
         memory_id = uuid4()
         revision_id = uuid4()
-        memory = StorylineMemoryModel(
+        memory = ContinuityMemoryModel(
             id=memory_id,
             continuity_id=effect.continuity_id,
             identity_id=effect.identity_id,
@@ -1159,7 +1160,7 @@ class DbMemoryExtractionRepository:
             | SupersedeMemoryCommand
             | RecordMemoryConflictCommand
         ),
-    ) -> tuple[StorylineMemoryModel, MemoryRevisionModel]:
+    ) -> tuple[ContinuityMemoryModel, MemoryRevisionModel]:
         """Lock and validate an active current extraction target.
 
         Args:
@@ -1179,12 +1180,12 @@ class DbMemoryExtractionRepository:
         """
 
         memory = session.scalar(
-            select(StorylineMemoryModel)
+            select(ContinuityMemoryModel)
             .where(
-                StorylineMemoryModel.id == command.target_memory_id,
-                StorylineMemoryModel.continuity_id == effect.continuity_id,
-                StorylineMemoryModel.identity_id == effect.identity_id,
-                StorylineMemoryModel.persona_id == effect.persona_id,
+                ContinuityMemoryModel.id == command.target_memory_id,
+                ContinuityMemoryModel.continuity_id == effect.continuity_id,
+                ContinuityMemoryModel.identity_id == effect.identity_id,
+                ContinuityMemoryModel.persona_id == effect.persona_id,
             )
             .with_for_update()
         )
@@ -1231,38 +1232,17 @@ class DbMemoryExtractionRepository:
 
         if (
             evidence.scope != _scope(effect)
-            or evidence.scene_id != effect.scene_id
-            or evidence.day_id != effect.day_id
+            or evidence.entry_id != effect.entry_id
             or evidence.persona_message_id != effect.source_persona_message_id
         ):
             raise InvalidTemporalProvenanceError(
                 "Evidence does not match the reserved source"
             )
 
-        owner = (
-            session.get(SceneModel, effect.scene_id)
-            if effect.mode == ContinuityMode.STORYLINE
-            else session.get(TimelineDayModel, effect.day_id)
-        )
+        owner = session.get(ContinuityEntryModel, effect.entry_id)
         persona = session.get(MessageModel, effect.source_persona_message_id)
         user = session.get(MessageModel, evidence.user_message_id)
-        occurrence: SceneModel | TimelineDayModel | None
-        if effect.mode == ContinuityMode.STORYLINE:
-            if not isinstance(evidence.occurrence, ScenePosition) or not isinstance(
-                evidence.learned, ScenePosition
-            ):
-                raise InvalidTemporalProvenanceError(
-                    "Storyline evidence requires scene positions"
-                )
-            occurrence = session.get(SceneModel, evidence.occurrence.scene_id)
-        else:
-            if not isinstance(evidence.occurrence, DayPosition) or not isinstance(
-                evidence.learned, DayPosition
-            ):
-                raise InvalidTemporalProvenanceError(
-                    "Timeline evidence requires day positions"
-                )
-            occurrence = session.get(TimelineDayModel, evidence.occurrence.day_id)
+        occurrence = session.get(ContinuityEntryModel, evidence.occurrence.entry_id)
         if (
             owner is None
             or persona is None
@@ -1272,9 +1252,11 @@ class DbMemoryExtractionRepository:
             or user.role != "user"
             or persona.parent_id != user.id
             or _message_position(session, persona) != evidence.persona_checkpoint
-            or owner.entry.position != evidence.learned.position
-            or occurrence.entry.continuity_id != effect.continuity_id
-            or occurrence.entry.position != evidence.occurrence.position
+            or owner.position != evidence.learned.position
+            or owner.mode != effect.mode
+            or occurrence.continuity_id != effect.continuity_id
+            or occurrence.mode != effect.mode
+            or occurrence.position != evidence.occurrence.position
         ):
             raise InvalidTemporalProvenanceError(
                 "Evidence message or temporal provenance is inconsistent"
@@ -1289,32 +1271,13 @@ class DbMemoryExtractionRepository:
             conversation_id=effect.conversation_id,
             mode=effect.mode,
             purpose=purpose,
-            scene_id=effect.scene_id,
-            day_id=effect.day_id,
+            entry_id=effect.entry_id,
             user_message_id=evidence.user_message_id,
             source_persona_message_id=evidence.persona_message_id,
             persona_checkpoint=evidence.persona_checkpoint,
-            occurrence_scene_id=(
-                evidence.occurrence.scene_id
-                if isinstance(evidence.occurrence, ScenePosition)
-                else None
-            ),
-            occurrence_day_id=(
-                evidence.occurrence.day_id
-                if isinstance(evidence.occurrence, DayPosition)
-                else None
-            ),
+            occurrence_entry_id=evidence.occurrence.entry_id,
             occurrence_position=evidence.occurrence.position,
-            learned_scene_id=(
-                evidence.learned.scene_id
-                if isinstance(evidence.learned, ScenePosition)
-                else None
-            ),
-            learned_day_id=(
-                evidence.learned.day_id
-                if isinstance(evidence.learned, DayPosition)
-                else None
-            ),
+            learned_entry_id=evidence.learned.entry_id,
             learned_position=evidence.learned.position,
             extraction=evidence.extraction.model_dump(mode="json"),
             created_at=evidence.created_at,
@@ -1336,7 +1299,7 @@ class DbMemoryExtractionRepository:
             Detached evidence snapshot.
         """
 
-        storyline = row.mode == ContinuityMode.STORYLINE
+        mode = ContinuityMode(row.mode)
         return MemoryEvidence(
             id=row.id,
             scope=ConversationScope(
@@ -1345,32 +1308,21 @@ class DbMemoryExtractionRepository:
                 continuity_id=row.continuity_id,
                 conversation_id=row.conversation_id,
             ),
-            scene_id=row.scene_id,
-            day_id=row.day_id,
+            entry_id=row.entry_id,
             user_message_id=row.user_message_id,
             persona_message_id=row.source_persona_message_id,
             persona_checkpoint=row.persona_checkpoint,
-            occurrence=(
-                ScenePosition(
-                    scene_id=_required_uuid(row.occurrence_scene_id),
-                    position=row.occurrence_position,
-                )
-                if storyline
-                else DayPosition(
-                    day_id=_required_uuid(row.occurrence_day_id),
-                    position=row.occurrence_position,
-                )
+            occurrence=EntryPosition(
+                entry_id=row.occurrence_entry_id,
+                continuity_id=row.continuity_id,
+                mode=mode,
+                position=row.occurrence_position,
             ),
-            learned=(
-                ScenePosition(
-                    scene_id=_required_uuid(row.learned_scene_id),
-                    position=row.learned_position,
-                )
-                if storyline
-                else DayPosition(
-                    day_id=_required_uuid(row.learned_day_id),
-                    position=row.learned_position,
-                )
+            learned=EntryPosition(
+                entry_id=row.learned_entry_id,
+                continuity_id=row.continuity_id,
+                mode=mode,
+                position=row.learned_position,
             ),
             extraction=ExtractionProvenance.model_validate(row.extraction),
             created_at=_aware(row.created_at),
@@ -1391,8 +1343,7 @@ class DbMemoryExtractionRepository:
         return ExtractionEffect(
             id=row.id,
             scope=_scope(row),
-            scene_id=row.scene_id,
-            day_id=row.day_id,
+            entry_id=row.entry_id,
             source_persona_message_id=row.source_persona_message_id,
             state=ExtractionEffectState(row.state),
             provenance=(
@@ -1475,7 +1426,7 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _required_current(row: StorylineMemoryModel) -> UUID:
+def _required_current(row: ContinuityMemoryModel) -> UUID:
     """Return the current revision of a logical memory.
 
     Args:
@@ -1548,7 +1499,3 @@ def _message_position(session: Session, message: MessageModel) -> int:
         if current is None:
             raise InvalidTemporalProvenanceError("Source ancestry is incomplete")
     return position
-
-
-DbContinuityMemoryRepository = DbStorylineMemoryRepository
-DbTimelineMemoryRepository = DbStorylineMemoryRepository

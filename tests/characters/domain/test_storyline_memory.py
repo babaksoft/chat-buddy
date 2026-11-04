@@ -7,10 +7,13 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from chat_buddy.characters.domain import (
+    ContinuityMemory,
+    ContinuityMode,
     ConversationScope,
     CorrectMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
+    EntryPosition,
     ExtractionEffect,
     ExtractionEffectState,
     ExtractionProvenance,
@@ -23,9 +26,7 @@ from chat_buddy.characters.domain import (
     MemoryRevision,
     MemoryRevisionKind,
     MemoryRevisionState,
-    ScenePosition,
     StaleMemoryConflictError,
-    StorylineMemory,
     StrategyIdentity,
 )
 
@@ -77,16 +78,26 @@ def _evidence(scope: ConversationScope, *, learned_position: int = 2) -> MemoryE
         Valid evidence link.
     """
 
-    scene_id = uuid4()
+    entry_id = uuid4()
     return MemoryEvidence(
         id=uuid4(),
         scope=scope,
-        scene_id=scene_id,
+        entry_id=entry_id,
         user_message_id=uuid4(),
         persona_message_id=uuid4(),
         persona_checkpoint=4,
-        occurrence=ScenePosition(scene_id=uuid4(), position=1),
-        learned=ScenePosition(scene_id=scene_id, position=learned_position),
+        occurrence=EntryPosition(
+            entry_id=uuid4(),
+            continuity_id=scope.continuity_id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
+        learned=EntryPosition(
+            entry_id=entry_id,
+            continuity_id=scope.continuity_id,
+            mode=ContinuityMode.STORYLINE,
+            position=learned_position,
+        ),
         extraction=_provenance(),
         created_at=NOW,
     )
@@ -160,7 +171,7 @@ def test_logical_memory_requires_one_current_revision_and_complete_lineage() -> 
         authorship=MemoryAuthorship.USER,
         kind=MemoryRevisionKind.USER_CORRECTION,
     )
-    memory = StorylineMemory(
+    memory = ContinuityMemory(
         id=memory_id,
         continuity_id=scope.continuity_id,
         current_revision_id=corrected.id,
@@ -171,7 +182,7 @@ def test_logical_memory_requires_one_current_revision_and_complete_lineage() -> 
     assert memory.current == corrected
     assert memory.current.authorship == MemoryAuthorship.USER
     with pytest.raises(ValidationError, match="final lineage revision"):
-        StorylineMemory(
+        ContinuityMemory(
             id=memory_id,
             continuity_id=scope.continuity_id,
             current_revision_id=first.id,
@@ -179,7 +190,7 @@ def test_logical_memory_requires_one_current_revision_and_complete_lineage() -> 
             evidence=(evidence,),
         )
     with pytest.raises(ValidationError, match="Exactly the final"):
-        StorylineMemory(
+        ContinuityMemory(
             id=memory_id,
             continuity_id=scope.continuity_id,
             current_revision_id=corrected.id,
@@ -198,7 +209,12 @@ def test_evidence_orders_occurrence_before_learning_and_uses_persona_checkpoint(
         MemoryEvidence.model_validate(
             {
                 **evidence.model_dump(),
-                "occurrence": {"scene_id": uuid4(), "position": 3},
+                "occurrence": {
+                    "entry_id": uuid4(),
+                    "continuity_id": evidence.scope.continuity_id,
+                    "mode": "storyline",
+                    "position": 3,
+                },
             }
         )
     with pytest.raises(ValidationError, match="persona messages"):
@@ -229,7 +245,7 @@ def test_exclusion_and_reactivation_retain_interpretation() -> None:
         predecessor_id=excluded.id,
         kind=MemoryRevisionKind.REACTIVATION,
     )
-    memory = StorylineMemory(
+    memory = ContinuityMemory(
         id=memory_id,
         continuity_id=scope.continuity_id,
         current_revision_id=reactivated.id,
@@ -240,7 +256,7 @@ def test_exclusion_and_reactivation_retain_interpretation() -> None:
     assert memory.current.kind == MemoryRevisionKind.REACTIVATION
     changed = reactivated.model_copy(update={"content": "Changed while excluded."})
     with pytest.raises(ValidationError, match="retain memory interpretation"):
-        StorylineMemory(
+        ContinuityMemory(
             id=memory_id,
             continuity_id=scope.continuity_id,
             current_revision_id=changed.id,
@@ -261,7 +277,7 @@ def test_reinforcement_evidence_is_distinct_and_continuity_scoped() -> None:
     )
 
     with pytest.raises(ValidationError, match="only once"):
-        StorylineMemory(
+        ContinuityMemory(
             id=memory_id,
             continuity_id=scope.continuity_id,
             current_revision_id=revision.id,
@@ -290,7 +306,7 @@ def test_conflict_and_effect_lifecycles_are_explicit_and_immutable() -> None:
     effect = ExtractionEffect(
         id=uuid4(),
         scope=scope,
-        scene_id=evidence.scene_id,
+        entry_id=evidence.entry_id,
         source_persona_message_id=evidence.persona_message_id,
         state=ExtractionEffectState.RESERVED,
         provenance=None,

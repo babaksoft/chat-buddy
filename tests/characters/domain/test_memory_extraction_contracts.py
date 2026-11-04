@@ -8,8 +8,11 @@ from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
     CompletedTurn,
+    ContinuityMemory,
+    ContinuityMode,
     ConversationScope,
     CreateMemoryCommand,
+    EntryPosition,
     ExtractionBudget,
     ExtractionProvenance,
     GenerationConfiguration,
@@ -28,10 +31,8 @@ from chat_buddy.characters.domain import (
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
     RelationshipIntent,
-    ScenePosition,
     StartingOrigins,
     StartingRelationship,
-    StorylineMemory,
     StrategyIdentity,
     SupersedeMemoryCommand,
 )
@@ -131,7 +132,12 @@ def _context(
         continuity_id=uuid4(),
         conversation_id=uuid4(),
     )
-    scene = ScenePosition(scene_id=uuid4(), position=2)
+    scene = EntryPosition(
+        entry_id=uuid4(),
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.STORYLINE,
+        position=2,
+    )
     prior_turn, source_turn = _turn(scope, 1), _turn(scope, 3)
     provenance = ExtractionProvenance(
         selector=_strategy("baseline.context"),
@@ -144,11 +150,16 @@ def _context(
     evidence = MemoryEvidence(
         id=uuid4(),
         scope=scope,
-        scene_id=scene.scene_id,
+        entry_id=scene.entry_id,
         user_message_id=prior_turn.user.id,
         persona_message_id=prior_turn.persona.id,
         persona_checkpoint=2,
-        occurrence=ScenePosition(scene_id=uuid4(), position=1),
+        occurrence=EntryPosition(
+            entry_id=uuid4(),
+            continuity_id=scope.continuity_id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
         learned=scene,
         extraction=provenance,
         created_at=NOW,
@@ -192,7 +203,7 @@ def _context(
     else:
         current = extracted
         revisions = (extracted,)
-    memory = StorylineMemory(
+    memory = ContinuityMemory(
         id=memory_id,
         continuity_id=scope.continuity_id,
         current_revision_id=current.id,
@@ -201,7 +212,7 @@ def _context(
     )
     return MemoryExtractionContext(
         scope=scope,
-        scene=scene,
+        entry=scene,
         identity_label="You",
         persona_label="Guide",
         starting_relationship=_relationship(),
@@ -254,7 +265,7 @@ def _source_evidence(context: MemoryExtractionContext) -> MemoryEvidence:
     return MemoryEvidence(
         id=uuid4(),
         scope=context.scope,
-        scene_id=scene.scene_id,
+        entry_id=scene.entry_id,
         user_message_id=context.source_turn.user.id,
         persona_message_id=context.source_turn.persona.id,
         persona_checkpoint=context.source_turn.persona.sequence,
@@ -265,7 +276,7 @@ def _source_evidence(context: MemoryExtractionContext) -> MemoryEvidence:
     )
 
 
-def _storyline_position(context: MemoryExtractionContext) -> ScenePosition:
+def _storyline_position(context: MemoryExtractionContext) -> EntryPosition:
     """Return the required scene position from a Storyline fixture.
 
     Args:
@@ -276,9 +287,7 @@ def _storyline_position(context: MemoryExtractionContext) -> ScenePosition:
         Required source scene position.
     """
 
-    scene = context.scene
-    assert scene is not None
-    return scene
+    return context.entry
 
 
 def _delta(
@@ -338,7 +347,7 @@ def test_context_rejects_foreign_turns_and_future_or_excluded_memory() -> None:
         source=extracted.source,
         created_at=NOW,
     )
-    excluded = StorylineMemory(
+    excluded = ContinuityMemory(
         id=memory.id,
         continuity_id=memory.continuity_id,
         current_revision_id=excluded_revision.id,

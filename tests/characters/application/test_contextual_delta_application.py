@@ -123,7 +123,7 @@ def _effect(
     return ExtractionEffect(
         id=uuid4(),
         scope=scope,
-        scene_id=scene_id,
+        entry_id=scene_id,
         source_persona_message_id=source_id,
         state=state,
         provenance=provenance,

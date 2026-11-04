@@ -18,9 +18,11 @@ from chat_buddy.characters.domain import (
     ContextCapacityError,
     ContinuityEntry,
     ContinuityLifecycle,
+    ContinuityMemory,
     ContinuityMode,
     ConversationScope,
     ConversationTarget,
+    EntryPosition,
     ExtractionBudget,
     ExtractionProvenance,
     GenerationConfiguration,
@@ -42,13 +44,11 @@ from chat_buddy.characters.domain import (
     ResponseStyle,
     Scene,
     SceneDetails,
-    ScenePosition,
     SceneSequence,
     SelectedPath,
     StartingOrigins,
     StartingRelationship,
     Storyline,
-    StorylineMemory,
     StrategyIdentity,
     SummaryRevision,
     UnsupportedContinuityModeError,
@@ -171,6 +171,29 @@ def _provenance() -> ExtractionProvenance:
     )
 
 
+def _position(scope: ConversationScope, entry_id: UUID, position: int) -> EntryPosition:
+    """Create one Storyline Entry position.
+
+    Args:
+        scope:
+            Owning conversation scope.
+        entry_id:
+            Entry at the position.
+        position:
+            Positive Storyline ordinal.
+
+    Returns:
+        Complete shared Entry position.
+    """
+
+    return EntryPosition(
+        entry_id=entry_id,
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.STORYLINE,
+        position=position,
+    )
+
+
 def _memory(
     scope: ConversationScope,
     source_turn: CompletedTurn,
@@ -179,7 +202,7 @@ def _memory(
     learned: int,
     current_state: MemoryRevisionState = MemoryRevisionState.ACTIVE,
     corrected: bool = False,
-) -> StorylineMemory:
+) -> ContinuityMemory:
     """Create one memory with configurable temporal and lifecycle state.
 
     Args:
@@ -205,12 +228,12 @@ def _memory(
     evidence = MemoryEvidence(
         id=uuid4(),
         scope=scope,
-        scene_id=scene_id,
+        entry_id=scene_id,
         user_message_id=source_turn.user.id,
         persona_message_id=source_turn.persona.id,
         persona_checkpoint=source_turn.persona.sequence,
-        occurrence=ScenePosition(scene_id=uuid4(), position=occurrence),
-        learned=ScenePosition(scene_id=scene_id, position=learned),
+        occurrence=_position(scope, uuid4(), occurrence),
+        learned=_position(scope, scene_id, learned),
         extraction=_provenance(),
         created_at=NOW,
     )
@@ -254,7 +277,7 @@ def _memory(
             created_at=NOW,
         )
         revisions = (first, current)
-    return StorylineMemory(
+    return ContinuityMemory(
         id=memory_id,
         continuity_id=scope.continuity_id,
         current_revision_id=current.id,
@@ -266,7 +289,7 @@ def _memory(
 def _context(
     *,
     recent_turns: tuple[CompletedTurn, ...] | None = None,
-    memories: tuple[StorylineMemory, ...] | None = None,
+    memories: tuple[ContinuityMemory, ...] | None = None,
 ) -> MemoryExtractionContext:
     """Create complete eligible selector input.
 
@@ -286,7 +309,7 @@ def _context(
     source = _turn(scope, source_sequence, "source")
     return MemoryExtractionContext(
         scope=scope,
-        scene=ScenePosition(scene_id=uuid4(), position=3),
+        entry=_position(scope, uuid4(), 3),
         identity_label="You",
         persona_label="Guide",
         starting_relationship=_relationship(),
@@ -320,7 +343,7 @@ def test_eligibility_applies_ownership_branch_time_and_lifecycle_matrix() -> Non
     foreign_source = _turn(foreign_scope, 1, "foreign")
     foreign = _memory(foreign_scope, foreign_source, occurrence=1, learned=1)
     policy = StorylineMemoryEligibility()
-    target = ScenePosition(scene_id=uuid4(), position=2)
+    target = _position(scope, uuid4(), 2)
 
     result = policy.select(
         (
@@ -355,7 +378,7 @@ def test_selector_renders_exact_order_and_is_reproducible() -> None:
     memory = _memory(scope, recent, occurrence=1, learned=1)
     context = MemoryExtractionContext(
         scope=scope,
-        scene=ScenePosition(scene_id=uuid4(), position=2),
+        entry=_position(scope, uuid4(), 2),
         identity_label="You",
         persona_label="Guide",
         starting_relationship=_relationship(),
@@ -397,7 +420,7 @@ def test_selector_keeps_source_and_chooses_newest_turn_whole() -> None:
     memory = _memory(scope, older, occurrence=1, learned=1)
     context = MemoryExtractionContext(
         scope=scope,
-        scene=ScenePosition(scene_id=uuid4(), position=2),
+        entry=_position(scope, uuid4(), 2),
         identity_label="You",
         persona_label="Guide",
         starting_relationship=_relationship(),

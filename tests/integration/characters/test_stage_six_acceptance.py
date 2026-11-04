@@ -46,6 +46,7 @@ from chat_buddy.characters.domain import (
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
     DbIdentityRepository,
@@ -54,7 +55,6 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbResponseStyleRepository,
     DbSceneRepository,
     DbStorylineForkRepository,
-    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -112,12 +112,11 @@ class ScriptedDeltaExtractor:
         operation = self._operations.pop(0)
         self.selections.append(selection)
         provenance = self.provenance(selection)
-        scene = selection.context.scene
-        assert scene is not None
+        scene = selection.context.entry
         evidence = MemoryEvidence(
             id=uuid4(),
             scope=selection.context.scope,
-            scene_id=scene.scene_id,
+            entry_id=scene.entry_id,
             user_message_id=selection.context.source_turn.user.id,
             persona_message_id=selection.context.source_turn.persona.id,
             persona_checkpoint=selection.context.source_turn.persona.sequence,
@@ -276,7 +275,7 @@ def prove_stage_six_milestone(factory: sessionmaker[Session]) -> None:
     summary = DbSummaryRepository(factory).get_current(first_scene.scope)
     assert summary is not None
     assert summaries.captured
-    memory_repository = DbStorylineMemoryRepository(factory)
+    memory_repository = DbContinuityMemoryRepository(factory)
     memory = memory_repository.list(storyline.id)[0]
     assert tuple(delta.commands[0].operation for delta in extractor.deltas) == (
         "create",
@@ -406,7 +405,7 @@ def prove_stage_six_milestone(factory: sessionmaker[Session]) -> None:
         *first_as_of.included_memory_ids,
         *first_as_of.omitted_memory_ids,
     )
-    assert extractor.selections[-1].context.scene.position == 2
+    assert extractor.selections[-1].context.entry.position == 2
     assert set(extractor.selections[-1].included_memory_ids) == {
         memory.id,
         future_memory.id,
@@ -529,7 +528,7 @@ def _acceptance_service(
         defaults={"response": ("fake", "response"), "summary": ("fake", "summary")},
     )
     conversations = DbConversationRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     contexts = _context_service(factory, storylines, scenes, counter)
     extraction = StorylineMemoryExtractionService(
         contexts,
@@ -587,7 +586,7 @@ def _context_service(
         scenes,
         DbConversationRepository(factory),
         DbSummaryRepository(factory),
-        DbStorylineMemoryRepository(factory),
+        DbContinuityMemoryRepository(factory),
         StorylineMemoryEligibility(),
         BaselineMemoryContextSelector(counter or MessageCountCounter()),
     )

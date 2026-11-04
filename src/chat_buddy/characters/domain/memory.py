@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from chat_buddy.characters.domain.continuity_entry import EntryPosition
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.errors import (
     ExtractionEffectConflictError,
@@ -59,43 +60,6 @@ class ExtractionEffectState(StrEnum):
     APPLIED = "applied"
 
 
-class ScenePosition(BaseModel):
-    """Immutable temporal position inside one Storyline.
-
-    Attributes:
-        scene_id:
-            Scene occupying the position.
-        position:
-            Positive append-only scene ordinal.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    scene_id: UUID = Field(description="Scene identifier.")
-    position: int = Field(gt=0, description="Append-only scene ordinal.")
-
-
-class DayPosition(BaseModel):
-    """Immutable temporal position inside one Timeline.
-
-    Attributes:
-        day_id:
-            Represented day occupying the position.
-        position:
-            Positive append-only day ordinal.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    day_id: UUID = Field(description="Timeline day identifier.")
-    position: int = Field(gt=0, description="Append-only day ordinal.")
-
-
-MemoryPosition = Annotated[
-    ScenePosition | DayPosition, Field(union_mode="left_to_right")
-]
-
-
 class ExtractionProvenance(BaseModel):
     """Reproducible non-secret configuration for a memory extraction.
 
@@ -139,10 +103,8 @@ class MemoryEvidence(BaseModel):
             Stable evidence-link identifier.
         scope:
             Complete source conversation ownership.
-        scene_id:
-            Source scene identifier for Storyline evidence.
-        day_id:
-            Source represented-day identifier for Timeline evidence.
+        entry_id:
+            Source Entry identifier.
         user_message_id:
             Source user-message identifier.
         persona_message_id:
@@ -150,9 +112,9 @@ class MemoryEvidence(BaseModel):
         persona_checkpoint:
             Even selected-path position of the persona message.
         occurrence:
-            Scene or represented day where the assertion occurred.
+            Entry where the assertion occurred.
         learned:
-            Source scene or represented day where the assertion was learned.
+            Source Entry where the assertion was learned.
         extraction:
             Exact extraction strategy and model configuration.
         created_at:
@@ -163,19 +125,14 @@ class MemoryEvidence(BaseModel):
 
     id: UUID = Field(description="Stable evidence-link identifier.")
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene_id: UUID | None = Field(
-        default=None, description="Source scene identifier for Storyline evidence."
-    )
-    day_id: UUID | None = Field(
-        default=None, description="Source day identifier for Timeline evidence."
-    )
+    entry_id: UUID = Field(description="Source Entry identifier.")
     user_message_id: UUID = Field(description="Source user-message identifier.")
     persona_message_id: UUID = Field(description="Source persona-message checkpoint.")
     persona_checkpoint: int = Field(
         gt=0, description="Even selected-path persona-message position."
     )
-    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
-    learned: MemoryPosition = Field(description="Learning temporal position.")
+    occurrence: EntryPosition = Field(description="Asserted temporal position.")
+    learned: EntryPosition = Field(description="Learning temporal position.")
     extraction: ExtractionProvenance = Field(
         description="Extraction configuration provenance."
     )
@@ -196,30 +153,22 @@ class MemoryEvidence(BaseModel):
         if self.persona_checkpoint % 2 != 0:
             raise ValueError("Memory evidence checkpoints must be persona messages")
 
-        if (self.scene_id is None) == (self.day_id is None):
-            raise ValueError("Memory evidence requires exactly one temporal owner")
-        if self.scene_id is not None:
-            if not isinstance(self.occurrence, ScenePosition) or not isinstance(
-                self.learned, ScenePosition
-            ):
-                raise ValueError("Storyline evidence requires scene positions")
-            if self.learned.scene_id != self.scene_id:
-                raise ValueError("Learned position must identify the source scene")
-        else:
-            if not isinstance(self.occurrence, DayPosition) or not isinstance(
-                self.learned, DayPosition
-            ):
-                raise ValueError("Timeline evidence requires day positions")
-            if self.learned.day_id != self.day_id:
-                raise ValueError("Learned position must identify the source day")
-
+        if self.learned.entry_id != self.entry_id:
+            raise ValueError("Learned position must identify the source Entry")
+        if (
+            self.occurrence.continuity_id != self.scope.continuity_id
+            or self.learned.continuity_id != self.scope.continuity_id
+        ):
+            raise ValueError("Memory positions must belong to the source continuity")
+        if self.occurrence.mode != self.learned.mode:
+            raise ValueError("Memory positions must use one continuity mode")
         if self.occurrence.position > self.learned.position:
             raise ValueError("Occurrence cannot be later than learning")
         return self
 
 
 class MemoryRevision(BaseModel):
-    """One immutable revision in a logical Storyline memory lineage.
+    """One immutable revision in a logical continuity memory lineage.
 
     Attributes:
         id:
@@ -227,7 +176,7 @@ class MemoryRevision(BaseModel):
         memory_id:
             Stable logical-memory identifier.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         revision:
             Positive consecutive lineage position.
         predecessor_id:
@@ -252,7 +201,7 @@ class MemoryRevision(BaseModel):
 
     id: UUID = Field(description="Stable revision identifier.")
     memory_id: UUID = Field(description="Stable logical-memory identifier.")
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     revision: int = Field(gt=0, description="Consecutive lineage position.")
     predecessor_id: UUID | None = Field(description="Previous revision identifier.")
     subject: str = Field(
@@ -269,7 +218,7 @@ class MemoryRevision(BaseModel):
 
     @model_validator(mode="after")
     def validate_revision_origin(self) -> Self:
-        """Keep lineage shape and evidence inside the owning Storyline.
+        """Keep lineage shape and evidence inside the owning continuity.
 
         Returns:
             Validated revision.
@@ -283,7 +232,7 @@ class MemoryRevision(BaseModel):
             raise ValueError("Memory predecessor must match its revision")
 
         if self.source.scope.continuity_id != self.continuity_id:
-            raise ValueError("Memory evidence must belong to the owning Storyline")
+            raise ValueError("Memory evidence must belong to the owning continuity")
 
         if self.revision == 1 and (
             self.kind != MemoryRevisionKind.EXTRACTION
@@ -297,14 +246,14 @@ class MemoryRevision(BaseModel):
         return self
 
 
-class StorylineMemory(BaseModel):
+class ContinuityMemory(BaseModel):
     """A logical memory with its complete immutable revision and evidence history.
 
     Attributes:
         id:
             Stable logical-memory identifier.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         current_revision_id:
             Sole current active or excluded revision.
         revisions:
@@ -316,7 +265,7 @@ class StorylineMemory(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: UUID = Field(description="Stable logical-memory identifier.")
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     current_revision_id: UUID = Field(description="Current revision identifier.")
     revisions: tuple[MemoryRevision, ...] = Field(
         min_length=1, description="Complete immutable revision lineage."
@@ -427,7 +376,7 @@ class StorylineMemory(BaseModel):
         if any(
             item.scope.continuity_id != self.continuity_id for item in self.evidence
         ):
-            raise ValueError("Every evidence link must belong to the Storyline")
+            raise ValueError("Every evidence link must belong to the continuity")
 
         if self.current.source.id not in {item.id for item in self.evidence}:
             raise ValueError("Current source must be retained as supporting evidence")
@@ -439,10 +388,6 @@ class StorylineMemory(BaseModel):
         return self
 
 
-ContinuityMemory = StorylineMemory
-TimelineMemory = StorylineMemory
-
-
 class CorrectMemoryCommand(BaseModel):
     """User-authored correction guarded by the current revision.
 
@@ -450,7 +395,7 @@ class CorrectMemoryCommand(BaseModel):
         operation:
             Discriminator for a correction command.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         memory_id:
             Logical memory to correct.
         expected_revision_id:
@@ -466,7 +411,7 @@ class CorrectMemoryCommand(BaseModel):
     operation: Literal["correct"] = Field(
         default="correct", description="Management operation."
     )
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     memory_id: UUID = Field(description="Logical memory identifier.")
     expected_revision_id: UUID = Field(description="Expected active revision.")
     subject: str = Field(
@@ -484,7 +429,7 @@ class ChangeMemoryStateCommand(BaseModel):
         operation:
             Requested lifecycle transition.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         memory_id:
             Logical memory to transition.
         expected_revision_id:
@@ -496,7 +441,7 @@ class ChangeMemoryStateCommand(BaseModel):
     operation: Literal["exclude", "reactivate"] = Field(
         description="Requested lifecycle transition."
     )
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     memory_id: UUID = Field(description="Logical memory identifier.")
     expected_revision_id: UUID = Field(description="Expected current revision.")
 
@@ -508,7 +453,7 @@ class DeleteMemoryCommand(BaseModel):
         operation:
             Discriminator for hard deletion.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         memory_id:
             Logical memory to delete.
         expected_revision_id:
@@ -520,7 +465,7 @@ class DeleteMemoryCommand(BaseModel):
     operation: Literal["delete"] = Field(
         default="delete", description="Management operation."
     )
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     memory_id: UUID = Field(description="Logical memory identifier.")
     expected_revision_id: UUID = Field(description="Expected current revision.")
 
@@ -532,7 +477,7 @@ class DismissMemoryConflictCommand(BaseModel):
         operation:
             Discriminator for conflict dismissal.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         conflict_id:
             Conflict to dismiss.
         expected_revision_id:
@@ -544,7 +489,7 @@ class DismissMemoryConflictCommand(BaseModel):
     operation: Literal["dismiss_conflict"] = Field(
         default="dismiss_conflict", description="Management operation."
     )
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     conflict_id: UUID = Field(description="Conflict identifier.")
     expected_revision_id: UUID | None = Field(
         description="Observed target revision for a targeted conflict."
@@ -567,7 +512,7 @@ class MemoryConflict(BaseModel):
         id:
             Stable conflict identifier.
         continuity_id:
-            Owning Storyline identifier.
+            Owning continuity identifier.
         memory_id:
             Target memory when the proposal conflicts with one.
         observed_revision_id:
@@ -589,7 +534,7 @@ class MemoryConflict(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(description="Stable conflict identifier.")
-    continuity_id: UUID = Field(description="Owning Storyline identifier.")
+    continuity_id: UUID = Field(description="Owning continuity identifier.")
     memory_id: UUID | None = Field(description="Target logical memory, when known.")
     observed_revision_id: UUID | None = Field(
         description="Observed target revision, when targeted."
@@ -620,7 +565,7 @@ class MemoryConflict(BaseModel):
         if (self.memory_id is None) != (self.observed_revision_id is None):
             raise ValueError("Conflict target and observed revision must be paired")
         if self.evidence.scope.continuity_id != self.continuity_id:
-            raise ValueError("Conflict evidence must belong to the Storyline")
+            raise ValueError("Conflict evidence must belong to the continuity")
         if (self.state == MemoryConflictState.DISMISSED) != (
             self.dismissed_at is not None
         ):
@@ -638,7 +583,7 @@ class MemoryConflict(BaseModel):
 
         Raises:
             MemoryConflictNotFoundError:
-                If the command names another conflict or Storyline.
+                If the command names another conflict or continuity.
             ExtractionEffectConflictError:
                 If this conflict is already dismissed.
             StaleMemoryConflictError:
@@ -650,7 +595,7 @@ class MemoryConflict(BaseModel):
             or command.conflict_id != self.id
         ):
             raise MemoryConflictNotFoundError(
-                "Conflict does not match the supplied Storyline ownership"
+                "Conflict does not match the supplied continuity ownership"
             )
         if self.state == MemoryConflictState.DISMISSED:
             raise ExtractionEffectConflictError("Memory conflict is already dismissed")
@@ -668,10 +613,8 @@ class ExtractionEffect(BaseModel):
             Stable effect identifier.
         scope:
             Complete source conversation ownership.
-        scene_id:
-            Source scene identifier for Storyline extraction.
-        day_id:
-            Source represented-day identifier for Timeline extraction.
+        entry_id:
+            Source Entry identifier.
         source_persona_message_id:
             Unique source persona-message checkpoint.
         state:
@@ -688,12 +631,7 @@ class ExtractionEffect(BaseModel):
 
     id: UUID = Field(description="Stable extraction-effect identifier.")
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene_id: UUID | None = Field(
-        default=None, description="Source scene identifier for Storyline extraction."
-    )
-    day_id: UUID | None = Field(
-        default=None, description="Source day identifier for Timeline extraction."
-    )
+    entry_id: UUID = Field(description="Source Entry identifier.")
     source_persona_message_id: UUID = Field(
         description="Unique source persona-message checkpoint."
     )
@@ -715,9 +653,6 @@ class ExtractionEffect(BaseModel):
             ValueError:
                 If reservation and completion fields conflict.
         """
-
-        if (self.scene_id is None) == (self.day_id is None):
-            raise ValueError("Extraction effects require exactly one temporal owner")
 
         terminal = self.state != ExtractionEffectState.RESERVED
         if terminal != (self.completed_at is not None):

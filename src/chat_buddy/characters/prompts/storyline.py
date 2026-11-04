@@ -1,6 +1,7 @@
 """Fixed Storyline response prompt blocks."""
 
 from chat_buddy.characters.domain import (
+    ContinuityMemory,
     Identity,
     Message,
     Persona,
@@ -10,12 +11,11 @@ from chat_buddy.characters.domain import (
     ResponseStyle,
     Scene,
     Storyline,
-    StorylineMemory,
 )
 
 
 def assemble_storyline_memory_blocks(
-    memories: tuple[StorylineMemory, ...],
+    memories: tuple[ContinuityMemory, ...],
 ) -> tuple[PromptMessage, ...]:
     """Render complete eligible memories as indivisible prompt blocks.
 
@@ -49,7 +49,7 @@ def assemble_storyline_prompt(
     messages: tuple[Message, ...],
     current_input: str | None = None,
     summary: str | None = None,
-    memories: tuple[StorylineMemory, ...] = (),
+    memories: tuple[ContinuityMemory, ...] = (),
     relationship: RelationshipProjection | None = None,
     adaptations: PersonaAdaptationProjection | None = None,
 ) -> tuple[PromptMessage, ...]:

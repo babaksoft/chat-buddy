@@ -12,6 +12,7 @@ from chat_buddy.characters.domain import (
     ContextCapacityError,
     ContinuityEntry,
     ContinuityLifecycle,
+    ContinuityMemory,
     ContinuityMode,
     ConversationScope,
     EffectiveGeneration,
@@ -41,7 +42,6 @@ from chat_buddy.characters.domain import (
     StartingOrigins,
     StartingRelationship,
     Storyline,
-    StorylineMemory,
 )
 from chat_buddy.characters.prompts import assemble_storyline_prompt
 
@@ -156,7 +156,7 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_selected_memory() -> None:
             created_at=datetime.now(UTC),
         ),
     )
-    memory = StorylineMemory.model_construct(
+    memory = ContinuityMemory.model_construct(
         id=uuid4(),
         continuity_id=storyline.id,
         current_revision_id=uuid4(),

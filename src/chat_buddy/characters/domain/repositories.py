@@ -42,13 +42,13 @@ from chat_buddy.characters.domain.identity import Identity, IdentityDetails
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.memory import (
     ChangeMemoryStateCommand,
+    ContinuityMemory,
     CorrectMemoryCommand,
     DeleteMemoryCommand,
     DismissMemoryConflictCommand,
     ExtractionEffect,
     ExtractionProvenance,
     MemoryConflict,
-    StorylineMemory,
 )
 from chat_buddy.characters.domain.memory_extraction import MemoryDelta
 from chat_buddy.characters.domain.persona import Persona, PersonaCore
@@ -1049,15 +1049,15 @@ class SceneRepository(Protocol):
         ...
 
 
-class StorylineMemoryRepository(Protocol):
-    """Manage Storyline-owned memory lineages and user lifecycle changes."""
+class ContinuityMemoryRepository(Protocol):
+    """Manage continuity-owned memory lineages and user lifecycle changes."""
 
-    def get(self, continuity_id: UUID, memory_id: UUID) -> StorylineMemory:
-        """Read a complete logical-memory lineage within its Storyline.
+    def get(self, continuity_id: UUID, memory_id: UUID) -> ContinuityMemory:
+        """Read a complete logical-memory lineage within its continuity.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             memory_id:
                 Logical-memory identifier.
 
@@ -1066,17 +1066,17 @@ class StorylineMemoryRepository(Protocol):
 
         Raises:
             MemoryNotFoundError:
-                If the memory is absent or belongs to another Storyline.
+                If the memory is absent or belongs to another continuity.
         """
 
         ...
 
-    def list(self, continuity_id: UUID) -> tuple[StorylineMemory, ...]:
+    def list(self, continuity_id: UUID) -> tuple[ContinuityMemory, ...]:
         """List every logical memory for inspection in deterministic order.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
 
         Returns:
             Active and excluded logical memories.
@@ -1089,12 +1089,12 @@ class StorylineMemoryRepository(Protocol):
         continuity_id: UUID,
         target_scene_position: int,
         selected_persona_message_ids: frozenset[UUID],
-    ) -> tuple[StorylineMemory, ...]:
+    ) -> tuple[ContinuityMemory, ...]:
         """Read active branch- and time-eligible memory at one scene.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             target_scene_position:
                 Positive target scene ordinal.
             selected_persona_message_ids:
@@ -1106,7 +1106,7 @@ class StorylineMemoryRepository(Protocol):
 
         ...
 
-    def correct(self, command: CorrectMemoryCommand) -> StorylineMemory:
+    def correct(self, command: CorrectMemoryCommand) -> ContinuityMemory:
         """Atomically add a user-authored active correction revision.
 
         Args:
@@ -1127,7 +1127,7 @@ class StorylineMemoryRepository(Protocol):
 
         ...
 
-    def change_state(self, command: ChangeMemoryStateCommand) -> StorylineMemory:
+    def change_state(self, command: ChangeMemoryStateCommand) -> ContinuityMemory:
         """Atomically exclude or reactivate a memory at its current revision.
 
         Args:
@@ -1162,7 +1162,7 @@ class StorylineMemoryRepository(Protocol):
 
 
 class MemoryExtractionRepository(Protocol):
-    """Reserve and atomically finish idempotent Storyline extraction effects."""
+    """Reserve and atomically finish idempotent continuity extraction effects."""
 
     def reserve(
         self, scope: ConversationScope, scene_id: UUID, source_persona_message_id: UUID
@@ -1257,11 +1257,11 @@ class MemoryExtractionRepository(Protocol):
         ...
 
     def list_conflicts(self, continuity_id: UUID) -> tuple[MemoryConflict, ...]:
-        """List extraction conflicts for one Storyline deterministically.
+        """List extraction conflicts for one continuity deterministically.
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
 
         Returns:
             Unresolved and dismissed conflict snapshots.
@@ -1290,10 +1290,6 @@ class MemoryExtractionRepository(Protocol):
         """
 
         ...
-
-
-ContinuityMemoryRepository = StorylineMemoryRepository
-TimelineMemoryRepository = StorylineMemoryRepository
 
 
 class ConversationGraphRepository(Protocol):

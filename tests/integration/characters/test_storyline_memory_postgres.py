@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
+    ContinuityMemory,
     CorrectMemoryCommand,
     CreateMemoryCommand,
     DeleteMemoryCommand,
@@ -25,12 +26,11 @@ from chat_buddy.characters.domain import (
     RecordMemoryConflictCommand,
     StaleMemoryConflictError,
     StaleMemoryRevisionError,
-    StorylineMemory,
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbMemoryExtractionRepository,
-    DbStorylineMemoryRepository,
 )
 from tests.integration.characters.test_continuity_postgres import _configuration
 from tests.integration.characters.test_storyline_memory_repositories import (
@@ -67,7 +67,7 @@ def test_memory_migration_upgrades_downgrades_and_owns_only_characters_schema(
 
     inspector = inspect(engine)
     memory_tables = {
-        "storyline_memories",
+        "continuity_memories",
         "memory_revisions",
         "memory_evidence",
         "memory_extraction_effects",
@@ -148,7 +148,7 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
         ),
         provenance,
     )
-    memory = DbStorylineMemoryRepository(factory).list(storyline.id)[0]
+    memory = DbContinuityMemoryRepository(factory).list(storyline.id)[0]
 
     second_user_id, second_persona_id = _append_exchange(factory, scene.scope)
     second_effect = extraction.reserve(scene.scope, scene.id, second_persona_id)
@@ -237,7 +237,9 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
         == 1
     )
     assert (
-        len(DbStorylineMemoryRepository(factory).get(storyline.id, memory.id).revisions)
+        len(
+            DbContinuityMemoryRepository(factory).get(storyline.id, memory.id).revisions
+        )
         == 2
     )
 
@@ -258,7 +260,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
     storylines, _, request = _repositories_and_request(factory)
     storyline, scene = storylines.start(request, _relationship())
     extraction = DbMemoryExtractionRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     provenance = _provenance()
 
     first_persona_id = _complete_exchange(
@@ -294,7 +296,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
     initial = memories.list(storyline.id)[0]
 
     first_race = _race(
-        lambda: DbStorylineMemoryRepository(factory).correct(
+        lambda: DbContinuityMemoryRepository(factory).correct(
             CorrectMemoryCommand(
                 continuity_id=storyline.id,
                 memory_id=initial.id,
@@ -303,7 +305,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
                 content="The train leaves at one.",
             )
         ),
-        lambda: DbStorylineMemoryRepository(factory).change_state(
+        lambda: DbContinuityMemoryRepository(factory).change_state(
             ChangeMemoryStateCommand(
                 operation="exclude",
                 continuity_id=storyline.id,
@@ -312,7 +314,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
             )
         ),
     )
-    assert sum(isinstance(item, StorylineMemory) for item in first_race) == 1
+    assert sum(isinstance(item, ContinuityMemory) for item in first_race) == 1
     assert sum(isinstance(item, StaleMemoryRevisionError) for item in first_race) == 1
 
     current = memories.get(storyline.id, initial.id)
@@ -334,7 +336,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
         )
     )
     second_race = _race(
-        lambda: DbStorylineMemoryRepository(factory).change_state(
+        lambda: DbContinuityMemoryRepository(factory).change_state(
             ChangeMemoryStateCommand(
                 operation="reactivate",
                 continuity_id=storyline.id,
@@ -342,7 +344,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
                 expected_revision_id=excluded.current.id,
             )
         ),
-        lambda: DbStorylineMemoryRepository(factory).delete(
+        lambda: DbContinuityMemoryRepository(factory).delete(
             DeleteMemoryCommand(
                 continuity_id=storyline.id,
                 memory_id=excluded.id,
@@ -351,7 +353,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
         ),
     )
     successful_second_writes = sum(
-        isinstance(item, StorylineMemory) or item is None for item in second_race
+        isinstance(item, ContinuityMemory) or item is None for item in second_race
     )
     assert successful_second_writes == 1
     assert any(
@@ -431,7 +433,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
                 expected_revision_id=target.current.id,
             )
         ),
-        lambda: DbStorylineMemoryRepository(factory).correct(
+        lambda: DbContinuityMemoryRepository(factory).correct(
             CorrectMemoryCommand(
                 continuity_id=storyline.id,
                 memory_id=target.id,
@@ -441,7 +443,7 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
             )
         ),
     )
-    assert any(isinstance(item, StorylineMemory) for item in third_race)
+    assert any(isinstance(item, ContinuityMemory) for item in third_race)
     assert any(
         isinstance(item, (MemoryConflict, StaleMemoryConflictError))
         for item in third_race

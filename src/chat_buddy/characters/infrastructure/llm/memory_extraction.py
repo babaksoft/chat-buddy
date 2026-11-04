@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from chat_buddy.characters.domain import (
     MAX_DELTA_COMMANDS,
     CreateMemoryCommand,
-    DayPosition,
     EffectiveGeneration,
+    EntryPosition,
     ExtractionProvenance,
     InvalidProviderResponseError,
     MemoryDelta,
@@ -23,7 +23,6 @@ from chat_buddy.characters.domain import (
     NoMemoryChangeCommand,
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
-    ScenePosition,
     StrategyIdentity,
     SupersedeMemoryCommand,
 )
@@ -49,9 +48,7 @@ class _EvidenceReference(BaseModel):
 
     user_message_id: UUID = Field(description="Source user-message identifier.")
     persona_message_id: UUID = Field(description="Source persona-message identifier.")
-    occurrence: ScenePosition | DayPosition = Field(
-        description="Supplied occurrence position."
-    )
+    occurrence: EntryPosition = Field(description="Supplied occurrence position.")
 
 
 class _CreateProposal(BaseModel):
@@ -372,9 +369,7 @@ class ContextualMemoryDeltaExtractor:
         ):
             raise ValueError("Provider evidence does not match the exact source turn")
 
-        temporal_owner = selection.context.scene or selection.context.day
-        if temporal_owner is None:
-            raise ValueError("Memory extraction context has no temporal owner")
+        temporal_owner = selection.context.entry
 
         allowed_occurrences = {temporal_owner}
         allowed_occurrences.update(
@@ -388,16 +383,7 @@ class ContextualMemoryDeltaExtractor:
         return MemoryEvidence(
             id=self._id_factory(),
             scope=selection.context.scope,
-            scene_id=(
-                selection.context.scene.scene_id
-                if selection.context.scene is not None
-                else None
-            ),
-            day_id=(
-                selection.context.day.day_id
-                if selection.context.day is not None
-                else None
-            ),
+            entry_id=temporal_owner.entry_id,
             user_message_id=source.user.id,
             persona_message_id=source.persona.id,
             persona_checkpoint=source.persona.sequence,

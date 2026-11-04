@@ -9,6 +9,8 @@ from chat_buddy.characters.domain import (
     Boundary,
     ContextCapacityError,
     ContinuityLifecycle,
+    ContinuityMemory,
+    ContinuityMemoryRepository,
     ContinuityMode,
     ContinuityRepository,
     ConversationGraphRepository,
@@ -32,8 +34,6 @@ from chat_buddy.characters.domain import (
     Scene,
     SceneRepository,
     StartingRelationship,
-    StorylineMemory,
-    StorylineMemoryRepository,
     StorylineRepository,
     StrategyIdentity,
     SummaryRepository,
@@ -55,7 +55,7 @@ class BaselineEvolutionSnapshotSelector:
         scenes: SceneRepository,
         conversations: ConversationGraphRepository,
         summaries: SummaryRepository,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         evolution: EvolutionRepository,
         counter: TokenCounter,
         budget: EvolutionSnapshotBudget,
@@ -399,7 +399,7 @@ class BaselineEvolutionSnapshotSelector:
 
     @staticmethod
     def _memory_context(
-        memory: StorylineMemory,
+        memory: ContinuityMemory,
         evidence_by_persona: dict[UUID, EvolutionEvidence],
     ) -> EvolutionMemory | None:
         """Reduce an eligible memory to selected exact provenance.

@@ -18,8 +18,6 @@ from chat_buddy.characters.infrastructure.db.repositories.identity_repository im
 from chat_buddy.characters.infrastructure.db.repositories.memory_repository import (
     DbContinuityMemoryRepository,
     DbMemoryExtractionRepository,
-    DbStorylineMemoryRepository,
-    DbTimelineMemoryRepository,
 )
 from chat_buddy.characters.infrastructure.db.repositories.persona_repository import (
     DbPersonaRepository,
@@ -58,10 +56,8 @@ __all__ = [
     "DbResponseStyleRepository",
     "DbSceneRepository",
     "DbStorylineForkRepository",
-    "DbStorylineMemoryRepository",
     "DbStorylineRepository",
     "DbSummaryRepository",
     "DbTimelineDayRepository",
-    "DbTimelineMemoryRepository",
     "DbTimelineRepository",
 ]

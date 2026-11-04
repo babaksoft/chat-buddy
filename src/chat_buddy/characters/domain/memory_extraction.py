@@ -8,20 +8,18 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chat_buddy.characters.domain.continuity import StartingRelationship
+from chat_buddy.characters.domain.continuity_entry import EntryPosition
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.errors import (
     InvalidMemoryDeltaTargetError,
     ProtectedMemoryCorrectionError,
 )
 from chat_buddy.characters.domain.memory import (
-    DayPosition,
+    ContinuityMemory,
     ExtractionProvenance,
     MemoryAuthorship,
     MemoryEvidence,
-    MemoryPosition,
     MemoryRevisionState,
-    ScenePosition,
-    StorylineMemory,
 )
 from chat_buddy.characters.domain.strategy import StrategyIdentity
 from chat_buddy.characters.domain.summary import CompletedTurn, SummaryRevision
@@ -67,10 +65,8 @@ class MemoryExtractionContext(BaseModel):
     Attributes:
         scope:
             Complete source scene conversation ownership.
-        scene:
-            Source scene temporal position for Storyline extraction.
-        day:
-            Source day temporal position for Timeline extraction.
+        entry:
+            Source Entry temporal position.
         identity_label:
             Identity label needed for reference resolution.
         persona_label:
@@ -92,12 +88,7 @@ class MemoryExtractionContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     scope: ConversationScope = Field(description="Complete source ownership.")
-    scene: ScenePosition | None = Field(
-        default=None, description="Source Storyline scene position."
-    )
-    day: DayPosition | None = Field(
-        default=None, description="Source Timeline day position."
-    )
+    entry: EntryPosition = Field(description="Source Entry temporal position.")
     identity_label: str = Field(
         min_length=1, max_length=128, description="Identity reference label."
     )
@@ -119,7 +110,7 @@ class MemoryExtractionContext(BaseModel):
     recent_turns: tuple[CompletedTurn, ...] = Field(
         description="Chronological selected-path context turns."
     )
-    eligible_memories: tuple[StorylineMemory, ...] = Field(
+    eligible_memories: tuple[ContinuityMemory, ...] = Field(
         description="Eligible current logical memories."
     )
     source_turn: CompletedTurn = Field(description="Exact new source evidence.")
@@ -136,11 +127,11 @@ class MemoryExtractionContext(BaseModel):
                 If any context block is foreign, ineligible, or unordered.
         """
 
-        if (self.scene is None) == (self.day is None):
-            raise ValueError("Extraction context requires exactly one temporal owner")
-        if self.scene is None and self.scene_setup is not None:
+        if self.entry.continuity_id != self.scope.continuity_id:
+            raise ValueError("Extraction Entry must belong to the source continuity")
+        if self.entry.mode.value == "timeline" and self.scene_setup is not None:
             raise ValueError("Timeline extraction cannot contain Storyline scene setup")
-        if self.scene is not None and self.scene_setup is None:
+        if self.entry.mode.value == "storyline" and self.scene_setup is None:
             raise ValueError("Storyline extraction requires frozen scene setup")
 
         turns = (*self.recent_turns, self.source_turn)
@@ -161,10 +152,7 @@ class MemoryExtractionContext(BaseModel):
         ):
             raise ValueError("Extraction memories must belong to the Storyline")
 
-        temporal_owner = self.scene or self.day
-        if temporal_owner is None:
-            raise ValueError("Extraction context requires a temporal owner")
-        target_position = temporal_owner.position
+        target_position = self.entry.position
         if any(
             memory.current.state != MemoryRevisionState.ACTIVE
             or memory.current.source.occurrence.position > target_position
@@ -335,7 +323,7 @@ class CreateMemoryCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Proposed assertion."
     )
-    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
+    occurrence: EntryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
 
@@ -401,7 +389,7 @@ class SupersedeMemoryCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Replacement assertion."
     )
-    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
+    occurrence: EntryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
 
@@ -440,7 +428,7 @@ class RecordMemoryConflictCommand(BaseModel):
     content: str = Field(
         min_length=1, max_length=4096, description="Conflicting assertion."
     )
-    occurrence: MemoryPosition = Field(description="Asserted temporal position.")
+    occurrence: EntryPosition = Field(description="Asserted temporal position.")
     evidence: MemoryEvidence = Field(description="Exact new source evidence.")
 
     @model_validator(mode="after")

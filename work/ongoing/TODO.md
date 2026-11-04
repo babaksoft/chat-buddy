@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 4 — Unify
-Continuity memory domain and persistence. This refactor is a prerequisite for
+Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 5 —
+Consolidate memory application workflows. This refactor is a prerequisite for
 Stage 8, Slice 10.
 
 Deferred product exploration:

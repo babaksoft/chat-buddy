@@ -9,6 +9,8 @@ from chat_buddy.characters.application.memory_context import (
     TimelineExtractionContextService,
 )
 from chat_buddy.characters.domain import (
+    ContinuityMemory,
+    ContinuityMemoryRepository,
     ContinuityMode,
     ConversationTarget,
     ExtractionBudget,
@@ -27,8 +29,6 @@ from chat_buddy.characters.domain import (
     ProtectedMemoryCorrectionError,
     RecordMemoryConflictCommand,
     ReinforceMemoryCommand,
-    StorylineMemory,
-    StorylineMemoryRepository,
     SupersedeMemoryCommand,
     UnsupportedContinuityModeError,
 )
@@ -43,7 +43,7 @@ class StorylineMemoryExtractionService:
         self,
         contexts: StorylineExtractionContextService,
         extractor: MemoryDeltaExtractor,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         effects: MemoryExtractionRepository,
         budget: ExtractionBudget,
     ) -> None:
@@ -206,7 +206,7 @@ class StorylineMemoryExtractionService:
             | SupersedeMemoryCommand
             | RecordMemoryConflictCommand
         ),
-        target: StorylineMemory,
+        target: ContinuityMemory,
         subjects: dict[str, UUID],
     ) -> None:
         """Validate one targeted command against a fresh current lineage.
@@ -269,7 +269,7 @@ class TimelineMemoryExtractionService(StorylineMemoryExtractionService):
         self,
         contexts: TimelineExtractionContextService,
         extractor: MemoryDeltaExtractor,
-        memories: StorylineMemoryRepository,
+        memories: ContinuityMemoryRepository,
         effects: MemoryExtractionRepository,
         budget: ExtractionBudget,
     ) -> None:

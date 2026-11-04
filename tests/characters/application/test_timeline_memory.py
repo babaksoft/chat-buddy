@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from chat_buddy.characters.application import (
     BaselineTimelineMemoryContextSelector,
@@ -11,10 +11,11 @@ from chat_buddy.characters.application import (
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
+    ContinuityMemory,
     ContinuityMode,
     ConversationScope,
     ConversationTarget,
-    DayPosition,
+    EntryPosition,
     ExtractionBudget,
     ExtractionEffect,
     ExtractionEffectState,
@@ -31,7 +32,6 @@ from chat_buddy.characters.domain import (
     NoMemoryChangeCommand,
     PromptMessage,
     StartingRelationship,
-    StorylineMemory,
     StrategyIdentity,
 )
 
@@ -119,6 +119,29 @@ def _provenance() -> ExtractionProvenance:
     )
 
 
+def _position(scope: ConversationScope, entry_id: UUID, position: int) -> EntryPosition:
+    """Create one Timeline Entry position.
+
+    Args:
+        scope:
+            Owning conversation scope.
+        entry_id:
+            Entry at the position.
+        position:
+            Positive Timeline ordinal.
+
+    Returns:
+        Complete shared Entry position.
+    """
+
+    return EntryPosition(
+        entry_id=entry_id,
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.TIMELINE,
+        position=position,
+    )
+
+
 def _memory(
     scope: ConversationScope,
     turn: CompletedTurn,
@@ -126,7 +149,7 @@ def _memory(
     occurrence: int,
     learned: int,
     active: bool = True,
-) -> StorylineMemory:
+) -> ContinuityMemory:
     """Create one Timeline-owned logical memory.
 
     Args:
@@ -150,12 +173,12 @@ def _memory(
     evidence = MemoryEvidence(
         id=uuid4(),
         scope=scope,
-        day_id=day_id,
+        entry_id=day_id,
         user_message_id=turn.user.id,
         persona_message_id=turn.persona.id,
         persona_checkpoint=turn.persona.sequence,
-        occurrence=DayPosition(day_id=uuid4(), position=occurrence),
-        learned=DayPosition(day_id=day_id, position=learned),
+        occurrence=_position(scope, uuid4(), occurrence),
+        learned=_position(scope, day_id, learned),
         extraction=_provenance(),
         created_at=NOW,
     )
@@ -193,7 +216,7 @@ def _memory(
             created_at=NOW,
         )
         revisions = (first, revision)
-    return StorylineMemory(
+    return ContinuityMemory(
         id=memory_id,
         continuity_id=scope.continuity_id,
         current_revision_id=revision.id,
@@ -219,7 +242,7 @@ def test_timeline_eligibility_requires_selected_past_day_evidence() -> None:
     result = TimelineMemoryEligibility().select(
         (eligible, future, deselected, inactive, foreign),
         scope.continuity_id,
-        DayPosition(day_id=uuid4(), position=2),
+        _position(scope, uuid4(), 2),
         frozenset({selected_turn.persona.id}),
     )
 
@@ -235,7 +258,7 @@ def test_timeline_extraction_selection_uses_day_and_current_day_history() -> Non
     memory = _memory(scope, recent, occurrence=1, learned=1)
     context = MemoryExtractionContext(
         scope=scope,
-        day=DayPosition(day_id=uuid4(), position=2),
+        entry=_position(scope, uuid4(), 2),
         identity_label="You",
         persona_label="Companion",
         starting_relationship=StartingRelationship.model_construct(),
@@ -282,7 +305,7 @@ def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
     reserved = ExtractionEffect(
         id=uuid4(),
         scope=scope,
-        day_id=day_id,
+        entry_id=day_id,
         source_persona_message_id=source_id,
         state=ExtractionEffectState.RESERVED,
         provenance=None,

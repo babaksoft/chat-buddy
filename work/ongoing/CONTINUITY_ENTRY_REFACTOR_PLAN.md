@@ -375,7 +375,7 @@ retaining the Slice 4 domain shape.
 
 ### Slice 4 — Unify Continuity memory domain and persistence
 
-Status: Pending
+Status: Complete
 
 Replace the Storyline-first memory model with one real Continuity memory model.
 This is a rename and normalization, not an alias layer.
@@ -419,6 +419,15 @@ representative existing Storyline and Timeline memory rows.
 
 Complete when memory has one domain vocabulary and one relational shape with no
 paired nullable subtype fields or compatibility aliases.
+
+Delivered by the exported `ContinuityMemory` and
+`ContinuityMemoryRepository` contracts, `ContinuityMemoryModel`,
+`DbContinuityMemoryRepository`, and Characters revision `4b8e2d7c1a90`.
+Memory evidence and extraction effects now use required Entry provenance for
+both Storyline and Timeline, with complete continuity, profile, conversation,
+and mode ownership enforced relationally. The migration preserves exact legacy
+Scene and Day mappings through upgrade and downgrade while removing all memory
+domain, repository, model, and persistence compatibility aliases.
 
 ### Slice 5 — Consolidate memory application workflows
 

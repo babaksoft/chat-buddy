@@ -36,6 +36,7 @@ from chat_buddy.characters.domain import (
     SummaryRevision,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityMemoryRepository,
     DbConversationRepository,
     DbEvolutionRepository,
     DbIdentityRepository,
@@ -43,7 +44,6 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbPersonaRepository,
     DbSceneRepository,
     DbStorylineForkRepository,
-    DbStorylineMemoryRepository,
     DbStorylineRepository,
     DbSummaryRepository,
 )
@@ -308,7 +308,7 @@ def test_fork_copies_active_memory_with_remapped_provenance(
     selected_history = app.history(source_target).messages
     first_selected_persona_id = selected_history[1].id
     extraction = DbMemoryExtractionRepository(factory)
-    memories = DbStorylineMemoryRepository(factory)
+    memories = DbContinuityMemoryRepository(factory)
     provenance = _provenance()
     first_evidence = _evidence(
         source_scene.scope,
@@ -438,8 +438,7 @@ def test_fork_copies_active_memory_with_remapped_provenance(
         corrected.evidence, copied.evidence, strict=True
     ):
         assert copied_item.scope.continuity_id == result.storyline.id
-        assert source_item.scene_id is not None
-        assert copied_item.scene_id == mapping[("scene", source_item.scene_id)]
+        assert copied_item.entry_id == mapping[("scene", source_item.entry_id)]
         assert (
             copied_item.user_message_id
             == mapping[("message", source_item.user_message_id)]
