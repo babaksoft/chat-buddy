@@ -1,6 +1,5 @@
 """Read-only persistence for shared Continuity Entry ownership."""
 
-from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -65,7 +64,7 @@ class DbContinuityEntryRepository:
         identity_id: UUID,
         persona_id: UUID,
         continuity_id: UUID,
-        mode: Literal["storyline", "timeline"],
+        mode: ContinuityMode,
     ) -> tuple[ContinuityEntry, ...]:
         """List exactly owned Entries in immutable position order.
 
@@ -90,7 +89,7 @@ class DbContinuityEntryRepository:
                     ContinuityEntryModel.identity_id == identity_id,
                     ContinuityEntryModel.persona_id == persona_id,
                     ContinuityEntryModel.continuity_id == continuity_id,
-                    ContinuityEntryModel.mode == mode,
+                    ContinuityEntryModel.mode == mode.value,
                 )
                 .order_by(ContinuityEntryModel.position)
             )

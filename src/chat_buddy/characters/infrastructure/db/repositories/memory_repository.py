@@ -522,15 +522,21 @@ class DbMemoryExtractionRepository:
         self._factory = session_factory
 
     def reserve(
-        self, scope: ConversationScope, scene_id: UUID, source_persona_message_id: UUID
+        self,
+        scope: ConversationScope,
+        mode: ContinuityMode,
+        entry_id: UUID,
+        source_persona_message_id: UUID,
     ) -> ExtractionEffect:
         """Reserve or return the sole eligible effect for a source checkpoint.
 
         Args:
             scope:
                 Complete source ownership.
-            scene_id:
-                Source scene identifier.
+            mode:
+                Storyline or Timeline mode of the source Entry.
+            entry_id:
+                Source Entry identifier.
             source_persona_message_id:
                 Complete selected persona checkpoint.
 
@@ -548,12 +554,12 @@ class DbMemoryExtractionRepository:
                 if existing is not None:
                     return self._effect_snapshot(existing)
 
+                if mode == ContinuityMode.ONGOING:
+                    raise ExtractionEffectConflictError(
+                        "Ongoing conversations do not support memory extraction"
+                    )
                 self._validate_reservation(
-                    session,
-                    scope,
-                    ContinuityMode.STORYLINE,
-                    scene_id,
-                    source_persona_message_id,
+                    session, scope, mode, entry_id, source_persona_message_id
                 )
 
                 now = datetime.now(UTC)
@@ -562,8 +568,8 @@ class DbMemoryExtractionRepository:
                     identity_id=scope.identity_id,
                     persona_id=scope.persona_id,
                     conversation_id=scope.conversation_id,
-                    mode="storyline",
-                    entry_id=scene_id,
+                    mode=mode.value,
+                    entry_id=entry_id,
                     source_persona_message_id=source_persona_message_id,
                     state=ExtractionEffectState.RESERVED.value,
                     created_at=now,
@@ -580,65 +586,6 @@ class DbMemoryExtractionRepository:
 
             raise ExtractionEffectConflictError(
                 "The source checkpoint could not be reserved"
-            ) from error
-
-    def reserve_timeline(
-        self, scope: ConversationScope, day_id: UUID, source_persona_message_id: UUID
-    ) -> ExtractionEffect:
-        """Reserve or return one eligible Timeline extraction effect.
-
-        Args:
-            scope:
-                Complete source ownership.
-            day_id:
-                Source represented-day identifier.
-            source_persona_message_id:
-                Complete selected persona checkpoint.
-
-        Returns:
-            Existing or newly reserved effect.
-
-        Raises:
-            ExtractionEffectConflictError:
-                If source ownership, lifecycle, selection, or turn shape is invalid.
-        """
-
-        try:
-            with self._factory() as session, session.begin():
-                existing = self._effect_row(session, scope, source_persona_message_id)
-                if existing is not None:
-                    return self._effect_snapshot(existing)
-
-                self._validate_reservation(
-                    session,
-                    scope,
-                    ContinuityMode.TIMELINE,
-                    day_id,
-                    source_persona_message_id,
-                )
-                row = MemoryExtractionEffectModel(
-                    continuity_id=scope.continuity_id,
-                    identity_id=scope.identity_id,
-                    persona_id=scope.persona_id,
-                    conversation_id=scope.conversation_id,
-                    mode=ContinuityMode.TIMELINE.value,
-                    entry_id=day_id,
-                    source_persona_message_id=source_persona_message_id,
-                    state=ExtractionEffectState.RESERVED.value,
-                    created_at=datetime.now(UTC),
-                )
-                session.add(row)
-                session.flush()
-
-                return self._effect_snapshot(row)
-        except IntegrityError as error:
-            with self._factory() as session:
-                existing = self._effect_row(session, scope, source_persona_message_id)
-                if existing is not None:
-                    return self._effect_snapshot(existing)
-
-            raise ExtractionEffectConflictError(
-                "The Timeline source checkpoint could not be reserved"
             ) from error
 
     def get_effect(

@@ -8,7 +8,7 @@ from sqlalchemy import inspect, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from chat_buddy.characters.domain import ContinuityNotFoundError
+from chat_buddy.characters.domain import ContinuityMode, ContinuityNotFoundError
 from chat_buddy.characters.infrastructure.db.models import SceneModel, TimelineDayModel
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityEntryRepository,
@@ -53,7 +53,7 @@ def test_entry_repository_reads_both_subtypes_from_one_owned_shape(
         storyline.identity_id,
         storyline.persona_id,
         storyline.id,
-        "storyline",
+        ContinuityMode.STORYLINE,
     ) == (scene.entry,)
     assert entries.get(target.scope, target.entry_id).mode == "timeline"
 

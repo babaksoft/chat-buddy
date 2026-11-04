@@ -13,6 +13,7 @@ from chat_buddy.characters.domain.branching import (
 )
 from chat_buddy.characters.domain.continuity import (
     Continuity,
+    ContinuityMode,
     StartContinuity,
     StartingRelationship,
 )
@@ -360,7 +361,7 @@ class ContinuityEntryRepository(Protocol):
         identity_id: UUID,
         persona_id: UUID,
         continuity_id: UUID,
-        mode: Literal["storyline", "timeline"],
+        mode: ContinuityMode,
     ) -> tuple[ContinuityEntry, ...]:
         """List a continuity's Entries in immutable position order.
 
@@ -1165,15 +1166,21 @@ class MemoryExtractionRepository(Protocol):
     """Reserve and atomically finish idempotent continuity extraction effects."""
 
     def reserve(
-        self, scope: ConversationScope, scene_id: UUID, source_persona_message_id: UUID
+        self,
+        scope: ConversationScope,
+        mode: ContinuityMode,
+        entry_id: UUID,
+        source_persona_message_id: UUID,
     ) -> ExtractionEffect:
         """Reserve or return the sole effect for a source persona message.
 
         Args:
             scope:
                 Complete source conversation ownership.
-            scene_id:
-                Source scene identifier.
+            mode:
+                Storyline or Timeline mode of the source Entry.
+            entry_id:
+                Source Entry identifier.
             source_persona_message_id:
                 Complete selected turn checkpoint.
 
@@ -1200,29 +1207,6 @@ class MemoryExtractionRepository(Protocol):
 
         Returns:
             Effect snapshot or None before reservation.
-        """
-
-        ...
-
-    def reserve_timeline(
-        self, scope: ConversationScope, day_id: UUID, source_persona_message_id: UUID
-    ) -> ExtractionEffect:
-        """Reserve or return the sole effect for a Timeline source message.
-
-        Args:
-            scope:
-                Complete source conversation ownership.
-            day_id:
-                Source represented-day identifier.
-            source_persona_message_id:
-                Complete selected turn checkpoint.
-
-        Returns:
-            Existing or newly reserved effect.
-
-        Raises:
-            ExtractionEffectConflictError:
-                If the source is not active, selected, complete, or eligible.
         """
 
         ...

@@ -140,19 +140,17 @@ class _EvolutionProjectionRebuilder(Protocol):
         ...
 
 
-class _StorylineResponseMemoryProvider(Protocol):
-    """Read and select eligible memory for one Storyline response."""
+class _ContinuityResponseMemoryProvider(Protocol):
+    """Read and select eligible memory for one Entry-owned response."""
 
     def select(
-        self, storyline: Storyline, scene: Scene, counter: TokenCounter
+        self, target: ConversationTarget, counter: TokenCounter
     ) -> ResponseMemorySelection:
-        """Return a bounded selection for an exact Storyline scene.
+        """Return a bounded selection for an exact Continuity Entry.
 
         Args:
-            storyline:
-                Owning Storyline snapshot.
-            scene:
-                Exact response scene.
+            target:
+                Exact Entry-owned response target.
             counter:
                 Active provider token counter.
 
@@ -182,8 +180,7 @@ class ConversationService:
         storyline_adapter: StorylineConversationAdapter | None = None,
         timeline_adapter: TimelineConversationAdapter | None = None,
         memory_extraction: _MemoryExtractionProcessor | None = None,
-        timeline_memory_extraction: _MemoryExtractionProcessor | None = None,
-        response_memories: _StorylineResponseMemoryProvider | None = None,
+        response_memories: _ContinuityResponseMemoryProvider | None = None,
         evolution: _EvolutionEffectProcessor | None = None,
         evolution_projections: EvolutionRepository | None = None,
         evolution_rebuilder: _EvolutionProjectionRebuilder | None = None,
@@ -213,10 +210,8 @@ class ConversationService:
                 Optional exact Timeline day ownership and calendar-policy adapter.
             memory_extraction:
                 Optional post-completion Storyline memory workflow.
-            timeline_memory_extraction:
-                Optional post-completion Timeline memory workflow.
             response_memories:
-                Optional branch-aware Storyline response-memory workflow.
+                Optional branch-aware Continuity response-memory workflow.
             evolution:
                 Optional post-completion selected-turn evolution workflow.
             evolution_projections:
@@ -234,7 +229,6 @@ class ConversationService:
         self._storyline_adapter = storyline_adapter
         self._timeline_adapter = timeline_adapter
         self._memory_extraction = memory_extraction
-        self._timeline_memory_extraction = timeline_memory_extraction
         self._response_memories = response_memories
         self._evolution = evolution
         self._evolution_projections = evolution_projections
@@ -663,25 +657,13 @@ class ConversationService:
             self._rebuild_evolution(target, EvolutionRebuildReason.RESPONSE_COMPLETION)
             if (
                 self._memory_extraction is not None
-                and target.mode == ContinuityMode.STORYLINE
+                and target.mode != ContinuityMode.ONGOING
             ):
                 try:
                     self._memory_extraction.process(target, message.id)
                 except Exception:
                     logger.exception(
-                        "Storyline memory extraction did not reach a terminal "
-                        "outcome for persona message %s.",
-                        message.id,
-                    )
-            if (
-                self._timeline_memory_extraction is not None
-                and target.mode == ContinuityMode.TIMELINE
-            ):
-                try:
-                    self._timeline_memory_extraction.process(target, message.id)
-                except Exception:
-                    logger.exception(
-                        "Timeline memory extraction did not reach a terminal "
+                        "Continuity memory extraction did not reach a terminal "
                         "outcome for persona message %s.",
                         message.id,
                     )
@@ -925,9 +907,7 @@ class ConversationService:
             eligible = self._eligibility.select(history, current, current_input)
             if storyline is not None and scene is not None:
                 memories = (
-                    self._response_memories.select(
-                        storyline, scene, counter
-                    ).included_memories
+                    self._response_memories.select(target, counter).included_memories
                     if self._response_memories is not None
                     else ()
                 )

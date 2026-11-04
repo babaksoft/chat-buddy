@@ -10,6 +10,7 @@ from chat_buddy.characters.infrastructure.evolution_observability import (
     default_evolution_observer,
 )
 from chat_buddy.characters.infrastructure.profile_factory import (
+    create_continuity_memory_service,
     create_evolution_inspection_service,
     create_identity_service,
     create_ongoing_services,
@@ -25,6 +26,7 @@ from chat_buddy.characters.infrastructure.profile_factory import (
 __all__ = [
     "LoggingMetricsEvolutionObserver",
     "SystemUtcClock",
+    "create_continuity_memory_service",
     "create_conversation_service",
     "create_evolution_inspection_service",
     "create_identity_service",

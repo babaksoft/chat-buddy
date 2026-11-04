@@ -11,15 +11,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
+    ContinuityExtractionContextService,
+    ContinuityMemoryExtractionService,
+    ContinuityResponseMemoryService,
     ConversationService,
     ResponseStyleService,
     StorylineConversationAdapter,
     StorylineExtractionContextService,
     StorylineForkService,
     StorylineMemoryEligibility,
-    StorylineMemoryExtractionService,
     StorylineMemoryService,
-    StorylineResponseMemoryService,
     StorylineService,
 )
 from chat_buddy.characters.domain import (
@@ -46,6 +47,7 @@ from chat_buddy.characters.domain import (
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityEntryRepository,
     DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
@@ -530,8 +532,8 @@ def _acceptance_service(
     conversations = DbConversationRepository(factory)
     memories = DbContinuityMemoryRepository(factory)
     contexts = _context_service(factory, storylines, scenes, counter)
-    extraction = StorylineMemoryExtractionService(
-        contexts,
+    extraction = ContinuityMemoryExtractionService(
+        ContinuityExtractionContextService(contexts, contexts),
         extractor,
         memories,
         DbMemoryExtractionRepository(factory),
@@ -547,8 +549,8 @@ def _acceptance_service(
         ResponseStyleService(DbResponseStyleRepository(factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         memory_extraction=extraction,
-        response_memories=StorylineResponseMemoryService(
-            scenes,
+        response_memories=ContinuityResponseMemoryService(
+            DbContinuityEntryRepository(factory),
             conversations,
             memories,
             BaselineResponseMemorySelector(),

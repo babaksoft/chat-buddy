@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from chat_buddy.characters.domain import (
@@ -35,14 +36,14 @@ from chat_buddy.characters.domain import (
 )
 
 
-class StorylineMemoryEligibility:
-    """Apply shared Storyline branch and temporal memory eligibility rules."""
+class ContinuityMemoryEligibility:
+    """Apply shared Entry branch, mode, and temporal memory eligibility rules."""
 
     def select(
         self,
         memories: tuple[ContinuityMemory, ...],
         continuity_id: UUID,
-        target_scene: EntryPosition,
+        target_entry: EntryPosition,
         selected_persona_message_ids: frozenset[UUID],
     ) -> tuple[ContinuityMemory, ...]:
         """Return active owned memories supported on the selected past.
@@ -52,8 +53,8 @@ class StorylineMemoryEligibility:
                 Candidate logical memories in deterministic repository order.
             continuity_id:
                 Expected Storyline owner.
-            target_scene:
-                Scene whose as-of boundary governs visibility.
+            target_entry:
+                Entry whose as-of boundary governs visibility.
             selected_persona_message_ids:
                 Persona checkpoints selected across scenes through the target.
 
@@ -67,47 +68,10 @@ class StorylineMemoryEligibility:
             if memory.continuity_id == continuity_id
             and memory.current.state == MemoryRevisionState.ACTIVE
             and memory.current.source.persona_message_id in selected_persona_message_ids
-            and memory.current.source.occurrence.position <= target_scene.position
-            and memory.current.source.learned.position <= target_scene.position
-            and memory.current.source.learned.mode == ContinuityMode.STORYLINE
-        )
-
-
-class TimelineMemoryEligibility:
-    """Apply Timeline branch and immutable day-position eligibility rules."""
-
-    def select(
-        self,
-        memories: tuple[ContinuityMemory, ...],
-        continuity_id: UUID,
-        target_day: EntryPosition,
-        selected_persona_message_ids: frozenset[UUID],
-    ) -> tuple[ContinuityMemory, ...]:
-        """Return active owned memories supported on the selected past.
-
-        Args:
-            memories:
-                Candidate memories in deterministic repository order.
-            continuity_id:
-                Expected Timeline owner.
-            target_day:
-                Day whose immutable position governs visibility.
-            selected_persona_message_ids:
-                Persona checkpoints selected through the target day.
-
-        Returns:
-            Eligible memories preserving candidate order.
-        """
-
-        return tuple(
-            memory
-            for memory in memories
-            if memory.continuity_id == continuity_id
-            and memory.current.state == MemoryRevisionState.ACTIVE
-            and memory.current.source.learned.mode == ContinuityMode.TIMELINE
-            and memory.current.source.persona_message_id in selected_persona_message_ids
-            and memory.current.source.occurrence.position <= target_day.position
-            and memory.current.source.learned.position <= target_day.position
+            and memory.current.source.occurrence.mode == target_entry.mode
+            and memory.current.source.learned.mode == target_entry.mode
+            and memory.current.source.occurrence.position <= target_entry.position
+            and memory.current.source.learned.position <= target_entry.position
         )
 
 
@@ -115,7 +79,7 @@ class BaselineMemoryContextSelector:
     """Select whole extraction records with the accepted baseline strategy."""
 
     _STRATEGY_ID = StrategyIdentity(
-        name="baseline.storyline_memory_context", version="1.0.0"
+        name="baseline.continuity_memory_context", version="1.0.0"
     )
 
     def __init__(self, counter: TokenCounter) -> None:
@@ -388,16 +352,8 @@ class BaselineMemoryContextSelector:
         )
 
 
-class BaselineTimelineMemoryContextSelector(BaselineMemoryContextSelector):
-    """Select whole Timeline extraction records with a versioned strategy."""
-
-    _STRATEGY_ID = StrategyIdentity(
-        name="baseline.timeline_memory_context", version="1.0.0"
-    )
-
-
-class StorylineExtractionContextService:
-    """Build one read-only extraction snapshot from persisted Storyline state."""
+class StorylineExtractionContextAdapter:
+    """Adapt Storyline Scene state into one shared extraction snapshot."""
 
     def __init__(
         self,
@@ -408,7 +364,7 @@ class StorylineExtractionContextService:
         conversations: ConversationGraphRepository,
         summaries: SummaryRepository,
         memories: ContinuityMemoryRepository,
-        eligibility: StorylineMemoryEligibility,
+        eligibility: ContinuityMemoryEligibility,
         selector: MemoryContextSelector,
     ) -> None:
         """Bind owned readers and pure selection policies.
@@ -594,8 +550,8 @@ class StorylineExtractionContextService:
         return self._selector.select(context, budget)
 
 
-class TimelineExtractionContextService:
-    """Build one extraction snapshot from selected Timeline day histories."""
+class TimelineExtractionContextAdapter:
+    """Adapt Timeline Day state into one shared extraction snapshot."""
 
     def __init__(
         self,
@@ -606,7 +562,7 @@ class TimelineExtractionContextService:
         conversations: ConversationGraphRepository,
         summaries: SummaryRepository,
         memories: ContinuityMemoryRepository,
-        eligibility: TimelineMemoryEligibility,
+        eligibility: ContinuityMemoryEligibility,
         selector: MemoryContextSelector,
     ) -> None:
         """Bind owned readers and pure Timeline selection policies.
@@ -788,3 +744,92 @@ class TimelineExtractionContextService:
         )
 
         return self._selector.select(context, budget)
+
+
+class _ExtractionContextAdapter(Protocol):
+    """Build a mode-specific extraction snapshot behind the shared workflow."""
+
+    def build(
+        self,
+        target: ConversationTarget,
+        source_persona_message_id: UUID,
+        budget: ExtractionBudget,
+    ) -> MemorySelectionResult:
+        """Build one exact mode-specific extraction selection.
+
+        Args:
+            target:
+                Validated Entry-owned conversation target.
+            source_persona_message_id:
+                Selected completed persona response.
+            budget:
+                Dedicated extraction input capacity.
+
+        Returns:
+            Reproducible bounded extraction selection.
+        """
+
+        ...
+
+
+class ContinuityExtractionContextService:
+    """Dispatch shared extraction orchestration to explicit mode adapters."""
+
+    def __init__(
+        self,
+        storyline: _ExtractionContextAdapter,
+        timeline: _ExtractionContextAdapter,
+    ) -> None:
+        """Bind the two legitimate narrative-mode context adapters.
+
+        Args:
+            storyline:
+                Adapter supplying Scene setup and selected Scene history.
+            timeline:
+                Adapter supplying current-day Timeline history.
+        """
+
+        self._adapters = {
+            ContinuityMode.STORYLINE: storyline,
+            ContinuityMode.TIMELINE: timeline,
+        }
+
+    def build(
+        self,
+        target: ConversationTarget,
+        source_persona_message_id: UUID,
+        budget: ExtractionBudget,
+    ) -> MemorySelectionResult:
+        """Build a bounded selection through the target's validated Entry mode.
+
+        Args:
+            target:
+                Exact Entry-owned conversation target.
+            source_persona_message_id:
+                Selected completed persona response.
+            budget:
+                Dedicated extraction input capacity.
+
+        Returns:
+            Reproducible provider-independent extraction selection.
+
+        Raises:
+            UnsupportedContinuityModeError:
+                If the target is Ongoing and therefore has no Entry.
+        """
+
+        adapter = self._adapters.get(target.mode)
+        if adapter is None or target.entry_id is None:
+            raise UnsupportedContinuityModeError(
+                "Memory extraction requires an Entry-owned conversation target"
+            )
+        return adapter.build(target, source_persona_message_id, budget)
+
+
+# Transitional import names are removed by Slice 7. They refer to the shared
+# implementations and do not retain parallel behavior or strategy identities.
+StorylineMemoryEligibility = ContinuityMemoryEligibility
+TimelineMemoryEligibility = ContinuityMemoryEligibility
+BaselineTimelineMemoryContextSelector = BaselineMemoryContextSelector
+StorylineExtractionContextService = StorylineExtractionContextAdapter
+TimelineExtractionContextService = TimelineExtractionContextAdapter

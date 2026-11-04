@@ -9,22 +9,20 @@ from chat_buddy.characters.application import (
     BaselineEvolutionStrategy,
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
-    BaselineTimelineMemoryContextSelector,
+    ContinuityExtractionContextService,
+    ContinuityMemoryEligibility,
+    ContinuityMemoryExtractionService,
+    ContinuityResponseMemoryService,
     ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
     EvolutionEffectService,
     EvolutionProjectionService,
     ResponseStyleService,
     StorylineConversationAdapter,
-    StorylineExtractionContextService,
-    StorylineMemoryEligibility,
-    StorylineMemoryExtractionService,
-    StorylineResponseMemoryService,
+    StorylineExtractionContextAdapter,
     StrictBaselineEvolutionThresholdPolicy,
     TimelineConversationAdapter,
-    TimelineExtractionContextService,
-    TimelineMemoryEligibility,
-    TimelineMemoryExtractionService,
+    TimelineExtractionContextAdapter,
 )
 from chat_buddy.characters.domain import (
     Clock,
@@ -67,6 +65,7 @@ def create_conversation_service(
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityEntryRepository,
         DbContinuityMemoryRepository,
         DbContinuityRepository,
         DbConversationRepository,
@@ -108,18 +107,21 @@ def create_conversation_service(
         provider=evolution_generation.model.provider,
         model=evolution_generation.model.model,
     )
-    response_memories = StorylineResponseMemoryService(
-        scenes,
+    response_memories = ContinuityResponseMemoryService(
+        DbContinuityEntryRepository(session_factory),
         conversations,
         memories,
         BaselineResponseMemorySelector(),
         ResponseMemoryBudget(input_tokens=_RESPONSE_MEMORY_BUDGET_TOKENS),
     )
     extraction = None
-    timeline_extraction = None
     if any("memory_extraction" in model.capabilities for model in models.list_models()):
         extraction_generation = models.resolve_default("memory_extraction")
-        extraction_contexts = StorylineExtractionContextService(
+        eligibility = ContinuityMemoryEligibility()
+        selector = BaselineMemoryContextSelector(
+            models.token_counter(extraction_generation.model.provider)
+        )
+        extraction_contexts = StorylineExtractionContextAdapter(
             identities,
             personas,
             storylines,
@@ -127,28 +129,10 @@ def create_conversation_service(
             conversations,
             summaries,
             memories,
-            StorylineMemoryEligibility(),
-            BaselineMemoryContextSelector(
-                models.token_counter(extraction_generation.model.provider)
-            ),
+            eligibility,
+            selector,
         )
-        extraction = StorylineMemoryExtractionService(
-            extraction_contexts,
-            ContextualMemoryDeltaExtractor(
-                models.memory_extraction_gateway(extraction_generation.model.provider),
-                extraction_generation,
-            ),
-            memories,
-            effects,
-            ExtractionBudget(
-                input_tokens=extraction_generation.input_tokens,
-                fixed_overhead_tokens=min(
-                    _EXTRACTION_FIXED_OVERHEAD_TOKENS,
-                    extraction_generation.input_tokens - 1,
-                ),
-            ),
-        )
-        timeline_extraction_contexts = TimelineExtractionContextService(
+        timeline_extraction_contexts = TimelineExtractionContextAdapter(
             identities,
             personas,
             timelines,
@@ -156,13 +140,13 @@ def create_conversation_service(
             conversations,
             summaries,
             memories,
-            TimelineMemoryEligibility(),
-            BaselineTimelineMemoryContextSelector(
-                models.token_counter(extraction_generation.model.provider)
-            ),
+            eligibility,
+            selector,
         )
-        timeline_extraction = TimelineMemoryExtractionService(
-            timeline_extraction_contexts,
+        extraction = ContinuityMemoryExtractionService(
+            ContinuityExtractionContextService(
+                extraction_contexts, timeline_extraction_contexts
+            ),
             ContextualMemoryDeltaExtractor(
                 models.memory_extraction_gateway(extraction_generation.model.provider),
                 extraction_generation,
@@ -235,7 +219,6 @@ def create_conversation_service(
             clock or SystemUtcClock(),
         ),
         memory_extraction=extraction,
-        timeline_memory_extraction=timeline_extraction,
         response_memories=response_memories,
         evolution=evolution,
         evolution_projections=evolution_repository,

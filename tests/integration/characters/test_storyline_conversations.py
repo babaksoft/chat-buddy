@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import (
     BaselineResponseMemorySelector,
+    ContinuityResponseMemoryService,
     ConversationService,
     ResponseStyleService,
     StorylineConversationAdapter,
-    StorylineResponseMemoryService,
     StorylineService,
 )
 from chat_buddy.characters.domain import (
@@ -30,6 +30,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityEntryRepository,
     DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
@@ -87,7 +88,9 @@ def test_storyline_response_prompt_reads_current_eligible_memory(
         2,
         provenance,
     )
-    effect = extraction.reserve(scene.scope, scene.id, source_persona_id)
+    effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, source_persona_id
+    )
     extraction.apply(
         effect.id,
         MemoryDelta(
@@ -336,8 +339,8 @@ def _service(
         registry(responses),
         ResponseStyleService(DbResponseStyleRepository(factory)),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
-        response_memories=StorylineResponseMemoryService(
-            scenes,
+        response_memories=ContinuityResponseMemoryService(
+            DbContinuityEntryRepository(factory),
             conversations,
             DbContinuityMemoryRepository(factory),
             BaselineResponseMemorySelector(),

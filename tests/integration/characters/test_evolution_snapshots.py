@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.application import BaselineEvolutionSnapshotSelector
 from chat_buddy.characters.domain import (
+    ContinuityMode,
     CreateMemoryCommand,
     EvolutionEvidenceKind,
     EvolutionEvidenceReference,
@@ -150,7 +151,9 @@ def test_storyline_snapshot_is_deterministic_bounded_and_cross_scene_safe(
     first_path = DbConversationRepository(factory).selected_path(first_scene.scope)
     extraction_provenance = _provenance()
     extraction = DbMemoryExtractionRepository(factory)
-    reserved = extraction.reserve(first_scene.scope, first_scene.id, first_leaf)
+    reserved = extraction.reserve(
+        first_scene.scope, ContinuityMode.STORYLINE, first_scene.id, first_leaf
+    )
     memory_evidence = _evidence(
         first_scene.scope,
         first_scene.id,

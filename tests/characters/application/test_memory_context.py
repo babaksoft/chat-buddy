@@ -9,9 +9,9 @@ import pytest
 from chat_buddy.characters.application import (
     BaselineMemoryContextSelector,
     BaselineResponseMemorySelector,
+    ContinuityResponseMemoryService,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
-    StorylineResponseMemoryService,
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
@@ -507,7 +507,7 @@ def test_response_selector_has_independent_order_budget_and_exact_accounting() -
         )
     )
     assert result.selector == StrategyIdentity(
-        name="baseline.storyline_response_memory", version="1.0.0"
+        name="baseline.continuity_response_memory", version="1.0.0"
     )
     assert result.eligible_memory_ids == tuple(memory.id for memory in expected_order)
     assert result.included_memories == expected_order[:1]
@@ -575,21 +575,29 @@ def test_response_service_uses_same_branch_and_time_eligibility_query() -> None:
             ),
         ),
     )
-    scenes = Mock()
-    scenes.list.return_value = SceneSequence(storyline=storyline, scenes=(scene,))
     conversations = Mock()
     conversations.selected_path.return_value = path
     memories = Mock()
     memories.list_eligible.return_value = (memory,)
-    service = StorylineResponseMemoryService(
-        scenes,
+    entries = Mock()
+    entries.get.return_value = scene.entry
+    entries.list.return_value = (scene.entry,)
+    service = ContinuityResponseMemoryService(
+        entries,
         conversations,
         memories,
         BaselineResponseMemorySelector(),
         ResponseMemoryBudget(input_tokens=4),
     )
 
-    result = service.select(storyline, scene, BlockTokenCounter())
+    result = service.select(
+        ConversationTarget(
+            scope=scene.scope,
+            mode=ContinuityMode.STORYLINE,
+            entry_id=scene.id,
+        ),
+        BlockTokenCounter(),
+    )
 
     memories.list_eligible.assert_called_once_with(
         storyline.id,

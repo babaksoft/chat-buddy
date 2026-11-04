@@ -14,8 +14,8 @@ from chat_buddy.characters.domain import (
 )
 
 
-class StorylineMemoryService:
-    """Inspect and manage one Storyline's durable memory boundary."""
+class ContinuityMemoryService:
+    """Inspect and manage one continuity's durable memory boundary."""
 
     def __init__(
         self,
@@ -39,7 +39,7 @@ class StorylineMemoryService:
 
         Args:
             continuity_id:
-                Storyline memory boundary.
+                Continuity memory boundary.
 
         Returns:
             Deterministically ordered complete lineages.
@@ -52,7 +52,7 @@ class StorylineMemoryService:
 
         Args:
             continuity_id:
-                Expected Storyline owner.
+                Expected continuity owner.
             memory_id:
                 Logical memory to inspect.
 
@@ -130,7 +130,7 @@ class StorylineMemoryService:
 
         Args:
             continuity_id:
-                Storyline memory boundary.
+                Continuity memory boundary.
 
         Returns:
             Conflicts in deterministic creation order.
@@ -152,5 +152,6 @@ class StorylineMemoryService:
         return self._extraction_records.dismiss_conflict(command)
 
 
-class TimelineMemoryService(StorylineMemoryService):
-    """Inspect and manage one Timeline's isolated durable memory boundary."""
+# Transitional import names are removed by Slice 7.
+StorylineMemoryService = ContinuityMemoryService
+TimelineMemoryService = ContinuityMemoryService

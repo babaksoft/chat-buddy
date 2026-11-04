@@ -14,6 +14,7 @@ from chat_buddy.characters.application import (
 from chat_buddy.characters.domain import (
     AdaptationFacet,
     ChangeMemoryStateCommand,
+    ContinuityMode,
     ConversationTarget,
     CorrectMemoryCommand,
     CreateMemoryCommand,
@@ -320,7 +321,10 @@ def test_fork_copies_active_memory_with_remapped_provenance(
     )
     excluded_evidence = first_evidence.model_copy(update={"id": uuid4()})
     first_effect = extraction.reserve(
-        source_scene.scope, source_scene.id, first_selected_persona_id
+        source_scene.scope,
+        ContinuityMode.STORYLINE,
+        source_scene.id,
+        first_selected_persona_id,
     )
     extraction.apply(
         first_effect.id,
@@ -364,7 +368,10 @@ def test_fork_copies_active_memory_with_remapped_provenance(
         provenance,
     )
     second_effect = extraction.reserve(
-        source_scene.scope, source_scene.id, source_leaf_id
+        source_scene.scope,
+        ContinuityMode.STORYLINE,
+        source_scene.id,
+        source_leaf_id,
     )
     extraction.apply(
         second_effect.id,

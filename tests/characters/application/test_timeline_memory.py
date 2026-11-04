@@ -5,12 +5,16 @@ from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 from chat_buddy.characters.application import (
+    BaselineResponseMemorySelector,
     BaselineTimelineMemoryContextSelector,
+    ContinuityExtractionContextService,
+    ContinuityResponseMemoryService,
     TimelineMemoryEligibility,
     TimelineMemoryExtractionService,
 )
 from chat_buddy.characters.domain import (
     CompletedTurn,
+    ContinuityEntry,
     ContinuityMemory,
     ContinuityMode,
     ConversationScope,
@@ -31,6 +35,7 @@ from chat_buddy.characters.domain import (
     Message,
     NoMemoryChangeCommand,
     PromptMessage,
+    ResponseMemoryBudget,
     StartingRelationship,
     StrategyIdentity,
 )
@@ -274,10 +279,84 @@ def test_timeline_extraction_selection_uses_day_and_current_day_history() -> Non
     )
 
     assert selection.included_turn_ids == (recent.persona.id,)
-    assert selection.selector.name == "baseline.timeline_memory_context"
+    assert selection.selector.name == "baseline.continuity_memory_context"
     assert selection.included_memory_ids == (memory.id,)
     assert all("[scene setup]" not in block for block in selection.prompt)
     assert selection.prompt[-1].startswith(f"[new evidence:{source.persona.id}]")
+
+
+def test_shared_response_service_dispatches_through_timeline_entry_mode() -> None:
+    """Select Timeline response memory through the common Entry provider."""
+
+    scope = _scope()
+    entry = ContinuityEntry(
+        id=uuid4(),
+        continuity_id=scope.continuity_id,
+        identity_id=scope.identity_id,
+        persona_id=scope.persona_id,
+        conversation_id=scope.conversation_id,
+        mode=ContinuityMode.TIMELINE,
+        position=1,
+    )
+    source = _turn(scope, 1)
+    memory = _memory(scope, source, occurrence=1, learned=1)
+    entries = Mock()
+    entries.get.return_value = entry
+    entries.list.return_value = (entry,)
+    conversations = Mock()
+    conversations.selected_path.return_value.messages = (source.persona,)
+    memories = Mock()
+    memories.list_eligible.return_value = (memory,)
+    service = ContinuityResponseMemoryService(
+        entries,
+        conversations,
+        memories,
+        BaselineResponseMemorySelector(),
+        ResponseMemoryBudget(input_tokens=512),
+    )
+
+    result = service.select(
+        ConversationTarget(
+            scope=scope,
+            mode=ContinuityMode.TIMELINE,
+            entry_id=entry.id,
+        ),
+        _WordCounter(),
+    )
+
+    entries.list.assert_called_once_with(
+        scope.identity_id,
+        scope.persona_id,
+        scope.continuity_id,
+        ContinuityMode.TIMELINE,
+    )
+    assert result.included_memories == (memory,)
+    assert result.selector.name == "baseline.continuity_response_memory"
+
+
+def test_shared_extraction_context_dispatches_by_validated_entry_mode() -> None:
+    """Delegate Timeline inputs only to the Timeline context adapter."""
+
+    scope = _scope()
+    entry_id = uuid4()
+    target = ConversationTarget(
+        scope=scope,
+        mode=ContinuityMode.TIMELINE,
+        entry_id=entry_id,
+    )
+    source_id = uuid4()
+    budget = ExtractionBudget(input_tokens=512, fixed_overhead_tokens=8)
+    storyline = Mock()
+    timeline = Mock()
+    expected = Mock()
+    timeline.build.return_value = expected
+    service = ContinuityExtractionContextService(storyline, timeline)
+
+    result = service.build(target, source_id, budget)
+
+    assert result is expected
+    timeline.build.assert_called_once_with(target, source_id, budget)
+    storyline.build.assert_not_called()
 
 
 def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
@@ -328,7 +407,7 @@ def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
     memories = Mock()
     memories.list.return_value = ()
     effects = Mock()
-    effects.reserve_timeline.return_value = reserved
+    effects.reserve.return_value = reserved
     effects.apply.return_value = terminal
     service = TimelineMemoryExtractionService(
         contexts,
@@ -341,6 +420,8 @@ def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
     result = service.process(target, source_id)
 
     assert result == terminal
-    effects.reserve_timeline.assert_called_once_with(scope, day_id, source_id)
+    effects.reserve.assert_called_once_with(
+        scope, ContinuityMode.TIMELINE, day_id, source_id
+    )
     selection.validate_delta.assert_called_once_with(delta)
     effects.apply.assert_called_once_with(reserved.id, delta, provenance)

@@ -1,30 +1,26 @@
-"""Storyline response-memory eligibility loading and bounded selection."""
+"""Continuity response-memory eligibility loading and bounded selection."""
 
 from chat_buddy.characters.domain import (
+    ContinuityEntryRepository,
     ContinuityMemory,
     ContinuityMemoryRepository,
     ContinuityMode,
     ConversationGraphRepository,
+    ConversationTarget,
     ResponseMemoryBudget,
     ResponseMemorySelection,
     ResponseMemorySelector,
-    Scene,
-    SceneRepository,
-    Storyline,
     StrategyIdentity,
-    Timeline,
-    TimelineDay,
-    TimelineDayRepository,
     TokenCounter,
 )
-from chat_buddy.characters.prompts import assemble_storyline_memory_blocks
+from chat_buddy.characters.prompts import assemble_continuity_memory_blocks
 
 
 class BaselineResponseMemorySelector:
     """Select complete response memories in stable subject order."""
 
     _STRATEGY_ID = StrategyIdentity(
-        name="baseline.storyline_response_memory", version="1.0.0"
+        name="baseline.continuity_response_memory", version="1.0.0"
     )
 
     @property
@@ -71,7 +67,7 @@ class BaselineResponseMemorySelector:
         for memory in ordered:
             candidate = (*included, memory)
             candidate_tokens = counter.count(
-                assemble_storyline_memory_blocks(candidate)
+                assemble_continuity_memory_blocks(candidate)
             )
             if candidate_tokens <= budget.input_tokens:
                 included = candidate
@@ -91,29 +87,25 @@ class BaselineResponseMemorySelector:
 
 
 class BaselineTimelineResponseMemorySelector(BaselineResponseMemorySelector):
-    """Select complete Timeline response memories under a dedicated budget."""
-
-    _STRATEGY_ID = StrategyIdentity(
-        name="baseline.timeline_response_memory", version="1.0.0"
-    )
+    """Transitional name for the shared Continuity response selector."""
 
 
-class StorylineResponseMemoryService:
-    """Load eligible response memory from selected Storyline histories."""
+class ContinuityResponseMemoryService:
+    """Load and budget eligible memory through shared Entry ownership."""
 
     def __init__(
         self,
-        scenes: SceneRepository,
+        entries: ContinuityEntryRepository,
         conversations: ConversationGraphRepository,
         memories: ContinuityMemoryRepository,
         selector: ResponseMemorySelector,
         budget: ResponseMemoryBudget,
     ) -> None:
-        """Bind owned readers and the independent response selector.
+        """Bind shared Entry, branch, memory, and budgeting capabilities.
 
         Args:
-            scenes:
-                Ordered Storyline scene reader.
+            entries:
+                Immutable Entry ownership and position reader.
             conversations:
                 Selected graph-path reader.
             memories:
@@ -124,112 +116,61 @@ class StorylineResponseMemoryService:
                 Dedicated memory capacity for every response.
         """
 
-        self._scenes = scenes
+        self._entries = entries
         self._conversations = conversations
         self._memories = memories
         self._selector = selector
         self._budget = budget
 
     def select(
-        self, storyline: Storyline, scene: Scene, counter: TokenCounter
+        self, target: ConversationTarget, counter: TokenCounter
     ) -> ResponseMemorySelection:
-        """Select eligible memory as of one exact scene and selected past.
+        """Select eligible memory as of an exact Entry and selected past.
 
         Args:
-            storyline:
-                Owning Storyline snapshot.
-            scene:
-                Target chronological scene.
+            target:
+                Exact Storyline Scene or Timeline Day target.
             counter:
                 Active response provider's token counter.
 
         Returns:
             Bounded versioned response-memory selection.
+
+        Raises:
+            ValueError:
+                If the target is Ongoing and therefore has no Entry.
         """
 
-        sequence = self._scenes.list(storyline)
+        if target.mode == ContinuityMode.ONGOING or target.entry_id is None:
+            raise ValueError("Response memory requires an Entry-owned target")
+        entry = self._entries.get(target.scope, target.entry_id)
+        entries = self._entries.list(
+            target.scope.identity_id,
+            target.scope.persona_id,
+            target.scope.continuity_id,
+            target.mode,
+        )
         selected_persona_ids = frozenset(
             node.id
-            for candidate in sequence.scenes
-            if candidate.position <= scene.position
+            for candidate in entries
+            if candidate.position <= entry.position
             for node in self._conversations.selected_path(candidate.scope).messages
             if node.role == "persona"
         )
         eligible = self._memories.list_eligible(
-            storyline.id,
-            scene.position,
-            selected_persona_ids,
-        )
-
-        return self._selector.select(eligible, self._budget, counter)
-
-
-class TimelineResponseMemoryService:
-    """Load eligible response memory from selected Timeline day histories."""
-
-    def __init__(
-        self,
-        days: TimelineDayRepository,
-        conversations: ConversationGraphRepository,
-        memories: ContinuityMemoryRepository,
-        selector: ResponseMemorySelector,
-        budget: ResponseMemoryBudget,
-    ) -> None:
-        """Bind Timeline readers and the independent response selector.
-
-        Args:
-            days:
-                Ordered represented-day reader.
-            conversations:
-                Selected graph-path reader.
-            memories:
-                Continuity-scoped eligible-memory reader.
-            selector:
-                Independently versioned response-memory selector.
-            budget:
-                Dedicated memory capacity for every response.
-        """
-
-        self._days = days
-        self._conversations = conversations
-        self._memories = memories
-        self._selector = selector
-        self._budget = budget
-
-    def select(
-        self, timeline: Timeline, day: TimelineDay, counter: TokenCounter
-    ) -> ResponseMemorySelection:
-        """Select eligible memory as of an exact day and selected past.
-
-        Args:
-            timeline:
-                Owning Timeline snapshot.
-            day:
-                Target represented day.
-            counter:
-                Active response provider's token counter.
-
-        Returns:
-            Bounded versioned response-memory selection.
-        """
-
-        navigation = self._days.list(timeline)
-        selected_persona_ids = frozenset(
-            node.id
-            for candidate in navigation.days
-            if candidate.position <= day.position
-            for node in self._conversations.selected_path(candidate.scope).messages
-            if node.role == "persona"
-        )
-        eligible = self._memories.list_eligible(
-            timeline.id,
-            day.position,
+            target.scope.continuity_id,
+            entry.position,
             selected_persona_ids,
         )
         eligible = tuple(
             memory
             for memory in eligible
-            if memory.current.source.learned.mode == ContinuityMode.TIMELINE
+            if memory.current.source.learned.mode == target.mode
+            and memory.current.source.occurrence.mode == target.mode
         )
-
         return self._selector.select(eligible, self._budget, counter)
+
+
+# Transitional import names are removed by Slice 7.
+StorylineResponseMemoryService = ContinuityResponseMemoryService
+TimelineResponseMemoryService = ContinuityResponseMemoryService

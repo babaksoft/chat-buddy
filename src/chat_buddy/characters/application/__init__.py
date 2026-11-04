@@ -56,16 +56,22 @@ from chat_buddy.characters.application.identity_service import (
 from chat_buddy.characters.application.memory_context import (
     BaselineMemoryContextSelector,
     BaselineTimelineMemoryContextSelector,
+    ContinuityExtractionContextService,
+    ContinuityMemoryEligibility,
+    StorylineExtractionContextAdapter,
     StorylineExtractionContextService,
     StorylineMemoryEligibility,
+    TimelineExtractionContextAdapter,
     TimelineExtractionContextService,
     TimelineMemoryEligibility,
 )
 from chat_buddy.characters.application.memory_extraction_service import (
+    ContinuityMemoryExtractionService,
     StorylineMemoryExtractionService,
     TimelineMemoryExtractionService,
 )
 from chat_buddy.characters.application.memory_service import (
+    ContinuityMemoryService,
     StorylineMemoryService,
     TimelineMemoryService,
 )
@@ -75,6 +81,7 @@ from chat_buddy.characters.application.persona_service import (
 from chat_buddy.characters.application.response_memory import (
     BaselineResponseMemorySelector,
     BaselineTimelineResponseMemorySelector,
+    ContinuityResponseMemoryService,
     StorylineResponseMemoryService,
     TimelineResponseMemoryService,
 )
@@ -116,6 +123,11 @@ __all__ = [
     "BaselineResponseMemorySelector",
     "BaselineTimelineMemoryContextSelector",
     "BaselineTimelineResponseMemorySelector",
+    "ContinuityExtractionContextService",
+    "ContinuityMemoryEligibility",
+    "ContinuityMemoryExtractionService",
+    "ContinuityMemoryService",
+    "ContinuityResponseMemoryService",
     "ContinuityService",
     "ContinuityStableEvolutionConfigurationResolver",
     "ConversationService",
@@ -142,6 +154,7 @@ __all__ = [
     "StartAvailability",
     "StorylineContextBudgeter",
     "StorylineConversationAdapter",
+    "StorylineExtractionContextAdapter",
     "StorylineExtractionContextService",
     "StorylineForkService",
     "StorylineMemoryEligibility",
@@ -154,6 +167,7 @@ __all__ = [
     "TimelineContextBudgeter",
     "TimelineConversationAdapter",
     "TimelineDayService",
+    "TimelineExtractionContextAdapter",
     "TimelineExtractionContextService",
     "TimelineMemoryEligibility",
     "TimelineMemoryExtractionService",

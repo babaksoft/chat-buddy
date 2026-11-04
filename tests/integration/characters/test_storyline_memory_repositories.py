@@ -73,9 +73,16 @@ def test_create_reinforce_read_eligibility_and_hard_delete_round_trip(
     memories = DbContinuityMemoryRepository(factory)
     provenance = _provenance()
 
-    reserved = extraction.reserve(scene.scope, scene.id, first_persona_id)
+    reserved = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
+    )
     assert reserved.state == ExtractionEffectState.RESERVED
-    assert extraction.reserve(scene.scope, scene.id, first_persona_id) == reserved
+    assert (
+        extraction.reserve(
+            scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
+        )
+        == reserved
+    )
     evidence = _evidence(
         scene.scope, scene.id, first_user_id, first_persona_id, 2, provenance
     )
@@ -110,7 +117,9 @@ def test_create_reinforce_read_eligibility_and_hard_delete_round_trip(
     assert memories.list_eligible(storyline.id, 1, frozenset()) == ()
 
     second_user_id, second_persona_id = _append_exchange(factory, scene.scope)
-    second_reserved = extraction.reserve(scene.scope, scene.id, second_persona_id)
+    second_reserved = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, second_persona_id
+    )
     second_evidence = _evidence(
         scene.scope,
         scene.id,
@@ -183,11 +192,14 @@ def test_reservation_and_apply_reject_foreign_or_stale_sources(
     with pytest.raises(ExtractionEffectConflictError):
         extraction.reserve(
             scene.scope.model_copy(update={"identity_id": uuid4()}),
+            ContinuityMode.STORYLINE,
             scene.id,
             persona_id,
         )
 
-    effect = extraction.reserve(scene.scope, scene.id, persona_id)
+    effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, persona_id
+    )
     evidence = _evidence(
         scene.scope,
         scene.id,
@@ -237,7 +249,9 @@ def test_reservation_and_apply_reject_foreign_or_stale_sources(
 
     memory = DbContinuityMemoryRepository(factory).list(storyline.id)[0]
     user_id, next_persona_id = _append_exchange(factory, scene.scope)
-    next_effect = extraction.reserve(scene.scope, scene.id, next_persona_id)
+    next_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, next_persona_id
+    )
     next_evidence = _evidence(
         scene.scope, scene.id, user_id, next_persona_id, 4, provenance
     )
@@ -293,7 +307,9 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
         2,
         provenance,
     )
-    first_effect = extraction.reserve(scene.scope, scene.id, first_persona_id)
+    first_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
+    )
     extraction.apply(
         first_effect.id,
         MemoryDelta(
@@ -323,7 +339,9 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
         4,
         provenance,
     )
-    second_effect = extraction.reserve(scene.scope, scene.id, second_persona_id)
+    second_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, second_persona_id
+    )
     extraction.apply(
         second_effect.id,
         MemoryDelta(
@@ -360,7 +378,9 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
         6,
         provenance,
     )
-    third_effect = extraction.reserve(scene.scope, scene.id, third_persona_id)
+    third_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, third_persona_id
+    )
     extraction.apply(
         third_effect.id,
         MemoryDelta(
@@ -421,7 +441,9 @@ def test_supersede_conflict_dismissal_and_no_change_records_round_trip(
         )
 
     _, fourth_persona_id = _append_exchange(factory, scene.scope)
-    fourth_effect = extraction.reserve(scene.scope, scene.id, fourth_persona_id)
+    fourth_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, fourth_persona_id
+    )
     no_change = extraction.apply(
         fourth_effect.id,
         MemoryDelta(
@@ -464,7 +486,9 @@ def test_management_workflows_preserve_provenance_and_enforce_guards(
         2,
         provenance,
     )
-    effect = extraction.reserve(scene.scope, scene.id, persona_id)
+    effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, persona_id
+    )
     extraction.apply(
         effect.id,
         MemoryDelta(
@@ -563,7 +587,9 @@ def test_management_workflows_preserve_provenance_and_enforce_guards(
         4,
         provenance,
     )
-    conflict_effect = extraction.reserve(scene.scope, scene.id, conflict_persona_id)
+    conflict_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, conflict_persona_id
+    )
     extraction.apply(
         conflict_effect.id,
         MemoryDelta(

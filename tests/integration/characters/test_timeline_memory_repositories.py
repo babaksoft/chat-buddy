@@ -51,7 +51,7 @@ def test_timeline_memory_persists_day_provenance_and_as_of_eligibility(
     day = DbTimelineDayRepository(factory).get(target.scope, target.entry_id)
 
     effects = DbMemoryExtractionRepository(factory)
-    effect = effects.reserve_timeline(target.scope, day.id, persona.id)
+    effect = effects.reserve(target.scope, ContinuityMode.TIMELINE, day.id, persona.id)
     generation = _registry(responses, summaries).resolve_default("response")
     provenance = ExtractionProvenance(
         selector=StrategyIdentity(name="test.timeline_selector", version="1.0.0"),

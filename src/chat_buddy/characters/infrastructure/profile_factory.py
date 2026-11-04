@@ -1,6 +1,7 @@
 """Lazy composition of Characters profile and lifecycle services."""
 
 from chat_buddy.characters.application import (
+    ContinuityMemoryService,
     ContinuityService,
     EvolutionInspectionService,
     EvolutionProjectionService,
@@ -148,11 +149,11 @@ def create_storyline_fork_service() -> StorylineForkService:
     )
 
 
-def create_storyline_memory_service() -> StorylineMemoryService:
-    """Build continuity-scoped Storyline memory management operations.
+def create_continuity_memory_service() -> ContinuityMemoryService:
+    """Build continuity-scoped memory management operations.
 
     Returns:
-        Lazily configured Storyline memory application operations.
+        Lazily configured shared memory application operations.
     """
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
@@ -161,7 +162,7 @@ def create_storyline_memory_service() -> StorylineMemoryService:
         DbMemoryExtractionRepository,
     )
 
-    return StorylineMemoryService(
+    return ContinuityMemoryService(
         DbContinuityMemoryRepository(CharactersSessionLocal),
         DbMemoryExtractionRepository(CharactersSessionLocal),
     )
@@ -174,16 +175,17 @@ def create_timeline_memory_service() -> TimelineMemoryService:
         Lazily configured Timeline memory application operations.
     """
 
-    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
-    from chat_buddy.characters.infrastructure.db.repositories import (
-        DbContinuityMemoryRepository,
-        DbMemoryExtractionRepository,
-    )
+    return create_continuity_memory_service()
 
-    return TimelineMemoryService(
-        DbContinuityMemoryRepository(CharactersSessionLocal),
-        DbMemoryExtractionRepository(CharactersSessionLocal),
-    )
+
+def create_storyline_memory_service() -> StorylineMemoryService:
+    """Build the transitional Storyline view of shared memory operations.
+
+    Returns:
+        Lazily configured shared memory application operations.
+    """
+
+    return create_continuity_memory_service()
 
 
 def create_evolution_inspection_service() -> EvolutionInspectionService:

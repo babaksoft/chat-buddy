@@ -431,7 +431,7 @@ domain, repository, model, and persistence compatibility aliases.
 
 ### Slice 5 — Consolidate memory application workflows
 
-Status: Pending
+Status: Complete
 
 Refactor shared application behavior around Entry while retaining small
 mode-specific context adapters for genuine differences.
@@ -475,6 +475,16 @@ insertion itself remains assigned to Stage 8 Slice 11.
 Complete when Storyline and Timeline share the full memory lifecycle without
 parallel service families, while their transcript and mode policies remain
 explicit and testable.
+
+Delivered by the exported `ContinuityMemoryEligibility`,
+`ContinuityExtractionContextService`, `ContinuityMemoryExtractionService`,
+`ContinuityResponseMemoryService`, and `ContinuityMemoryService` application
+boundaries. Storyline and Timeline now share one versioned extraction selector,
+response selector, extraction processor, response-memory provider, management
+service, and Entry-aware reservation contract. Explicit Scene and Timeline Day
+context adapters retain setup, transcript, and closure-policy differences. Runtime
+composition supplies one extraction processor and one response-memory provider;
+Ongoing remains memory-free, and response-context insertion remains unchanged.
 
 ### Slice 6 — Normalize evolution around Entry provenance
 

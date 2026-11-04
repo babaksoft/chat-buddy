@@ -5,8 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from chat_buddy.characters.application.memory_context import (
-    StorylineExtractionContextService,
-    TimelineExtractionContextService,
+    ContinuityExtractionContextService,
 )
 from chat_buddy.characters.domain import (
     ContinuityMemory,
@@ -34,14 +33,12 @@ from chat_buddy.characters.domain import (
 )
 
 
-class StorylineMemoryExtractionService:
-    """Turn one eligible completed Storyline response into one atomic effect."""
-
-    _contexts: StorylineExtractionContextService | TimelineExtractionContextService
+class ContinuityMemoryExtractionService:
+    """Turn one eligible completed Entry response into one atomic effect."""
 
     def __init__(
         self,
-        contexts: StorylineExtractionContextService,
+        contexts: ContinuityExtractionContextService,
         extractor: MemoryDeltaExtractor,
         memories: ContinuityMemoryRepository,
         effects: MemoryExtractionRepository,
@@ -79,7 +76,7 @@ class StorylineMemoryExtractionService:
 
         Args:
             target:
-                Exact mode-owned scene conversation.
+                Exact Entry-owned conversation.
             source_persona_message_id:
                 Newly completed persona response.
 
@@ -88,20 +85,20 @@ class StorylineMemoryExtractionService:
 
         Raises:
             UnsupportedContinuityModeError:
-                If the target is not a Storyline scene.
+                If the target is not Entry-owned.
             ExtractionEffectConflictError:
                 If the source is no longer active, selected, complete, or owned.
             InvalidMemoryDeltaTargetError:
                 If any proposal command is unsupported, omitted, foreign, or stale.
         """
 
-        if target.mode != ContinuityMode.STORYLINE or target.entry_id is None:
+        if target.mode == ContinuityMode.ONGOING or target.entry_id is None:
             raise UnsupportedContinuityModeError(
-                "Memory extraction requires a Storyline scene target"
+                "Memory extraction requires an Entry-owned target"
             )
 
         effect = self._effects.reserve(
-            target.scope, target.entry_id, source_persona_message_id
+            target.scope, target.mode, target.entry_id, source_persona_message_id
         )
         if effect.state != ExtractionEffectState.RESERVED:
             return effect
@@ -187,7 +184,16 @@ class StorylineMemoryExtractionService:
                 subjects[command.subject.casefold()] = command.evidence.id
                 continue
 
-            target_id = getattr(command, "target_memory_id", None)
+            if not isinstance(
+                command,
+                (
+                    ReinforceMemoryCommand,
+                    SupersedeMemoryCommand,
+                    RecordMemoryConflictCommand,
+                ),
+            ):
+                continue
+            target_id = command.target_memory_id
             if target_id is None:
                 continue
 
@@ -262,82 +268,6 @@ class StorylineMemoryExtractionService:
         subjects[subject] = target.id
 
 
-class TimelineMemoryExtractionService(StorylineMemoryExtractionService):
-    """Turn one eligible completed Timeline response into one atomic effect."""
-
-    def __init__(
-        self,
-        contexts: TimelineExtractionContextService,
-        extractor: MemoryDeltaExtractor,
-        memories: ContinuityMemoryRepository,
-        effects: MemoryExtractionRepository,
-        budget: ExtractionBudget,
-    ) -> None:
-        """Bind Timeline reads, interpretation, and transactional writes.
-
-        Args:
-            contexts:
-                Timeline contextual snapshot builder.
-            extractor:
-                Provider-backed proposal strategy without write authority.
-            memories:
-                Current lineage reader used for reconciliation.
-            effects:
-                Idempotent reservation and atomic delta repository.
-            budget:
-                Dedicated extraction input budget.
-        """
-
-        self._contexts = contexts
-        self._extractor = extractor
-        self._memories = memories
-        self._effects = effects
-        self._budget = budget
-
-    def process(
-        self, target: ConversationTarget, source_persona_message_id: UUID
-    ) -> ExtractionEffect:
-        """Extract and atomically apply memory for a completed Timeline turn.
-
-        Args:
-            target:
-                Exact Timeline day conversation.
-            source_persona_message_id:
-                Newly completed persona response.
-
-        Returns:
-            Existing or newly completed terminal extraction effect.
-
-        Raises:
-            UnsupportedContinuityModeError:
-                If the target is not a Timeline day.
-            ExtractionEffectConflictError:
-                If the source is no longer selected, complete, or owned.
-        """
-
-        if target.mode != ContinuityMode.TIMELINE or target.entry_id is None:
-            raise UnsupportedContinuityModeError(
-                "Memory extraction requires a Timeline day target"
-            )
-
-        effect = self._effects.reserve_timeline(
-            target.scope, target.entry_id, source_persona_message_id
-        )
-        if effect.state != ExtractionEffectState.RESERVED:
-            return effect
-
-        selection = self._contexts.build(
-            target, source_persona_message_id, self._budget
-        )
-        delta = self._extractor.extract(selection)
-        selection.validate_delta(delta)
-        provenance = self._extractor.provenance(selection)
-        self._validate_proposal(selection, delta, provenance)
-
-        try:
-            return self._effects.apply(effect.id, delta, provenance)
-        except ExtractionEffectConflictError:
-            current = self._effects.get_effect(target.scope, source_persona_message_id)
-            if current is not None and current.state != ExtractionEffectState.RESERVED:
-                return current
-            raise
+# Transitional import names are removed by Slice 7.
+StorylineMemoryExtractionService = ContinuityMemoryExtractionService
+TimelineMemoryExtractionService = ContinuityMemoryExtractionService

@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from chat_buddy.characters.domain import (
     ChangeMemoryStateCommand,
     ContinuityMemory,
+    ContinuityMode,
     CorrectMemoryCommand,
     CreateMemoryCommand,
     DeleteMemoryCommand,
@@ -107,10 +108,10 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
 
     reservations = _race(
         lambda: DbMemoryExtractionRepository(factory).reserve(
-            scene.scope, scene.id, first_persona_id
+            scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
         ),
         lambda: DbMemoryExtractionRepository(factory).reserve(
-            scene.scope, scene.id, first_persona_id
+            scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
         ),
     )
     assert all(isinstance(outcome, ExtractionEffect) for outcome in reservations)
@@ -151,7 +152,9 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
     memory = DbContinuityMemoryRepository(factory).list(storyline.id)[0]
 
     second_user_id, second_persona_id = _append_exchange(factory, scene.scope)
-    second_effect = extraction.reserve(scene.scope, scene.id, second_persona_id)
+    second_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, second_persona_id
+    )
     second_evidence = _evidence(
         scene.scope,
         scene.id,
@@ -161,7 +164,9 @@ def test_one_effect_reservation_and_one_current_revision_win_under_race(
         provenance,
     )
     third_user_id, third_persona_id = _append_exchange(factory, scene.scope)
-    third_effect = extraction.reserve(scene.scope, scene.id, third_persona_id)
+    third_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, third_persona_id
+    )
     third_evidence = _evidence(
         scene.scope,
         scene.id,
@@ -274,7 +279,9 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
         2,
         provenance,
     )
-    first_effect = extraction.reserve(scene.scope, scene.id, first_persona_id)
+    first_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, first_persona_id
+    )
     extraction.apply(
         first_effect.id,
         MemoryDelta(
@@ -370,7 +377,9 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
         4,
         provenance,
     )
-    second_effect = extraction.reserve(scene.scope, scene.id, second_persona_id)
+    second_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, second_persona_id
+    )
     extraction.apply(
         second_effect.id,
         MemoryDelta(
@@ -403,7 +412,9 @@ def test_management_changes_and_conflict_dismissal_serialize_under_race(
         6,
         provenance,
     )
-    third_effect = extraction.reserve(scene.scope, scene.id, third_persona_id)
+    third_effect = extraction.reserve(
+        scene.scope, ContinuityMode.STORYLINE, scene.id, third_persona_id
+    )
     extraction.apply(
         third_effect.id,
         MemoryDelta(

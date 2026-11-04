@@ -14,14 +14,14 @@ from chat_buddy.characters.domain import (
 )
 
 
-def assemble_storyline_memory_blocks(
+def assemble_continuity_memory_blocks(
     memories: tuple[ContinuityMemory, ...],
 ) -> tuple[PromptMessage, ...]:
     """Render complete eligible memories as indivisible prompt blocks.
 
     Args:
         memories:
-            Ordered selected Storyline memories.
+            Ordered selected continuity memories.
 
     Returns:
         One system message per complete current memory revision.
@@ -137,12 +137,16 @@ def assemble_storyline_prompt(
     )
     return (
         ownership_blocks
-        + assemble_storyline_memory_blocks(memories)
+        + assemble_continuity_memory_blocks(memories)
         + scene_blocks
         + summary_block
         + history
         + tail
     )
+
+
+# Transitional import name removed by Slice 7.
+assemble_storyline_memory_blocks = assemble_continuity_memory_blocks
 
 
 def _relationship_json(
