@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-11-02
+Last updated: 2026-11-04
 
 ## Purpose and scope
 
@@ -186,7 +186,8 @@ The Characters ownership hierarchy is:
 Identity + Persona
 └── Continuity
     ├── Mode
-    ├── Conversations, scenes, or days
+    ├── Direct conversation (Ongoing) or ordered Continuity Entries
+    │   └── Scene or Timeline Day details and exact conversation
     ├── Selected conversation branches
     ├── Continuity memories
     ├── Relationship state and events
@@ -224,7 +225,8 @@ Starting a continuity:
   another continuity unless it is an explicit remapped Storyline fork below.
 
 A confirmed Storyline start also supplies its user-authored name and initial
-scene. The initial scene owns a title, setup, conversation graph, and summary
+scene. The initial scene contains an Entry owning its conversation and position;
+the scene retains its title and setup. The conversation owns its graph and summary
 lineage. The continuity owns the current response-style setting. All confirmed
 fields participate in idempotency. An identity/persona pair may own at most one
 active continuity of each mode. The Ongoing, Storyline, and Timeline slots are
@@ -233,6 +235,36 @@ read-only; a replacement starts from a new confirmation and starting relationshi
 
 Archiving a continuity is explicit and makes it permanently read-only. It does not
 unfreeze profiles or create a replacement.
+
+### Continuity Entries
+
+A **Continuity Entry** is the immutable shared structural parent represented by a
+Storyline Scene or Timeline Day. Each Scene and Day contains its exact Entry;
+neither duplicates nor overrides the shared facts. Entry is architecture
+vocabulary; product navigation and labels continue to say Scene and Day
+([ADR 040](docs/decisions/040-use-continuity-entries.md)).
+
+An Entry permanently owns its identifier, identity, persona, continuity, exact
+conversation, Storyline or Timeline mode, and positive position. Positions are
+consecutive and append-only within each continuity. Conversation ownership cannot
+move between Entries or continuities. Ongoing has no Entry: its sole conversation
+belongs directly to its continuity. Storyline and Timeline conversation targets
+require one exact Entry matching their complete ownership and mode. Loading Scene
+details for a Timeline Entry or Day details for a Storyline Entry fails closed.
+
+Scene retains its title, setup, setup lock, append policy, revision guards,
+navigation, and Storyline fork behavior. Day retains its local date, boundary
+timezone, UTC boundaries, closure observation, settled selected leaf, and calendar
+and historical write policies. Summaries and transcripts belong to the exact
+conversation; response style and derived state retain their continuity ownership.
+They are not generic Entry attributes.
+
+An immutable **EntryPosition** identifies one Entry, continuity, mode, and positive
+position. Temporal ordering is meaningful only inside the same continuity and
+mode; equal numbers across continuities have no relationship. Exact selected
+persona checkpoints independently establish branch compatibility. Sharing an
+Entry never makes off-branch evidence eligible. Read-only shared Entry lookup and
+ordered listing remain separate from subtype-specific writes and policies.
 
 ### Continuity modes
 
@@ -249,7 +281,7 @@ Every continuity has exactly one mode:
   scene's setup freezes on its own first user message; its title remains editable
   presentation metadata and never enters a prompt. A scene may use eligible
   memories from itself and earlier scenes, never from later scenes.
-- **Timeline** is a sequence of untitled local-calendar-day scenes. It has at most
+- **Timeline** is a sequence of untitled local-calendar days. It has at most
   one conversation per represented date, creates a day with its first user input
   and attempt in one transaction rather than as a placeholder, and gives each day
   an immutable positive position, local date, boundary timezone, and UTC opening
@@ -311,7 +343,8 @@ conversation-wide active row.
 
 ### Characters memory and relationship state
 
-Storyline memory belongs to one continuity. A logical fact has a stable identity
+Continuity memory belongs to one Storyline or Timeline continuity. Ongoing has
+no extracted long-term memory. A logical fact has a stable identity
 and an immutable revision lineage. Exactly one revision is current and active or
 excluded; older revisions are superseded. Extraction creates an active revision,
 reinforcement adds distinct evidence without changing the revision, and an
@@ -323,17 +356,18 @@ provenance; an excluded memory must be reactivated before correction. Every
 management change names the expected current revision. Hard deletion removes the
 complete lineage, evidence, and associated conflicts without a tombstone.
 
-Every extracted revision and reinforcement identifies its source scene, complete
-selected turn, persona-message checkpoint, extraction configuration, and creation
-time. Occurrence position is the ordered scene where the asserted event or state
-occurred. Learned position is the source scene where the persona learned it, and
-cannot precede occurrence. Both use immutable scene order for comparison. A
+Every extracted revision and reinforcement identifies its exact source Entry,
+complete selected turn, persona-message checkpoint, extraction configuration, and
+creation time. Source, occurrence, and learned provenance use required
+EntryPosition values in the same continuity and mode. Occurrence identifies where
+the asserted event or state occurred. Learned identifies where the persona learned
+it and must be the source Entry; occurrence cannot be later than learning. A
 memory is eligible only when it:
 
-- Belongs to the current continuity.
+- Belongs to the current continuity and mode.
 - Comes from the selected branch or an applicable ancestor.
 - Has current-content source evidence on the selected ancestry.
-- Has occurrence and learned positions no later than the target scene.
+- Has occurrence and learned Entry positions no later than the target Entry.
 - Is active and not excluded.
 
 Extraction occurs only after a complete selected turn. Users can inspect, correct,
@@ -351,15 +385,14 @@ distinct profile pair and copies only supporting evidence whose source was also
 copied. Excluded or future memory and unresolved conflicts do not cross the fork.
 No continuity-owned row is shared.
 
-Timeline memory uses the same lifecycle, evidence, correction, extraction, and
-branch rules with immutable day position replacing scene position. Occurrence
-cannot be later than learned position, and neither may be later than the target
-day. Only the target day's transcript is short-term context; eligible Timeline
-memory, relationship state, and persona adaptation carry long-term continuity.
+Storyline and Timeline use one Continuity memory lifecycle, evidence shape,
+extraction and management workflow, and Entry-based eligibility policy. For
+Timeline, only the target day's transcript is short-term context; eligible memory,
+relationship state, and persona adaptation carry long-term continuity.
 Branch selection may change eligibility only while the latest day is open; closure
 freezes its selected ancestry for every later day.
 
-There is no source-scene, conversation, or message deletion. Any future
+There is no source Entry, Scene, Day, conversation, or message deletion. Any future
 source-deletion workflow must reject deletion while memory provenance refers to
 the source. Archival preserves those records. Hard deletion of a logical memory
 removes its own provenance but does not delete its sources.
@@ -400,6 +433,15 @@ Evolution uses the following durable vocabulary:
   terminal decision and exact strategy configuration.
 - A projection is a rebuildable current view derived by replaying eligible events
   from the user-selected starting state.
+
+Evolution evidence has two explicit shapes: an entryless Ongoing turn and an
+Entry-backed checkpoint carrying its exact EntryPosition. Both retain the exact
+conversation, adjacent user/persona messages, source persona checkpoint, strategy
+configuration, and projection revisions. Entry-backed evidence is ordered by Entry
+position and then persona checkpoint. Replay checks both temporal position and
+selected ancestry; corrections retain the original source provenance. Storyline
+and Timeline use this shared evidence boundary while retaining their own context
+and calendar policies.
 
 Strategies propose changes; they do not write state directly. The application
 validates ownership, selected evidence, expected projection revision, relationship
@@ -487,7 +529,7 @@ Persona core
 → Current input
 ```
 
-The general Characters context order, as later modes add state, is:
+The general Characters context order is:
 
 ```text
 Persona core
@@ -540,16 +582,20 @@ After a complete selected turn, eligible modes may extract memory and ask the
 configured versioned strategy for structured relationship or persona proposals.
 The application validates and persists accepted effects with source provenance.
 
-Storyline memory extraction has one retryable effect per source persona message.
-It moves from reserved to terminal no-change or applied, cannot roll back the
-visible turn, and cannot duplicate a terminal effect. Failures leave the same
+Continuity memory extraction has one retryable effect per source persona message
+for Storyline and Timeline. It moves from reserved to terminal no-change or
+applied, cannot roll back the visible turn, and cannot duplicate a terminal effect. Failures leave the same
 effect retryable. Selection first builds an immutable, dedicated-budget snapshot
-containing identity and persona labels, starting relationship, scene setup,
-compatible summary, recent selected-path turns,
-eligible memories, and the exact source turn marked as new evidence. Mandatory
+containing identity and persona labels, starting relationship, compatible summary,
+recent selected-path turns, eligible memories, and the exact source turn marked
+as new evidence. Explicit mode adapters supply Storyline scene setup and selected
+scene history, or Timeline current-day history without prior-day transcripts.
+Timeline closure policy runs before extraction reservation and commit. Mandatory
 ownership and source blocks must fit; optional records are selected whole and
 deterministically. Extraction selection and response-memory selection remain
-separate versioned strategies.
+separate versioned strategies. Both modes use one shared extraction processor,
+response-memory provider, and management service dispatched through validated Entry
+mode. Prompts render exact Entry provenance without Scene/Day introspection.
 
 The versioned extractor returns no change or a bounded delta of create, reinforce,
 supersede, and conflict operations. Each non-empty operation cites the exact new
@@ -606,18 +652,36 @@ Repositories expose domain values rather than persistence models. Application
 services use repositories for all durable reads and writes. Transactions are short
 and enclose only state that must commit atomically.
 
+Characters persists shared structural facts once in `continuity_entries`. Scene
+and Timeline Day detail rows use the Entry identifier as their one-to-one key.
+Fixed-mode discriminators and composite foreign keys enforce subtype mode;
+complete ownership constraints match each Entry to its continuity, profiles,
+conversation, and mode. Positions are positive and unique within a continuity, and
+one conversation belongs to at most one Entry.
+
+`continuity_memories` stores mode-neutral memory lineages. Memory evidence has
+required source, occurrence, and learned Entry foreign keys; extraction effects
+have one required source Entry reference. Composite constraints enforce exact
+continuity, profile, conversation, and mode ownership. Evolution effects use a
+relational Entry reference for Entry-backed evidence and require no Entry for
+Ongoing evidence under an explicit evidence-kind constraint. Serialized audit data
+retains exact provenance but is not the sole ownership guard.
+
 Important transaction boundaries include:
 
 - Reserving an attempt with any newly committed user input.
 - Completing an attempt with its assistant or persona message.
 - Freezing identity and persona profiles with continuity creation.
-- Creating a Timeline day with its first user input and pending attempt.
+- Creating a Storyline with its first Entry, Scene details, and conversation.
+- Appending the next Storyline Entry, Scene details, and conversation.
+- Creating a Timeline Entry, Day details, conversation, first user input, and
+  pending attempt together.
 - Saving a response-style revision or snapshotting it during attempt reservation.
 - Replacing a current summary revision.
 - Correcting, excluding, reactivating, or deleting memory.
 - Applying a validated relationship or persona proposal and its projection.
 - Selecting a Characters branch or committing a Storyline fork.
-- Applying one validated Storyline or Timeline memory delta and its terminal
+- Applying one validated Continuity memory delta and its terminal
   extraction effect.
 
 Optimistic revision checks reject stale authored edits and reviewed starts.

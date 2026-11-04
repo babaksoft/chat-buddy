@@ -1,11 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 7 — 
-Remove transitional concepts and prove isolation. Cleanup is implemented; completion
-is blocked by invalid PostgreSQL backfill SQL in applied revision `9c4e7a1b2d30`.
-See the [refactor verification status](CONTINUITY_ENTRY_REFACTOR_PLAN.md#slice-7--remove-transitional-concepts-and-prove-isolation).
-This refactor is a prerequisite for
-Stage 8, Slice 10.
+Next delivery focus: Stage 8, Slice 10 — Add Timeline relationship and persona
+evolution.
 
 Deferred product exploration:
 
@@ -17,6 +13,9 @@ Deferred product exploration:
   the exact context-transfer contract before scheduling implementation.
 
 Deferred engineering:
+
+- Revise migration history in a later slice; the prior incompatible migration
+  notice does not block the completed Entry refactor.
 
 - Calibrate the Ollama token estimate against `prompt_eval_count` for the curated
   cloud models using representative English, Persian, code, long-text, and

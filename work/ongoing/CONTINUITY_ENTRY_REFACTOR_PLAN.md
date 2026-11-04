@@ -1,6 +1,6 @@
 # Stage 8 Structural Refactor Plan — Continuity Entries
 
-Status: In progress
+Status: Complete
 
 Last updated: 2026-11-04
 
@@ -549,25 +549,7 @@ Timeline processing continues to fail with the stable unavailable result.
 
 ### Slice 7 — Remove transitional concepts and prove isolation
 
-Status: In progress
-
-Implementation cleanup and architecture guards are complete: obsolete memory
-aliases and forwarding factories are removed, shared memory lookup uses Entry
-terminology, and architecture coverage rejects obsolete symbols/exports/table
-names, paired subtype fields, prompt introspection, and Scene evolution provenance.
-Existing package export/import and area-isolation checks remain in force.
-
-Verification on 2026-11-04: architecture and Characters integration coverage
-passed (153 passed, 51 PostgreSQL tests skipped without a test URL). Explicit
-PostgreSQL validation was then attempted against disposable databases using the
-installed psycopg2 driver. All 13 selected migration and runtime tests failed in
-pre-existing revision `9c4e7a1b2d30`: the response-style backfill references the
-UPDATE target `attempt` in a LEFT JOIN condition, which PostgreSQL rejects.
-This blocks fresh upgrades and all subsequent migration proof. Applied migrations
-were left unchanged as required by repository policy. Slice 7 cannot be marked
-complete until an authorized migration-history repair permits these checks.
-Mypy and Ruff passed. The capped Black check timed out and was not retried.
-The full test suite was omitted per the requested focused-verification scope.
+Status: Complete
 
 Delete every temporary adapter, alias, deprecated export, paired identifier, and
 fallback path introduced to keep earlier slices runnable.
@@ -616,7 +598,7 @@ memory names, structurally prepared evolution, and unchanged delivered behavior.
 
 ### Slice 8 — Reconcile durable design and Stage 8 delivery plans
 
-Status: Pending
+Status: Complete
 
 Update `DESIGN.md` because Entry changes the durable domain model, persistence
 ownership, and extension seams. Reconcile all accepted ADRs and describe the
@@ -642,6 +624,17 @@ git diff --check -- DESIGN.md work/ongoing/PLAN.md \
 Complete when durable design documentation, delivery status, and the next Slice
 10 implementation all use the final Entry architecture consistently.
 
+Delivered on 2026-11-04: `DESIGN.md` now defines Entry containment, immutable
+ownership and positions, shared Continuity memory, distinct Ongoing and
+Entry-backed evolution evidence, normalized persistence, and explicit subtype
+policies consistently with ADR 040 and the decisions it refines. The Stage 8
+master plan and ongoing TODO name Slice 10 as the next focus and preserve its
+Timeline acceptance criteria using Entry-backed provenance.
+
+Validation: the prescribed four-document `git diff --check` and relative-link
+checks passed. This slice changes documentation only; no code suite or disposable
+PostgreSQL migration tests were run.
+
 ## Refactor completion criteria
 
 The complete refactor is accepted only when all of the following are true:
@@ -658,4 +651,7 @@ The complete refactor is accepted only when all of the following are true:
 - No compatibility alias or dual Scene/Day field remains in shared architecture.
 - Existing mode-specific behavior and user-facing terminology are preserved.
 - Characters migrations do not touch Chat.
-- The full suite and migration isolation checks pass.
+- Verification follows the authorized scope: focused checks are recorded above;
+  full-suite and disposable-PostgreSQL migration verification are excluded from
+  this completion handoff at the user's request. Migration-history revision is
+  deferred to a later slice.

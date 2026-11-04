@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-11-03
+Last updated: 2026-11-04
 
 ## Outcome
 
@@ -33,8 +33,9 @@ The stage must preserve these boundaries:
 - Timeline data, prompts, repositories, migrations, and UI remain Characters-owned.
 - Chat records, schema objects, runtime initialization, and behavior are unchanged.
 - Ongoing remains free of extracted long-term memory.
-- Storyline temporal eligibility continues to use scene order; Timeline eligibility
-  uses its own immutable day order and date facts.
+- Storyline and Timeline temporal eligibility uses immutable Entry positions
+  within each independent continuity; Timeline calendar policy retains Day date
+  and boundary facts. Ongoing remains entryless.
 - All persistence access remains behind Characters repository protocols.
 - Tests use an injected clock and fake providers; wall-clock timing, local machine
   timezone, Ollama, and network access are not CI requirements.
@@ -53,10 +54,11 @@ decisions needed to settle the following details before schema work:
 - Timeline start captures the application's valid local IANA timezone without a
   user-facing timezone field. Identity and persona location do not override it,
   and an existing Timeline cannot be rezoned.
-- A represented day owns an immutable positive position, local date, boundary
-  timezone, UTC opening time, UTC closing boundary, conversation graph, summary
-  lineage, and derivation provenance. The local date and boundary facts never
-  change after creation.
+- A represented Day contains its immutable Continuity Entry, which owns profile,
+  continuity, mode, conversation, and positive position. Day details own local
+  date, boundary timezone, UTC opening and closing facts, closure observation,
+  and settled leaf. The exact conversation owns its graph and summary lineage.
+  Shared ownership, position, and Day boundary facts never change after creation.
 - A day is created with its first user message and pending response attempt in one
   transaction. Merely opening or refreshing the UI creates nothing.
 - Closure is determined from the injected current UTC instant and the stored
@@ -69,9 +71,9 @@ decisions needed to settle the following details before schema work:
   here. Closed and non-latest days return stable read-only reasons and never copy
   the Timeline, profiles, history, derived state, identifiers, or provenance.
 - Timeline memory is continuity-scoped, branch-aware, and temporally eligible by
-  immutable day position. Occurrence and learned positions cannot be later than
-  the target day. Current-day messages are the only transcript used as short-term
-  response context.
+  immutable EntryPosition. Learned Entry is the source Entry; occurrence cannot
+  follow learning, and neither position can be later than the target Entry.
+  Current-day messages are the only transcript used as short-term response context.
 - Relationship and persona evolution run after eligible complete Timeline turns,
   cite exact selected evidence, and rebuild after open-day branch selection under
   the same replay rules as the other Characters modes. Closure freezes the day's
@@ -152,7 +154,7 @@ the same cap.
 | 7 | Resolve, update, and snapshot effective response style | 2, 4–6 | Existing style and attempt records |
 | 8 | Converse and summarize within an open Timeline day | 6–7 | Existing graph/summary records |
 | 9 | Add branch- and time-aware Timeline memory | 6, 8 | Existing memory records or additive migration if required by Slice 1 |
-| 10 | Add Timeline relationship and persona evolution | 6, 8–9, Continuity Entry refactor | Existing evolution records |
+| 10 | Add Timeline Entry-backed relationship and persona evolution | 6, 8–9, Continuity Entry refactor | Existing evolution records |
 | 11 | Assemble deterministic Timeline response context | 7–10 | Existing repository operations |
 | 12 | Enforce latest-open-day graph actions and closed-history guards | 6, 8–11 | Existing graph and day records |
 | 13 | Ship Timeline creation, navigation, day, and archive UI | 5–6, 8 | Existing Timeline/day records |
@@ -415,32 +417,42 @@ and mode-isolated.
 
 Status: Pending
 
-Prerequisite: complete the sliced
-[Continuity Entry structural refactor](CONTINUITY_ENTRY_REFACTOR_PLAN.md). Slice 10
-must build Timeline evolution on Entry-backed provenance rather than adding a
-second Scene/Day ownership shape.
+Prerequisite: the
+[Continuity Entry structural refactor](CONTINUITY_ENTRY_REFACTOR_PLAN.md) is
+complete. Extend its Entry-backed checkpoint evidence and relational Entry
+ownership to Timeline. Use `ContinuityEntry` and `EntryPosition` for shared
+ownership and temporal inputs, retaining Day vocabulary for calendar behavior and
+UI. Ongoing keeps its distinct entryless evidence shape.
 
-Make Timeline an eligible mode for the Stage 7 selector, snapshot, strategy,
+Make Timeline an eligible mode for the shared selector, snapshot, strategy,
 validation, idempotent effect, event, projection, correction, and replay services.
+Extend the explicit Entry history adapter for Timeline Day policies; preserve
+Storyline selection behavior and Ongoing processing.
 Use current-day selected messages as the new evidence window and allow eligible
 prior Timeline memory and derived projections only under the policy recorded in
 Slice 1.
 
 Ensure that:
 
-- Evolution never uses a future day or unselected branch.
-- Day closure does not erase already accepted events.
+- Evolution requires exact owned Timeline Entry, conversation, adjacent source
+  messages, and persona checkpoint; Entry position must not exceed the target
+  position, and the checkpoint must belong to selected ancestry. It never uses a
+  future day or unselected branch.
+- Day closure does not erase already accepted events; later Entries use only
+  evidence eligible from the settled selected ancestry.
 - Selecting an open-day alternative rebuilds projections from eligible evidence.
 - A failed inference remains retryable without rolling back the visible response.
-- Corrections retain exact source provenance.
+- Corrections retain exact source Entry, message, checkpoint, and strategy
+  provenance; relational Entry ownership remains validated during replay.
 - Strategy and policy versions remain attached to effects and events.
 
 Extend the native evaluation scenarios with day boundaries, offline gaps,
 open-day alternative selection, and closure-frozen ancestry. Do not add
 Timeline-only relationship dimensions or expose numeric scores.
 
-Complete when Timeline evolution is conservative, replayable, temporally correct,
-and unable to affect another continuity or Chat.
+Complete when Timeline evolution is conservative, replayable, temporally correct
+through Entry positions and exact branch checkpoints, and unable to affect
+another continuity or Chat. Timeline response-context insertion remains Slice 11.
 
 ### Slice 11 — Assemble deterministic Timeline response context
 
