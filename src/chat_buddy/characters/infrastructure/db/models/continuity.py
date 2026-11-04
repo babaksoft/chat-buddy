@@ -19,7 +19,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from chat_buddy.characters.infrastructure.db import CharactersBase
 
@@ -333,17 +333,18 @@ class TimelineModel(CharactersBase):
     )
 
 
-class TimelineDayModel(CharactersBase):
-    """Persist an immutable represented local day and graph ownership."""
+class ContinuityEntryModel(CharactersBase):
+    """Persist shared immutable Scene and Timeline Day ownership."""
 
-    __tablename__ = "timeline_days"
+    __tablename__ = "continuity_entries"
     __table_args__ = (
+        UniqueConstraint("id", "mode", name="uq_continuity_entry_mode"),
         UniqueConstraint(
             "id",
             "continuity_id",
             "identity_id",
             "persona_id",
-            name="uq_timeline_day_ownership",
+            name="uq_continuity_entry_ownership",
         ),
         UniqueConstraint(
             "id",
@@ -351,22 +352,30 @@ class TimelineDayModel(CharactersBase):
             "identity_id",
             "persona_id",
             "conversation_id",
-            name="uq_timeline_day_complete_ownership",
+            name="uq_continuity_entry_complete_ownership",
         ),
-        UniqueConstraint("continuity_id", "position", name="uq_timeline_day_position"),
-        UniqueConstraint("continuity_id", "local_date", name="uq_timeline_day_date"),
-        UniqueConstraint("conversation_id", name="uq_timeline_day_conversation"),
+        UniqueConstraint(
+            "continuity_id", "position", name="uq_continuity_entry_position"
+        ),
+        UniqueConstraint("conversation_id", name="uq_continuity_entry_conversation"),
         ForeignKeyConstraint(
-            ["continuity_id", "identity_id", "persona_id"],
+            ["continuity_id", "identity_id", "persona_id", "mode"],
             [
-                "characters.timelines.continuity_id",
-                "characters.timelines.identity_id",
-                "characters.timelines.persona_id",
+                "characters.continuities.id",
+                "characters.continuities.identity_id",
+                "characters.continuities.persona_id",
+                "characters.continuities.mode",
             ],
-            name="fk_timeline_day_owner",
+            name="fk_continuity_entry_continuity",
         ),
         ForeignKeyConstraint(
-            ["conversation_id", "continuity_id", "identity_id", "persona_id", "mode"],
+            [
+                "conversation_id",
+                "continuity_id",
+                "identity_id",
+                "persona_id",
+                "mode",
+            ],
             [
                 "characters.conversations.id",
                 "characters.conversations.continuity_id",
@@ -374,20 +383,58 @@ class TimelineDayModel(CharactersBase):
                 "characters.conversations.persona_id",
                 "characters.conversations.mode",
             ],
-            name="fk_timeline_day_conversation",
+            name="fk_continuity_entry_conversation",
+        ),
+        CheckConstraint(
+            "mode IN ('storyline', 'timeline')", name="ck_continuity_entry_mode"
+        ),
+        CheckConstraint("position >= 1", name="ck_continuity_entry_position"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid4, doc="Stable Entry identifier."
+    )
+    continuity_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Permanently owning continuity."
+    )
+    identity_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Identity matching continuity ownership."
+    )
+    persona_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Persona matching continuity ownership."
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        Uuid, doc="Permanently owned conversation."
+    )
+    mode: Mapped[str] = mapped_column(
+        String(16), doc="Permanent Storyline or Timeline mode."
+    )
+    position: Mapped[int] = mapped_column(
+        Integer, doc="Immutable positive position inside the continuity."
+    )
+
+
+class TimelineDayModel(CharactersBase):
+    """Persist Timeline Day details for exactly one Timeline Entry."""
+
+    __tablename__ = "timeline_days"
+    __table_args__ = (
+        UniqueConstraint("id", "entry_mode", name="uq_timeline_day_entry_mode"),
+        ForeignKeyConstraint(
+            ["id", "entry_mode"],
+            [
+                "characters.continuity_entries.id",
+                "characters.continuity_entries.mode",
+            ],
+            name="fk_timeline_day_entry",
         ),
         ForeignKeyConstraint(
-            ["settled_selected_leaf_id", "conversation_id", "continuity_id"],
-            [
-                "characters.messages.id",
-                "characters.messages.conversation_id",
-                "characters.messages.continuity_id",
-            ],
+            ["settled_selected_leaf_id"],
+            ["characters.messages.id"],
             name="fk_timeline_day_settled_leaf",
             use_alter=True,
         ),
-        CheckConstraint("mode = 'timeline'", name="ck_timeline_day_mode"),
-        CheckConstraint("position >= 1", name="ck_timeline_day_position"),
+        CheckConstraint("entry_mode = 'timeline'", name="ck_timeline_day_mode"),
         CheckConstraint("opens_at < closes_at", name="ck_timeline_day_boundary"),
         CheckConstraint(
             "(closed_at IS NULL AND settled_selected_leaf_id IS NULL) OR "
@@ -397,16 +444,11 @@ class TimelineDayModel(CharactersBase):
     )
 
     id: Mapped[UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid4, doc="Stable represented-day identifier."
+        Uuid, primary_key=True, doc="Exact owning Entry identifier."
     )
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Timeline.")
-    identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
-    persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
-    conversation_id: Mapped[UUID] = mapped_column(Uuid, doc="Owned day conversation.")
-    mode: Mapped[str] = mapped_column(
-        String(16), default="timeline", doc="Fixed Timeline mode discriminator."
+    entry_mode: Mapped[str] = mapped_column(
+        String(16), default="timeline", doc="Constrained Timeline discriminator."
     )
-    position: Mapped[int] = mapped_column(Integer, doc="Immutable one-based order.")
     local_date: Mapped[date] = mapped_column(
         Date, doc="Immutable represented local date."
     )
@@ -426,75 +468,33 @@ class TimelineDayModel(CharactersBase):
         Uuid, doc="Selected graph leaf permanently settled at closure."
     )
 
+    entry: Mapped[ContinuityEntryModel] = relationship(
+        lazy="joined", innerjoin=True, doc="Exact immutable Entry parent."
+    )
+
 
 class SceneModel(CharactersBase):
-    """Persist ordered Storyline scene metadata and conversation ownership."""
+    """Persist Scene details for exactly one Storyline Entry."""
 
     __tablename__ = "scenes"
     __table_args__ = (
-        UniqueConstraint(
-            "id",
-            "continuity_id",
-            "identity_id",
-            "persona_id",
-            name="uq_scene_ownership",
-        ),
-        UniqueConstraint(
-            "id",
-            "continuity_id",
-            "identity_id",
-            "persona_id",
-            "conversation_id",
-            name="uq_scene_complete_ownership",
-        ),
-        UniqueConstraint(
-            "continuity_id", "position", name="uq_scene_storyline_position"
-        ),
-        UniqueConstraint("conversation_id", name="uq_scene_conversation"),
+        UniqueConstraint("id", "entry_mode", name="uq_scene_entry_mode"),
         ForeignKeyConstraint(
-            ["continuity_id", "identity_id", "persona_id"],
+            ["id", "entry_mode"],
             [
-                "characters.storylines.continuity_id",
-                "characters.storylines.identity_id",
-                "characters.storylines.persona_id",
+                "characters.continuity_entries.id",
+                "characters.continuity_entries.mode",
             ],
-            name="fk_scene_storyline_ownership",
+            name="fk_scene_entry",
         ),
-        ForeignKeyConstraint(
-            [
-                "conversation_id",
-                "continuity_id",
-                "identity_id",
-                "persona_id",
-                "mode",
-            ],
-            [
-                "characters.conversations.id",
-                "characters.conversations.continuity_id",
-                "characters.conversations.identity_id",
-                "characters.conversations.persona_id",
-                "characters.conversations.mode",
-            ],
-            name="fk_scene_conversation_ownership",
-        ),
-        CheckConstraint("mode = 'storyline'", name="ck_scene_mode"),
-        CheckConstraint("position >= 1", name="ck_scene_position"),
+        CheckConstraint("entry_mode = 'storyline'", name="ck_scene_mode"),
     )
 
     id: Mapped[UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid4, doc="Stable scene identifier."
+        Uuid, primary_key=True, doc="Exact owning Entry identifier."
     )
-    continuity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning Storyline.")
-    identity_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning identity.")
-    persona_id: Mapped[UUID] = mapped_column(Uuid, doc="Owning persona.")
-    conversation_id: Mapped[UUID] = mapped_column(
-        Uuid, doc="Independent owned scene conversation."
-    )
-    mode: Mapped[str] = mapped_column(
-        String(16), default="storyline", doc="Fixed Storyline mode discriminator."
-    )
-    position: Mapped[int] = mapped_column(
-        Integer, doc="Immutable one-based chronological position."
+    entry_mode: Mapped[str] = mapped_column(
+        String(16), default="storyline", doc="Constrained Storyline discriminator."
     )
     title: Mapped[str] = mapped_column(String(128), doc="Presentation-only title.")
     setup: Mapped[str] = mapped_column(String(8192), doc="Authored scene situation.")
@@ -503,4 +503,8 @@ class SceneModel(CharactersBase):
     )
     setup_locked: Mapped[bool] = mapped_column(
         Boolean, default=False, doc="Whether first user input froze setup."
+    )
+
+    entry: Mapped[ContinuityEntryModel] = relationship(
+        lazy="joined", innerjoin=True, doc="Exact immutable Entry parent."
     )

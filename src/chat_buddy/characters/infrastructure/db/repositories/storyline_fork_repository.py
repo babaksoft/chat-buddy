@@ -40,6 +40,7 @@ from chat_buddy.characters.domain import (
     is_adaptation_command,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     EvolutionCorrectionEventModel,
@@ -254,14 +255,15 @@ class DbStorylineForkRepository:
         source_scenes = tuple(
             session.scalars(
                 select(SceneModel)
-                .where(SceneModel.continuity_id == source.continuity_id)
-                .order_by(SceneModel.position)
+                .join(ContinuityEntryModel)
+                .where(ContinuityEntryModel.continuity_id == source.continuity_id)
+                .order_by(ContinuityEntryModel.position)
                 .with_for_update()
             )
         )
         if (
             not source_scenes
-            or source_scenes[-1].position <= preview.source.scene_position
+            or source_scenes[-1].entry.position <= preview.source.scene_position
         ):
             raise StorylineForkConflictError(
                 "The reviewed source no longer has a dependent later scene"
@@ -271,8 +273,8 @@ class DbStorylineForkRepository:
         final_scene = copied_sources[-1]
         if (
             final_scene.id != preview.source.scene_id
-            or final_scene.conversation_id != preview.source.scope.conversation_id
-            or final_scene.position != preview.source.scene_position
+            or final_scene.entry.conversation_id != preview.source.scope.conversation_id
+            or final_scene.entry.position != preview.source.scene_position
         ):
             raise StorylineForkConflictError("Source scene ownership changed")
 
@@ -460,13 +462,20 @@ class DbStorylineForkRepository:
         session.add(target_conversation)
         session.flush()
 
-        target_scene = SceneModel(
+        target_entry = ContinuityEntryModel(
             continuity_id=target_continuity.id,
             identity_id=target_continuity.identity_id,
             persona_id=target_continuity.persona_id,
             conversation_id=target_conversation.id,
             mode="storyline",
-            position=source_scene.position,
+            position=source_scene.entry.position,
+        )
+        session.add(target_entry)
+        session.flush()
+
+        target_scene = SceneModel(
+            id=target_entry.id,
+            entry_mode="storyline",
             title=source_scene.title,
             setup=source_scene.setup,
             response_style=deepcopy(source_scene.response_style),
@@ -1613,10 +1622,10 @@ class DbStorylineForkRepository:
         row = session.scalar(
             select(ConversationModel)
             .where(
-                ConversationModel.id == scene.conversation_id,
-                ConversationModel.continuity_id == scene.continuity_id,
-                ConversationModel.identity_id == scene.identity_id,
-                ConversationModel.persona_id == scene.persona_id,
+                ConversationModel.id == scene.entry.conversation_id,
+                ConversationModel.continuity_id == scene.entry.continuity_id,
+                ConversationModel.identity_id == scene.entry.identity_id,
+                ConversationModel.persona_id == scene.entry.persona_id,
                 ConversationModel.mode == "storyline",
             )
             .with_for_update()
@@ -1783,8 +1792,9 @@ class DbStorylineForkRepository:
         scenes = tuple(
             session.scalars(
                 select(SceneModel)
-                .where(SceneModel.continuity_id == continuity.id)
-                .order_by(SceneModel.position)
+                .join(ContinuityEntryModel)
+                .where(ContinuityEntryModel.continuity_id == continuity.id)
+                .order_by(ContinuityEntryModel.position)
             )
         )
         provenance = storyline.fork_provenance or {}

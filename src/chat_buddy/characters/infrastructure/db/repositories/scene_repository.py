@@ -22,6 +22,7 @@ from chat_buddy.characters.domain import (
     Storyline,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     GenerationAttemptModel,
@@ -118,13 +119,14 @@ class DbSceneRepository:
             )
             latest = session.scalars(
                 select(SceneModel)
-                .where(SceneModel.continuity_id == storyline.continuity_id)
-                .order_by(SceneModel.position.desc())
+                .join(ContinuityEntryModel)
+                .where(ContinuityEntryModel.continuity_id == storyline.continuity_id)
+                .order_by(ContinuityEntryModel.position.desc())
                 .with_for_update()
             ).first()
             if latest is None or (
                 latest.id != eligibility.scene_id
-                or latest.position != eligibility.scene_position
+                or latest.entry.position != eligibility.scene_position
             ):
                 raise IncompleteLatestSceneError(
                     "The observed scene is no longer the latest"
@@ -134,8 +136,8 @@ class DbSceneRepository:
             conversation = session.scalars(
                 select(ConversationModel)
                 .where(
-                    ConversationModel.id == latest.conversation_id,
-                    ConversationModel.continuity_id == latest.continuity_id,
+                    ConversationModel.id == latest.entry.conversation_id,
+                    ConversationModel.continuity_id == latest.entry.continuity_id,
                     ConversationModel.mode == "storyline",
                 )
                 .with_for_update()
@@ -170,14 +172,21 @@ class DbSceneRepository:
             session.add(new_conversation)
             session.flush()
 
+            entry = ContinuityEntryModel(
+                continuity_id=storyline.continuity_id,
+                identity_id=storyline.identity_id,
+                persona_id=storyline.persona_id,
+                conversation_id=new_conversation.id,
+                mode="storyline",
+                position=latest.entry.position + 1,
+            )
+            session.add(entry)
+            session.flush()
+
             session.add(
                 SceneModel(
-                    continuity_id=storyline.continuity_id,
-                    identity_id=storyline.identity_id,
-                    persona_id=storyline.persona_id,
-                    conversation_id=new_conversation.id,
-                    mode="storyline",
-                    position=latest.position + 1,
+                    id=entry.id,
+                    entry_mode="storyline",
                     title=details.title,
                     setup=details.setup,
                     response_style=details.response_style.model_dump(mode="json"),
@@ -259,12 +268,12 @@ class DbSceneRepository:
                 raise LockedSceneSetupError("Scene setup is already locked")
 
             latest_position = session.scalar(
-                select(SceneModel.position)
-                .where(SceneModel.continuity_id == scope.continuity_id)
-                .order_by(SceneModel.position.desc())
+                select(ContinuityEntryModel.position)
+                .where(ContinuityEntryModel.continuity_id == scope.continuity_id)
+                .order_by(ContinuityEntryModel.position.desc())
                 .limit(1)
             )
-            if scene.position != latest_position:
+            if scene.entry.position != latest_position:
                 raise LockedSceneSetupError("Only the latest scene setup is writable")
 
             validated = SceneDetails(
@@ -356,13 +365,17 @@ class DbSceneRepository:
                 If any ownership component differs.
         """
 
-        query = select(SceneModel).where(
-            SceneModel.id == scene_id,
-            SceneModel.identity_id == scope.identity_id,
-            SceneModel.persona_id == scope.persona_id,
-            SceneModel.continuity_id == scope.continuity_id,
-            SceneModel.conversation_id == scope.conversation_id,
-            SceneModel.mode == "storyline",
+        query = (
+            select(SceneModel)
+            .join(ContinuityEntryModel)
+            .where(
+                SceneModel.id == scene_id,
+                ContinuityEntryModel.identity_id == scope.identity_id,
+                ContinuityEntryModel.persona_id == scope.persona_id,
+                ContinuityEntryModel.continuity_id == scope.continuity_id,
+                ContinuityEntryModel.conversation_id == scope.conversation_id,
+                ContinuityEntryModel.mode == "storyline",
+            )
         )
         row = session.scalar(query.with_for_update() if lock else query)
         if row is None:
@@ -419,8 +432,9 @@ class DbSceneRepository:
 
         rows = session.scalars(
             select(SceneModel)
-            .where(SceneModel.continuity_id == storyline.continuity_id)
-            .order_by(SceneModel.position)
+            .join(ContinuityEntryModel)
+            .where(ContinuityEntryModel.continuity_id == storyline.continuity_id)
+            .order_by(ContinuityEntryModel.position)
         )
 
         return SceneSequence(
@@ -443,12 +457,12 @@ class DbSceneRepository:
         return Scene(
             entry=ContinuityEntry(
                 id=row.id,
-                identity_id=row.identity_id,
-                persona_id=row.persona_id,
-                continuity_id=row.continuity_id,
-                conversation_id=row.conversation_id,
+                identity_id=row.entry.identity_id,
+                persona_id=row.entry.persona_id,
+                continuity_id=row.entry.continuity_id,
+                conversation_id=row.entry.conversation_id,
                 mode=ContinuityMode.STORYLINE,
-                position=row.position,
+                position=row.entry.position,
             ),
             details=SceneDetails(
                 title=row.title,

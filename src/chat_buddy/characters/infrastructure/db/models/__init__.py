@@ -1,6 +1,7 @@
 """Registry of SQLAlchemy persistence models."""
 
 from chat_buddy.characters.infrastructure.db.models.continuity import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     ResponseStyleSettingsModel,
@@ -33,6 +34,7 @@ from chat_buddy.characters.infrastructure.db.models.persona import PersonaModel
 from chat_buddy.characters.infrastructure.db.models.summary import SummaryRevisionModel
 
 __all__ = [
+    "ContinuityEntryModel",
     "ContinuityModel",
     "ConversationModel",
     "EvolutionCorrectionEventModel",

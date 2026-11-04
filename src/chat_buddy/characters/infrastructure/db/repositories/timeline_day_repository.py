@@ -34,6 +34,7 @@ from chat_buddy.characters.domain import (
     VersionedResponseStyleSettings,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     GenerationAttemptModel,
@@ -72,12 +73,14 @@ class DbTimelineDayRepository:
 
         with self._factory() as session:
             row = session.scalar(
-                select(TimelineDayModel).where(
+                select(TimelineDayModel)
+                .join(ContinuityEntryModel)
+                .where(
                     TimelineDayModel.id == day_id,
-                    TimelineDayModel.continuity_id == scope.continuity_id,
-                    TimelineDayModel.identity_id == scope.identity_id,
-                    TimelineDayModel.persona_id == scope.persona_id,
-                    TimelineDayModel.conversation_id == scope.conversation_id,
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.identity_id == scope.identity_id,
+                    ContinuityEntryModel.persona_id == scope.persona_id,
+                    ContinuityEntryModel.conversation_id == scope.conversation_id,
                 )
             )
             if row is None:
@@ -100,10 +103,12 @@ class DbTimelineDayRepository:
 
         with self._factory() as session:
             row = session.scalar(
-                select(TimelineDayModel).where(
-                    TimelineDayModel.continuity_id == timeline.id,
-                    TimelineDayModel.identity_id == timeline.identity_id,
-                    TimelineDayModel.persona_id == timeline.persona_id,
+                select(TimelineDayModel)
+                .join(ContinuityEntryModel)
+                .where(
+                    ContinuityEntryModel.continuity_id == timeline.id,
+                    ContinuityEntryModel.identity_id == timeline.identity_id,
+                    ContinuityEntryModel.persona_id == timeline.persona_id,
                     TimelineDayModel.local_date == local_date,
                 )
             )
@@ -124,8 +129,9 @@ class DbTimelineDayRepository:
         with self._factory() as session:
             row = session.scalar(
                 select(TimelineDayModel)
-                .where(TimelineDayModel.continuity_id == timeline.id)
-                .order_by(TimelineDayModel.position.desc())
+                .join(ContinuityEntryModel)
+                .where(ContinuityEntryModel.continuity_id == timeline.id)
+                .order_by(ContinuityEntryModel.position.desc())
                 .limit(1)
             )
 
@@ -145,8 +151,9 @@ class DbTimelineDayRepository:
         with self._factory() as session:
             rows = session.scalars(
                 select(TimelineDayModel)
-                .where(TimelineDayModel.continuity_id == timeline.id)
-                .order_by(TimelineDayModel.position)
+                .join(ContinuityEntryModel)
+                .where(ContinuityEntryModel.continuity_id == timeline.id)
+                .order_by(ContinuityEntryModel.position)
             )
 
             return TimelineNavigation(
@@ -197,14 +204,15 @@ class DbTimelineDayRepository:
                     return self._failed(DayReservationStatus.STALE_REVISION)
                 latest = session.scalar(
                     select(TimelineDayModel)
-                    .where(TimelineDayModel.continuity_id == timeline.id)
-                    .order_by(TimelineDayModel.position.desc())
+                    .join(ContinuityEntryModel)
+                    .where(ContinuityEntryModel.continuity_id == timeline.id)
+                    .order_by(ContinuityEntryModel.position.desc())
                     .limit(1)
                 )
                 if latest is not None:
                     selected = session.scalar(
                         select(ConversationModel.selected_leaf_id).where(
-                            ConversationModel.id == latest.conversation_id
+                            ConversationModel.id == latest.entry.conversation_id
                         )
                     )
                     if latest.closed_at is None:
@@ -226,13 +234,20 @@ class DbTimelineDayRepository:
                 )
                 session.add(conversation)
                 session.flush()
-                day = TimelineDayModel(
+                entry = ContinuityEntryModel(
                     continuity_id=timeline.id,
                     identity_id=timeline.identity_id,
                     persona_id=timeline.persona_id,
                     conversation_id=conversation.id,
                     mode="timeline",
-                    position=1 if latest is None else latest.position + 1,
+                    position=1 if latest is None else latest.entry.position + 1,
+                )
+                session.add(entry)
+                session.flush()
+
+                day = TimelineDayModel(
+                    id=entry.id,
+                    entry_mode="timeline",
                     local_date=request.boundary.local_date,
                     boundary_timezone=request.boundary.timezone,
                     opens_at=request.boundary.opens_at,
@@ -327,12 +342,13 @@ class DbTimelineDayRepository:
             ).one()
             day = session.scalars(
                 select(TimelineDayModel)
+                .join(ContinuityEntryModel)
                 .where(
                     TimelineDayModel.id == day_id,
-                    TimelineDayModel.continuity_id == scope.continuity_id,
-                    TimelineDayModel.conversation_id == scope.conversation_id,
-                    TimelineDayModel.identity_id == scope.identity_id,
-                    TimelineDayModel.persona_id == scope.persona_id,
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.conversation_id == scope.conversation_id,
+                    ContinuityEntryModel.identity_id == scope.identity_id,
+                    ContinuityEntryModel.persona_id == scope.persona_id,
                 )
                 .with_for_update()
             ).one()
@@ -440,12 +456,12 @@ class DbTimelineDayRepository:
         return TimelineDay(
             entry=ContinuityEntry(
                 id=row.id,
-                identity_id=row.identity_id,
-                persona_id=row.persona_id,
-                continuity_id=row.continuity_id,
-                conversation_id=row.conversation_id,
+                identity_id=row.entry.identity_id,
+                persona_id=row.entry.persona_id,
+                continuity_id=row.entry.continuity_id,
+                conversation_id=row.entry.conversation_id,
                 mode=ContinuityMode.TIMELINE,
-                position=row.position,
+                position=row.entry.position,
             ),
             boundary=DayBoundary(
                 local_date=row.local_date,

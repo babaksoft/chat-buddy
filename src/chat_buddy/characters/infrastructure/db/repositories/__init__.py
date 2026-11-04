@@ -1,5 +1,8 @@
 """Characters persistence repositories."""
 
+from chat_buddy.characters.infrastructure.db.repositories.continuity_entry_repository import (
+    DbContinuityEntryRepository,
+)
 from chat_buddy.characters.infrastructure.db.repositories.continuity_repository import (
     DbContinuityRepository,
 )
@@ -44,6 +47,7 @@ from chat_buddy.characters.infrastructure.db.repositories.timeline_repository im
 )
 
 __all__ = [
+    "DbContinuityEntryRepository",
     "DbContinuityMemoryRepository",
     "DbContinuityRepository",
     "DbConversationRepository",

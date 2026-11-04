@@ -324,7 +324,7 @@ modes while Ongoing remains entryless.
 
 ### Slice 3 — Normalize Scene and Timeline Day persistence around Entries
 
-Status: Pending
+Status: Complete
 
 Add `ContinuityEntryModel`, `DbContinuityEntryRepository`, and one reviewed
 Characters migration. Normalize existing Scene and Timeline Day persistence into
@@ -362,6 +362,16 @@ Migration tests must cover:
 
 Complete when Entry is the sole persistence source of shared structural facts and
 both mode-specific repositories retain their current observable behavior.
+
+Delivered by `ContinuityEntryModel`, `DbContinuityEntryRepository`, and Characters
+revision `f3a7c9e1b2d4`. Scene and Timeline Day tables now contain only their
+subtype details plus a constrained fixed-mode Entry reference; shared ownership,
+conversation, mode, and position resolve through `continuity_entries`. Storyline
+start and append, Timeline first-send reservation, closure, setup locking,
+summaries, memory validation, evolution validation, and structural forks all use
+the normalized Entry boundary without changing their observable mode behavior.
+Existing transitional memory provenance foreign keys now target Entries while
+retaining the Slice 4 domain shape.
 
 ### Slice 4 — Unify Continuity memory domain and persistence
 

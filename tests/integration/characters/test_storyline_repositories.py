@@ -32,6 +32,7 @@ from chat_buddy.characters.domain import (
     StrategyIdentity,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ConversationModel,
     MessageModel,
     SceneModel,
@@ -230,12 +231,14 @@ def test_database_rejects_wrong_mode_duplicate_order_and_cross_owner_conversatio
 
     with pytest.raises(IntegrityError), factory() as session, session.begin():
         session.execute(
-            update(SceneModel).where(SceneModel.id == scene.id).values(mode="ongoing")
+            update(SceneModel)
+            .where(SceneModel.id == scene.id)
+            .values(entry_mode="timeline")
         )
     with pytest.raises(IntegrityError), factory() as session, session.begin():
         session.execute(
-            update(SceneModel)
-            .where(SceneModel.id == scene.id)
+            update(ContinuityEntryModel)
+            .where(ContinuityEntryModel.id == scene.id)
             .values(conversation_id=other_scene.scope.conversation_id)
         )
     with pytest.raises(IntegrityError), factory() as session, session.begin():
@@ -247,14 +250,20 @@ def test_database_rejects_wrong_mode_duplicate_order_and_cross_owner_conversatio
         )
         session.add(conversation)
         session.flush()
+        entry = ContinuityEntryModel(
+            continuity_id=storyline.id,
+            identity_id=storyline.identity_id,
+            persona_id=storyline.persona_id,
+            conversation_id=conversation.id,
+            mode="storyline",
+            position=scene.position,
+        )
+        session.add(entry)
+        session.flush()
         session.add(
             SceneModel(
-                continuity_id=storyline.id,
-                identity_id=storyline.identity_id,
-                persona_id=storyline.persona_id,
-                conversation_id=conversation.id,
-                mode="storyline",
-                position=scene.position,
+                id=entry.id,
+                entry_mode="storyline",
                 title="Duplicate",
                 setup="This position is already owned.",
                 response_style=_style().model_dump(mode="json"),
@@ -414,7 +423,9 @@ def _complete_exchange(
         session.flush()
         conversation.selected_leaf_id = persona.id
         scene = session.scalar(
-            select(SceneModel).where(SceneModel.conversation_id == conversation_id)
+            select(SceneModel)
+            .join(ContinuityEntryModel)
+            .where(ContinuityEntryModel.conversation_id == conversation_id)
         )
         assert scene is not None
         scene.setup_locked = True

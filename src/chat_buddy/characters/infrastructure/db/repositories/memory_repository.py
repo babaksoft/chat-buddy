@@ -43,6 +43,7 @@ from chat_buddy.characters.domain import (
     SupersedeMemoryCommand,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     MemoryConflictModel,
@@ -895,12 +896,15 @@ class DbMemoryExtractionRepository:
             SceneModel if mode == ContinuityMode.STORYLINE else TimelineDayModel
         )
         owner = session.scalar(
-            select(owner_model).where(
+            select(owner_model)
+            .join(ContinuityEntryModel)
+            .where(
                 owner_model.id == temporal_owner_id,
-                owner_model.continuity_id == scope.continuity_id,
-                owner_model.identity_id == scope.identity_id,
-                owner_model.persona_id == scope.persona_id,
-                owner_model.conversation_id == scope.conversation_id,
+                ContinuityEntryModel.continuity_id == scope.continuity_id,
+                ContinuityEntryModel.identity_id == scope.identity_id,
+                ContinuityEntryModel.persona_id == scope.persona_id,
+                ContinuityEntryModel.conversation_id == scope.conversation_id,
+                ContinuityEntryModel.mode == mode.value,
             )
         )
         source = session.scalar(
@@ -1268,9 +1272,9 @@ class DbMemoryExtractionRepository:
             or user.role != "user"
             or persona.parent_id != user.id
             or _message_position(session, persona) != evidence.persona_checkpoint
-            or owner.position != evidence.learned.position
-            or occurrence.continuity_id != effect.continuity_id
-            or occurrence.position != evidence.occurrence.position
+            or owner.entry.position != evidence.learned.position
+            or occurrence.entry.continuity_id != effect.continuity_id
+            or occurrence.entry.position != evidence.occurrence.position
         ):
             raise InvalidTemporalProvenanceError(
                 "Evidence message or temporal provenance is inconsistent"

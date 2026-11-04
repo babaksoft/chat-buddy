@@ -32,6 +32,7 @@ from chat_buddy.characters.domain import (
     SetPersonaAdaptationCommand,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ConversationModel,
     EvolutionCorrectionEventModel,
     EvolutionEffectModel,
@@ -899,13 +900,16 @@ class DbEvolutionRepository:
         if source.kind == EvolutionEvidenceKind.STORYLINE_CHECKPOINT:
             scene_is_valid = (
                 session.scalar(
-                    select(SceneModel.id).where(
+                    select(SceneModel.id)
+                    .join(ContinuityEntryModel)
+                    .where(
                         SceneModel.id == source.scene_id,
-                        SceneModel.position == source.scene_position,
-                        SceneModel.conversation_id == source.conversation_id,
-                        SceneModel.continuity_id == source.scope.continuity_id,
-                        SceneModel.identity_id == source.scope.identity_id,
-                        SceneModel.persona_id == source.scope.persona_id,
+                        ContinuityEntryModel.position == source.scene_position,
+                        ContinuityEntryModel.conversation_id == source.conversation_id,
+                        ContinuityEntryModel.continuity_id
+                        == source.scope.continuity_id,
+                        ContinuityEntryModel.identity_id == source.scope.identity_id,
+                        ContinuityEntryModel.persona_id == source.scope.persona_id,
                     )
                 )
                 is not None

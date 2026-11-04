@@ -16,6 +16,7 @@ from chat_buddy.characters.domain import (
     SummaryRevision,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     MessageModel,
@@ -249,16 +250,18 @@ class DbSummaryRepository:
 
         if writable and conversation.mode == "storyline":
             scene_position = session.scalar(
-                select(SceneModel.position)
+                select(ContinuityEntryModel.position)
+                .join(SceneModel)
                 .where(
-                    SceneModel.conversation_id == scope.conversation_id,
-                    SceneModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.conversation_id == scope.conversation_id,
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
                 )
                 .with_for_update()
             )
             latest_position = session.scalar(
-                select(func.max(SceneModel.position)).where(
-                    SceneModel.continuity_id == scope.continuity_id
+                select(func.max(ContinuityEntryModel.position)).where(
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.mode == "storyline",
                 )
             )
             if scene_position is None or scene_position != latest_position:
@@ -274,22 +277,24 @@ class DbSummaryRepository:
             )
             day = session.scalar(
                 select(TimelineDayModel)
+                .join(ContinuityEntryModel)
                 .where(
-                    TimelineDayModel.conversation_id == scope.conversation_id,
-                    TimelineDayModel.continuity_id == scope.continuity_id,
-                    TimelineDayModel.identity_id == scope.identity_id,
-                    TimelineDayModel.persona_id == scope.persona_id,
+                    ContinuityEntryModel.conversation_id == scope.conversation_id,
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.identity_id == scope.identity_id,
+                    ContinuityEntryModel.persona_id == scope.persona_id,
                 )
                 .with_for_update()
             )
             latest_position = session.scalar(
-                select(func.max(TimelineDayModel.position)).where(
-                    TimelineDayModel.continuity_id == scope.continuity_id
+                select(func.max(ContinuityEntryModel.position)).where(
+                    ContinuityEntryModel.continuity_id == scope.continuity_id,
+                    ContinuityEntryModel.mode == "timeline",
                 )
             )
             if owner is None or day is None or latest_position is None:
                 raise SummaryConflictError("Timeline day ownership changed.")
-            if day.position != latest_position or day.closed_at is not None:
+            if day.entry.position != latest_position or day.closed_at is not None:
                 raise SummaryConflictError(
                     "Closed or historical Timeline days prevent summary writes."
                 )

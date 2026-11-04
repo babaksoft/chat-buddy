@@ -29,6 +29,7 @@ from chat_buddy.characters.domain import (
     StorylineGroup,
 )
 from chat_buddy.characters.infrastructure.db.models import (
+    ContinuityEntryModel,
     ContinuityModel,
     ConversationModel,
     IdentityModel,
@@ -158,14 +159,21 @@ class DbStorylineRepository:
                 )
                 session.flush()
 
+                entry = ContinuityEntryModel(
+                    continuity_id=continuity.id,
+                    identity_id=identity.id,
+                    persona_id=persona.id,
+                    conversation_id=conversation.id,
+                    mode="storyline",
+                    position=1,
+                )
+                session.add(entry)
+                session.flush()
+
                 session.add(
                     SceneModel(
-                        continuity_id=continuity.id,
-                        identity_id=identity.id,
-                        persona_id=persona.id,
-                        conversation_id=conversation.id,
-                        mode="storyline",
-                        position=1,
+                        id=entry.id,
+                        entry_mode="storyline",
                         title=request.initial_scene.title,
                         setup=request.initial_scene.setup,
                         response_style=request.initial_scene.response_style.model_dump(
@@ -573,12 +581,12 @@ class DbStorylineRepository:
         return Scene(
             entry=ContinuityEntry(
                 id=row.id,
-                identity_id=row.identity_id,
-                persona_id=row.persona_id,
-                continuity_id=row.continuity_id,
-                conversation_id=row.conversation_id,
+                identity_id=row.entry.identity_id,
+                persona_id=row.entry.persona_id,
+                continuity_id=row.entry.continuity_id,
+                conversation_id=row.entry.conversation_id,
                 mode=ContinuityMode.STORYLINE,
-                position=row.position,
+                position=row.entry.position,
             ),
             details=SceneDetails(
                 title=row.title,
@@ -612,9 +620,11 @@ class DbStorylineRepository:
             )
         ).one()
         scene = session.scalars(
-            select(SceneModel).where(
-                SceneModel.continuity_id == continuity.id,
-                SceneModel.position == 1,
+            select(SceneModel)
+            .join(ContinuityEntryModel)
+            .where(
+                ContinuityEntryModel.continuity_id == continuity.id,
+                ContinuityEntryModel.position == 1,
             )
         ).one()
 
