@@ -16,6 +16,7 @@ from chat_buddy.characters.domain.continuity import (
     RelationshipSelection,
     StartingRelationship,
 )
+from chat_buddy.characters.domain.continuity_entry import ContinuityEntry
 from chat_buddy.characters.domain.conversation import (
     ConversationScope,
     GenerationAttempt,
@@ -212,12 +213,8 @@ class TimelineDay(BaseModel):
     """One represented local day with immutable conversation ownership.
 
     Attributes:
-        id:
-            Stable represented-day identifier.
-        scope:
-            Complete Timeline and conversation ownership.
-        position:
-            Positive immutable order within the Timeline.
+        entry:
+            Exact Timeline Entry owning shared structure.
         boundary:
             Immutable civil-date and UTC boundary facts.
         closed_at:
@@ -228,9 +225,7 @@ class TimelineDay(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: UUID = Field(description="Stable represented-day identifier.")
-    scope: ConversationScope = Field(description="Complete day ownership.")
-    position: int = Field(ge=1, strict=True, description="Immutable day position.")
+    entry: ContinuityEntry = Field(description="Exact owning Timeline Entry.")
     boundary: DayBoundary = Field(description="Immutable calendar boundary facts.")
     closed_at: datetime | None = Field(
         default=None, description="UTC instant when closure was first persisted."
@@ -238,6 +233,29 @@ class TimelineDay(BaseModel):
     settled_selected_leaf_id: UUID | None = Field(
         default=None, description="Selected leaf permanently settled at closure."
     )
+
+    @model_validator(mode="after")
+    def validate_entry_and_closure_state(self) -> Self:
+        """Require Timeline ownership and boundary-safe closure state.
+
+        Returns:
+            The validated immutable day.
+
+        Raises:
+            ValueError:
+                If Entry mode or closure state is inconsistent.
+        """
+
+        if self.entry.mode != "timeline":
+            raise ValueError("A Timeline Day requires a Timeline Entry")
+        if self.closed_at is not None:
+            if self.closed_at < self.boundary.closes_at:
+                raise ValueError("A day cannot close before its stored boundary")
+            if self.settled_selected_leaf_id is None:
+                raise ValueError("A closed day requires its settled selected leaf")
+        elif self.settled_selected_leaf_id is not None:
+            raise ValueError("An open day cannot settle its selected leaf")
+        return self
 
     @field_validator("closed_at")
     @classmethod
@@ -264,26 +282,35 @@ class TimelineDay(BaseModel):
             raise ValueError("Day closure instant must be UTC")
         return value.astimezone(UTC)
 
-    @model_validator(mode="after")
-    def validate_closure_state(self) -> Self:
-        """Require boundary-safe closure with one permanently settled leaf.
+    @property
+    def id(self) -> UUID:
+        """Return the represented Entry identifier.
 
         Returns:
-            The validated immutable day.
-
-        Raises:
-            ValueError:
-                If closure timing and settled selection are inconsistent.
+            Stable Entry identifier.
         """
 
-        if self.closed_at is not None:
-            if self.closed_at < self.boundary.closes_at:
-                raise ValueError("A day cannot close before its stored boundary")
-            if self.settled_selected_leaf_id is None:
-                raise ValueError("A closed day requires its settled selected leaf")
-        elif self.settled_selected_leaf_id is not None:
-            raise ValueError("An open day cannot settle its selected leaf")
-        return self
+        return self.entry.id
+
+    @property
+    def scope(self) -> ConversationScope:
+        """Return conversation ownership derived from the Entry.
+
+        Returns:
+            Exact owned conversation scope.
+        """
+
+        return self.entry.scope
+
+    @property
+    def position(self) -> int:
+        """Return immutable order derived from the Entry.
+
+        Returns:
+            Positive Entry position.
+        """
+
+        return self.entry.position
 
     @property
     def is_closed(self) -> bool:
@@ -330,17 +357,17 @@ class TimelineNavigation(BaseModel):
         )
         if any(
             (
-                day.scope.identity_id,
-                day.scope.persona_id,
-                day.scope.continuity_id,
+                day.entry.identity_id,
+                day.entry.persona_id,
+                day.entry.continuity_id,
             )
             != expected
             for day in self.days
         ):
             raise ValueError("Every day must belong to the supplied Timeline")
 
-        if len({day.id for day in self.days}) != len(self.days) or len(
-            {day.scope.conversation_id for day in self.days}
+        if len({day.entry.id for day in self.days}) != len(self.days) or len(
+            {day.entry.conversation_id for day in self.days}
         ) != len(self.days):
             raise ValueError("Day and conversation identifiers must be unique")
 

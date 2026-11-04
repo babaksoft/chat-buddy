@@ -57,7 +57,7 @@ class StorylineConversationAdapter:
                 If setup-lock state contradicts committed history.
         """
 
-        if target.mode != ContinuityMode.STORYLINE or target.scene_id is None:
+        if target.mode != ContinuityMode.STORYLINE or target.entry_id is None:
             raise ValueError("The Storyline adapter requires a Storyline target")
         if history.scope != target.scope:
             raise ValueError("Conversation history does not match its target")
@@ -164,7 +164,7 @@ class StorylineConversationAdapter:
             Owning Storyline, target scene, and latest scene.
         """
 
-        if target.scene_id is None:
+        if target.entry_id is None:
             raise ValueError("Storyline targets require a scene identifier")
 
         storyline = self._storylines.get(
@@ -172,7 +172,7 @@ class StorylineConversationAdapter:
             target.scope.persona_id,
             target.scope.continuity_id,
         )
-        scene = self._scenes.get(target.scope, target.scene_id)
+        scene = self._scenes.get(target.scope, target.entry_id)
         sequence = self._scenes.list(storyline)
 
         return sequence.storyline, scene, sequence.scenes[-1]

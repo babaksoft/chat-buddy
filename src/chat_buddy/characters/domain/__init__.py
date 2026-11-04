@@ -40,6 +40,10 @@ from chat_buddy.characters.domain.continuity import (
     StartingRelationship,
     Trust,
 )
+from chat_buddy.characters.domain.continuity_entry import (
+    ContinuityEntry,
+    EntryPosition,
+)
 from chat_buddy.characters.domain.conversation import (
     AttemptStatus,
     ConversationHistory,
@@ -213,6 +217,7 @@ from chat_buddy.characters.domain.persona import (
     PersonaCore,
 )
 from chat_buddy.characters.domain.repositories import (
+    ContinuityEntryRepository,
     ContinuityMemoryRepository,
     ContinuityRepository,
     ConversationGraphRepository,
@@ -314,6 +319,8 @@ __all__ = [
     "ContextCapacityError",
     "ContextSelection",
     "Continuity",
+    "ContinuityEntry",
+    "ContinuityEntryRepository",
     "ContinuityGroup",
     "ContinuityLifecycle",
     "ContinuityMemory",
@@ -343,6 +350,7 @@ __all__ = [
     "Dynamic",
     "EffectiveGeneration",
     "EligibleContext",
+    "EntryPosition",
     "EvolutionCommand",
     "EvolutionConfiguration",
     "EvolutionConfigurationResolver",

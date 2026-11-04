@@ -289,11 +289,11 @@ def test_new_day_prompt_never_contains_prior_day_transcript(
     app, first_target = _start_day(
         factory, clock, responses, summaries, "Prior day secret"
     )
-    assert first_target.day_id is not None
+    assert first_target.entry_id is not None
     first_attempt = app.history(first_target).attempts[0]
     list(app.stream(first_target, first_attempt.id))
     first_day = DbTimelineDayRepository(factory).get(
-        first_target.scope, first_target.day_id
+        first_target.scope, first_target.entry_id
     )
 
     clock.value = first_day.boundary.closes_at
@@ -319,7 +319,7 @@ def test_new_day_prompt_never_contains_prior_day_transcript(
     assert reserved.day is not None
     assert reserved.attempt is not None
     second_target = first_target.model_copy(
-        update={"scope": reserved.day.scope, "day_id": reserved.day.id}
+        update={"scope": reserved.day.scope, "entry_id": reserved.day.id}
     )
 
     list(app.stream(second_target, reserved.attempt.id))
@@ -346,8 +346,8 @@ def test_stream_crossing_boundary_is_interrupted_without_persona_commit(
     initial = FakeResponse()
     summaries = FakeSummary()
     _, target = _start_day(factory, clock, initial, summaries, "Boundary input")
-    assert target.day_id is not None
-    day = DbTimelineDayRepository(factory).get(target.scope, target.day_id)
+    assert target.entry_id is not None
+    day = DbTimelineDayRepository(factory).get(target.scope, target.entry_id)
     crossing = BoundaryCrossingResponse(clock, day.boundary.closes_at)
     app = _service(factory, clock, crossing, summaries)
     attempt = app.history(target).attempts[0]
@@ -359,7 +359,7 @@ def test_stream_crossing_boundary_is_interrupted_without_persona_commit(
     assert tuple(message.role for message in history.messages) == ("user",)
     assert history.attempts[-1].status == "interrupted"
     assert history.attempts[-1].incomplete_output == "Too late"
-    assert DbTimelineDayRepository(factory).get(target.scope, target.day_id).is_closed
+    assert DbTimelineDayRepository(factory).get(target.scope, target.entry_id).is_closed
 
 
 def test_archive_race_fences_late_persona_commit(
@@ -476,7 +476,7 @@ def _start_day(
     return app, ConversationTarget(
         scope=reserved.day.scope,
         mode=ContinuityMode.TIMELINE,
-        day_id=reserved.day.id,
+        entry_id=reserved.day.id,
     )
 
 

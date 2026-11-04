@@ -11,9 +11,10 @@ from chat_buddy.characters.domain import (
     ActiveStorylineError,
     ArchivedContinuityError,
     ConfirmationConflictError,
+    ContinuityEntry,
     ContinuityLifecycle,
+    ContinuityMode,
     ContinuityNotFoundError,
-    ConversationScope,
     IdentityNotFoundError,
     PersonaNotFoundError,
     ResponseStyle,
@@ -570,14 +571,15 @@ class DbStorylineRepository:
         """
 
         return Scene(
-            id=row.id,
-            scope=ConversationScope(
+            entry=ContinuityEntry(
+                id=row.id,
                 identity_id=row.identity_id,
                 persona_id=row.persona_id,
                 continuity_id=row.continuity_id,
                 conversation_id=row.conversation_id,
+                mode=ContinuityMode.STORYLINE,
+                position=row.position,
             ),
-            position=row.position,
             details=SceneDetails(
                 title=row.title,
                 setup=row.setup,

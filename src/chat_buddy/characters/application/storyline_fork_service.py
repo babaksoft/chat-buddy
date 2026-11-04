@@ -102,7 +102,7 @@ class StorylineForkService:
                 If source state, branch point, or target ownership is invalid.
         """
 
-        if target.scene_id is None or target.mode != "storyline":
+        if target.entry_id is None or target.mode != "storyline":
             raise StorylineForkConflictError("A fork requires a Storyline scene")
 
         storyline = self._storylines.get(
@@ -115,7 +115,7 @@ class StorylineForkService:
         if storyline.revision != expected_storyline_revision:
             raise StaleStorylineError("Storyline changed before fork review")
 
-        scene = self._scenes.get(target.scope, target.scene_id)
+        scene = self._scenes.get(target.scope, target.entry_id)
         sequence = self._scenes.list(storyline)
         latest = sequence.scenes[-1]
         decision = decide_branch_mode(

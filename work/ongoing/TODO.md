@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 2 — add
-executable Entry domain and repository contracts. This refactor is a prerequisite
+Next delivery focus: Stage 8 Continuity Entry structural refactor, Slice 3 — Normalize
+Scene and Timeline Day persistence around Entries. This refactor is a prerequisite
 for Stage 8, Slice 10.
 
 Deferred product exploration:

@@ -280,7 +280,7 @@ Delivered by [ADR 040](../../docs/decisions/040-use-continuity-entries.md) and t
 
 ### Slice 2 — Add executable Entry domain and repository contracts
 
-Status: Pending
+Status: Complete
 
 Add immutable Pydantic values for `ContinuityEntry` and `EntryPosition`. Export
 them at the Characters domain boundary with complete field descriptions and
@@ -316,6 +316,11 @@ Add domain tests for:
 
 Complete when application code can express shared structural ownership without a
 Scene/Day union or paired nullable identifiers.
+
+Delivered by the exported `ContinuityEntry`, `EntryPosition`, and read-only
+`ContinuityEntryRepository` contracts. Scene and Timeline Day snapshots now contain
+their exact Entry, and conversation targets use one `entry_id` for both narrative
+modes while Ongoing remains entryless.
 
 ### Slice 3 — Normalize Scene and Timeline Day persistence around Entries
 

@@ -474,7 +474,7 @@ class StorylineExtractionContextService:
                 internally inconsistent.
         """
 
-        if target.mode != ContinuityMode.STORYLINE or target.scene_id is None:
+        if target.mode != ContinuityMode.STORYLINE or target.entry_id is None:
             raise UnsupportedContinuityModeError(
                 "Memory extraction snapshots require a Storyline scene"
             )
@@ -489,7 +489,7 @@ class StorylineExtractionContextService:
                 "Archived Storylines cannot request extraction snapshots"
             )
 
-        scene = self._scenes.get(target.scope, target.scene_id)
+        scene = self._scenes.get(target.scope, target.entry_id)
         sequence = self._scenes.list(storyline)
         selected_paths = {
             candidate.id: self._conversations.selected_path(candidate.scope)
@@ -666,7 +666,7 @@ class TimelineExtractionContextService:
                 If the source is not a complete selected turn.
         """
 
-        if target.mode != ContinuityMode.TIMELINE or target.day_id is None:
+        if target.mode != ContinuityMode.TIMELINE or target.entry_id is None:
             raise UnsupportedContinuityModeError(
                 "Memory extraction snapshots require a Timeline day"
             )
@@ -681,7 +681,7 @@ class TimelineExtractionContextService:
                 "Archived Timelines cannot request extraction snapshots"
             )
 
-        day = self._days.get(target.scope, target.day_id)
+        day = self._days.get(target.scope, target.entry_id)
         navigation = self._days.list(timeline)
         selected_paths = {
             candidate.id: self._conversations.selected_path(candidate.scope)

@@ -56,13 +56,13 @@ def test_mode_owned_target_requires_exact_scene_shape() -> None:
     )
     ongoing = ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING)
     storyline = ConversationTarget(
-        scope=scope, mode=ContinuityMode.STORYLINE, scene_id=uuid4()
+        scope=scope, mode=ContinuityMode.STORYLINE, entry_id=uuid4()
     )
 
-    assert ongoing.scene_id is None
-    assert storyline.scene_id is not None
+    assert ongoing.entry_id is None
+    assert storyline.entry_id is not None
     with pytest.raises(ValidationError):
-        ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING, scene_id=uuid4())
+        ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING, entry_id=uuid4())
     with pytest.raises(ValidationError):
         ConversationTarget(scope=scope, mode=ContinuityMode.STORYLINE)
     with pytest.raises(ValidationError):

@@ -12,6 +12,7 @@ from chat_buddy.characters.domain.continuity import (
     RelationshipSelection,
     StartingRelationship,
 )
+from chat_buddy.characters.domain.continuity_entry import ContinuityEntry
 from chat_buddy.characters.domain.conversation import ConversationScope
 from chat_buddy.characters.domain.identity import Identity
 from chat_buddy.characters.domain.persona import Persona
@@ -174,12 +175,8 @@ class Scene(BaseModel):
     """One immutable-position scene snapshot with complete graph ownership.
 
     Attributes:
-        id:
-            Stable scene identifier.
-        scope:
-            Complete conversation and Storyline ownership.
-        position:
-            Positive immutable chronological position.
+        entry:
+            Exact Storyline Entry owning shared structure.
         details:
             Current authored metadata and fixed response style.
         setup_locked:
@@ -188,15 +185,59 @@ class Scene(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: UUID = Field(description="Stable scene identifier.")
-    scope: ConversationScope = Field(description="Complete scene ownership.")
-    position: int = Field(ge=1, description="Immutable chronological position.")
+    entry: ContinuityEntry = Field(description="Exact owning Storyline Entry.")
     details: SceneDetails = Field(
         description="Current authored metadata and fixed response behavior."
     )
     setup_locked: bool = Field(
         description="Whether the first user message froze setup."
     )
+
+    @model_validator(mode="after")
+    def validate_entry_mode(self) -> Self:
+        """Require the subtype to contain a Storyline Entry.
+
+        Returns:
+            The validated Scene.
+
+        Raises:
+            ValueError:
+                If the Entry belongs to another mode.
+        """
+
+        if self.entry.mode != "storyline":
+            raise ValueError("A Scene requires a Storyline Entry")
+        return self
+
+    @property
+    def id(self) -> UUID:
+        """Return the represented Entry identifier.
+
+        Returns:
+            Stable Entry identifier.
+        """
+
+        return self.entry.id
+
+    @property
+    def scope(self) -> ConversationScope:
+        """Return conversation ownership derived from the Entry.
+
+        Returns:
+            Exact owned conversation scope.
+        """
+
+        return self.entry.scope
+
+    @property
+    def position(self) -> int:
+        """Return immutable order derived from the Entry.
+
+        Returns:
+            Positive Entry position.
+        """
+
+        return self.entry.position
 
 
 class SceneSequence(BaseModel):
@@ -233,17 +274,17 @@ class SceneSequence(BaseModel):
         )
         if any(
             (
-                scene.scope.identity_id,
-                scene.scope.persona_id,
-                scene.scope.continuity_id,
+                scene.entry.identity_id,
+                scene.entry.persona_id,
+                scene.entry.continuity_id,
             )
             != expected_scope
             for scene in self.scenes
         ):
             raise ValueError("Every scene must belong to the supplied Storyline")
 
-        if len({scene.id for scene in self.scenes}) != len(self.scenes) or len(
-            {scene.scope.conversation_id for scene in self.scenes}
+        if len({scene.entry.id for scene in self.scenes}) != len(self.scenes) or len(
+            {scene.entry.conversation_id for scene in self.scenes}
         ) != len(self.scenes):
             raise ValueError("Scene and conversation identifiers must be unique")
 

@@ -16,6 +16,7 @@ from chat_buddy.characters.domain.continuity import (
     StartContinuity,
     StartingRelationship,
 )
+from chat_buddy.characters.domain.continuity_entry import ContinuityEntry
 from chat_buddy.characters.domain.conversation import (
     ConversationHistory,
     ConversationScope,
@@ -327,6 +328,54 @@ class ContinuityRepository(Protocol):
 
         Returns:
             The archived snapshot, including repeated archive requests.
+        """
+
+        ...
+
+
+class ContinuityEntryRepository(Protocol):
+    """Read exact shared Entry ownership."""
+
+    def get(self, scope: ConversationScope, entry_id: UUID) -> ContinuityEntry:
+        """Read one Entry under complete conversation ownership.
+
+        Args:
+            scope:
+                Expected identity, persona, continuity, and conversation ownership.
+            entry_id:
+                Stable Entry identifier.
+
+        Returns:
+            The exactly owned Entry.
+
+        Raises:
+            ContinuityNotFoundError:
+                If no Entry exists under the complete supplied ownership.
+        """
+
+        ...
+
+    def list(
+        self,
+        identity_id: UUID,
+        persona_id: UUID,
+        continuity_id: UUID,
+        mode: Literal["storyline", "timeline"],
+    ) -> tuple[ContinuityEntry, ...]:
+        """List a continuity's Entries in immutable position order.
+
+        Args:
+            identity_id:
+                Expected identity owner.
+            persona_id:
+                Expected persona owner.
+            continuity_id:
+                Expected owning continuity.
+            mode:
+                Expected narrative continuity mode.
+
+        Returns:
+            Consecutive exactly owned Entries ordered from position one.
         """
 
         ...

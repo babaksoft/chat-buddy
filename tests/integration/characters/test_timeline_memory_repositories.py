@@ -46,8 +46,8 @@ def test_timeline_memory_persists_day_provenance_and_as_of_eligibility(
     list(app.stream(target, attempt.id))
     history = app.history(target)
     user, persona = history.messages
-    assert target.day_id is not None
-    day = DbTimelineDayRepository(factory).get(target.scope, target.day_id)
+    assert target.entry_id is not None
+    day = DbTimelineDayRepository(factory).get(target.scope, target.entry_id)
 
     effects = DbMemoryExtractionRepository(factory)
     effect = effects.reserve_timeline(target.scope, day.id, persona.id)

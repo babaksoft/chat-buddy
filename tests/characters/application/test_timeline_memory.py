@@ -264,7 +264,7 @@ def test_timeline_extraction_reserves_one_effect_for_the_source_turn() -> None:
     day_id = uuid4()
     source_id = uuid4()
     target = ConversationTarget(
-        scope=scope, mode=ContinuityMode.TIMELINE, day_id=day_id
+        scope=scope, mode=ContinuityMode.TIMELINE, entry_id=day_id
     )
     provenance = _provenance()
     selection = Mock()

@@ -263,10 +263,10 @@ class EvolutionEffectService:
             )
             if storyline.lifecycle != ContinuityLifecycle.ACTIVE:
                 raise ArchivedContinuityError("Archived Storylines cannot evolve.")
-            if target.scene_id is None:
+            if target.entry_id is None:
                 raise ValueError("Storyline evolution requires a scene owner.")
 
-            scene = self._scenes.get(target.scope, target.scene_id)
+            scene = self._scenes.get(target.scope, target.entry_id)
             kind = EvolutionEvidenceKind.STORYLINE_CHECKPOINT
             scene_id = scene.id
             scene_position = scene.position

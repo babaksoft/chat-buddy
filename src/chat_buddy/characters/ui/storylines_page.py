@@ -468,7 +468,7 @@ def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> UUID | 
     target = ConversationTarget(
         scope=scene.scope,
         mode=ContinuityMode.STORYLINE,
-        scene_id=scene.id,
+        entry_id=scene.id,
     )
     conversation = create_conversation_service()
     forks = create_storyline_fork_service()

@@ -95,13 +95,13 @@ class StorylineMemoryExtractionService:
                 If any proposal command is unsupported, omitted, foreign, or stale.
         """
 
-        if target.mode != ContinuityMode.STORYLINE or target.scene_id is None:
+        if target.mode != ContinuityMode.STORYLINE or target.entry_id is None:
             raise UnsupportedContinuityModeError(
                 "Memory extraction requires a Storyline scene target"
             )
 
         effect = self._effects.reserve(
-            target.scope, target.scene_id, source_persona_message_id
+            target.scope, target.entry_id, source_persona_message_id
         )
         if effect.state != ExtractionEffectState.RESERVED:
             return effect
@@ -315,13 +315,13 @@ class TimelineMemoryExtractionService(StorylineMemoryExtractionService):
                 If the source is no longer selected, complete, or owned.
         """
 
-        if target.mode != ContinuityMode.TIMELINE or target.day_id is None:
+        if target.mode != ContinuityMode.TIMELINE or target.entry_id is None:
             raise UnsupportedContinuityModeError(
                 "Memory extraction requires a Timeline day target"
             )
 
         effect = self._effects.reserve_timeline(
-            target.scope, target.day_id, source_persona_message_id
+            target.scope, target.entry_id, source_persona_message_id
         )
         if effect.state != ExtractionEffectState.RESERVED:
             return effect

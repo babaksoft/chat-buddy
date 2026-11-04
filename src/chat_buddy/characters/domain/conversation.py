@@ -45,21 +45,16 @@ class ConversationTarget(BaseModel):
             Complete profile, continuity, and conversation ownership.
         mode:
             Mode whose policy and prompt assembly govern the conversation.
-        scene_id:
-            Required Storyline scene owner and absent for Ongoing.
-        day_id:
-            Required Timeline day owner and absent for other modes.
+        entry_id:
+            Required Storyline or Timeline Entry owner and absent for Ongoing.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     scope: ConversationScope = Field(description="Complete conversation ownership.")
     mode: ContinuityMode = Field(description="Governing continuity mode.")
-    scene_id: UUID | None = Field(
-        default=None, description="Owning Storyline scene when applicable."
-    )
-    day_id: UUID | None = Field(
-        default=None, description="Owning Timeline day when applicable."
+    entry_id: UUID | None = Field(
+        default=None, description="Owning narrative Entry when applicable."
     )
 
     @model_validator(mode="after")
@@ -74,18 +69,12 @@ class ConversationTarget(BaseModel):
                 If the target does not have exactly its mode-specific owner.
         """
 
-        if self.mode == ContinuityMode.ONGOING and (
-            self.scene_id is not None or self.day_id is not None
-        ):
-            raise ValueError("Ongoing conversations do not have a scene or day owner")
-        if self.mode == ContinuityMode.STORYLINE and (
-            self.scene_id is None or self.day_id is not None
-        ):
-            raise ValueError("Storyline conversations require only a scene owner")
-        if self.mode == ContinuityMode.TIMELINE and (
-            self.day_id is None or self.scene_id is not None
-        ):
-            raise ValueError("Timeline conversations require only a day owner")
+        if self.mode == ContinuityMode.ONGOING and self.entry_id is not None:
+            raise ValueError("Ongoing conversations do not have an Entry owner")
+        if self.mode != ContinuityMode.ONGOING and self.entry_id is None:
+            raise ValueError(
+                "Storyline and Timeline conversations require an Entry owner"
+            )
         return self
 
 

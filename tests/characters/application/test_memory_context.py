@@ -16,6 +16,7 @@ from chat_buddy.characters.application import (
 from chat_buddy.characters.domain import (
     CompletedTurn,
     ContextCapacityError,
+    ContinuityEntry,
     ContinuityLifecycle,
     ContinuityMode,
     ConversationScope,
@@ -507,9 +508,15 @@ def test_response_service_uses_same_branch_and_time_eligibility_query() -> None:
         revision=1,
     )
     scene = Scene(
-        id=uuid4(),
-        scope=scope,
-        position=1,
+        entry=ContinuityEntry(
+            id=uuid4(),
+            identity_id=scope.identity_id,
+            persona_id=scope.persona_id,
+            continuity_id=scope.continuity_id,
+            conversation_id=scope.conversation_id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
         details=SceneDetails(
             title="Arrival",
             setup="At the platform.",
@@ -575,7 +582,7 @@ def test_snapshot_service_builds_owned_storyline_context_and_rejects_ongoing() -
     scope = _scope()
     scene_id = uuid4()
     target = ConversationTarget(
-        scope=scope, mode=ContinuityMode.STORYLINE, scene_id=scene_id
+        scope=scope, mode=ContinuityMode.STORYLINE, entry_id=scene_id
     )
     storyline = Storyline(
         id=scope.continuity_id,
@@ -592,9 +599,15 @@ def test_snapshot_service_builds_owned_storyline_context_and_rejects_ongoing() -
         instruction="Respond naturally.",
     )
     scene = Scene(
-        id=scene_id,
-        scope=scope,
-        position=1,
+        entry=ContinuityEntry(
+            id=scene_id,
+            identity_id=scope.identity_id,
+            persona_id=scope.persona_id,
+            continuity_id=scope.continuity_id,
+            conversation_id=scope.conversation_id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
         details=SceneDetails(
             title="Arrival",
             setup="At the platform.",

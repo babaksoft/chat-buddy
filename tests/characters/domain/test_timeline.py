@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
     ApplicationLocalTimezone,
+    ContinuityEntry,
     ContinuityLifecycle,
     ContinuityMode,
     ConversationScope,
@@ -146,14 +147,15 @@ def _day(
     opens_at = datetime.combine(local_date, datetime.min.time(), tzinfo=UTC)
     closes_at = opens_at + timedelta(days=1)
     return TimelineDay(
-        id=uuid4(),
-        scope=ConversationScope(
+        entry=ContinuityEntry(
+            id=uuid4(),
             identity_id=timeline.identity_id,
             persona_id=timeline.persona_id,
             continuity_id=timeline.id,
             conversation_id=uuid4(),
+            mode=ContinuityMode.TIMELINE,
+            position=position,
         ),
-        position=position,
         boundary=DayBoundary(
             local_date=local_date,
             timezone="UTC",
@@ -185,28 +187,23 @@ def _graph_request(day: TimelineDay) -> GraphActionRequest:
 
 
 @pytest.mark.parametrize(
-    ("mode", "scene_id", "day_id"),
+    ("mode", "entry_id"),
     [
-        (ContinuityMode.ONGOING, uuid4(), None),
-        (ContinuityMode.ONGOING, None, uuid4()),
-        (ContinuityMode.STORYLINE, None, None),
-        (ContinuityMode.STORYLINE, uuid4(), uuid4()),
-        (ContinuityMode.TIMELINE, None, None),
-        (ContinuityMode.TIMELINE, uuid4(), uuid4()),
+        (ContinuityMode.ONGOING, uuid4()),
+        (ContinuityMode.STORYLINE, None),
+        (ContinuityMode.TIMELINE, None),
     ],
 )
 def test_conversation_targets_reject_invalid_mode_ownership(
-    mode: ContinuityMode, scene_id: UUID | None, day_id: UUID | None
+    mode: ContinuityMode, entry_id: UUID | None
 ) -> None:
     """Require exactly the scene or day owner selected by the mode.
 
     Args:
         mode:
             Governing continuity mode.
-        scene_id:
-            Candidate Storyline owner.
-        day_id:
-            Candidate Timeline owner.
+        entry_id:
+            Candidate narrative Entry owner.
     """
 
     with pytest.raises(ValidationError):
@@ -218,31 +215,28 @@ def test_conversation_targets_reject_invalid_mode_ownership(
                 conversation_id=uuid4(),
             ),
             mode=mode,
-            scene_id=scene_id,
-            day_id=day_id,
+            entry_id=entry_id,
         )
 
 
 @pytest.mark.parametrize(
-    ("mode", "scene_id", "day_id"),
+    ("mode", "entry_id"),
     [
-        (ContinuityMode.ONGOING, None, None),
-        (ContinuityMode.STORYLINE, uuid4(), None),
-        (ContinuityMode.TIMELINE, None, uuid4()),
+        (ContinuityMode.ONGOING, None),
+        (ContinuityMode.STORYLINE, uuid4()),
+        (ContinuityMode.TIMELINE, uuid4()),
     ],
 )
 def test_conversation_targets_accept_exact_mode_ownership(
-    mode: ContinuityMode, scene_id: UUID | None, day_id: UUID | None
+    mode: ContinuityMode, entry_id: UUID | None
 ) -> None:
     """Accept ownerless Ongoing and one owner for each narrative mode.
 
     Args:
         mode:
             Governing continuity mode.
-        scene_id:
-            Candidate Storyline owner.
-        day_id:
-            Candidate Timeline owner.
+        entry_id:
+            Candidate narrative Entry owner.
     """
 
     target = ConversationTarget(
@@ -253,12 +247,10 @@ def test_conversation_targets_accept_exact_mode_ownership(
             conversation_id=uuid4(),
         ),
         mode=mode,
-        scene_id=scene_id,
-        day_id=day_id,
+        entry_id=entry_id,
     )
 
-    assert target.scene_id == scene_id
-    assert target.day_id == day_id
+    assert target.entry_id == entry_id
 
 
 def test_timeline_rejects_invalid_lifecycle_fields_and_is_immutable() -> None:
@@ -329,7 +321,12 @@ def test_navigation_allows_no_days_and_validates_immutable_day_order() -> None:
     with pytest.raises(ValidationError, match="consecutive"):
         TimelineNavigation(
             timeline=timeline,
-            days=(first, second.model_copy(update={"position": 3})),
+            days=(
+                first,
+                second.model_copy(
+                    update={"entry": second.entry.model_copy(update={"position": 3})}
+                ),
+            ),
         )
     with pytest.raises(ValidationError, match="increase strictly"):
         TimelineNavigation(
@@ -353,12 +350,12 @@ def test_navigation_rejects_foreign_ownership_and_calendar_zone() -> None:
 
     timeline = _timeline()
     day = _day(timeline, 1, date(2026, 11, 2), closed=False)
-    foreign_scope = day.scope.model_copy(update={"continuity_id": uuid4()})
+    foreign_entry = day.entry.model_copy(update={"continuity_id": uuid4()})
 
     with pytest.raises(ValidationError, match="supplied Timeline"):
         TimelineNavigation(
             timeline=timeline,
-            days=(day.model_copy(update={"scope": foreign_scope}),),
+            days=(day.model_copy(update={"entry": foreign_entry}),),
         )
 
     tehran_timeline = timeline.model_copy(

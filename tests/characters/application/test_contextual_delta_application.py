@@ -55,7 +55,7 @@ def _target(scope: ConversationScope) -> ConversationTarget:
     """
 
     return ConversationTarget(
-        scope=scope, mode=ContinuityMode.STORYLINE, scene_id=uuid4()
+        scope=scope, mode=ContinuityMode.STORYLINE, entry_id=uuid4()
     )
 
 
@@ -137,7 +137,7 @@ def test_process_applies_no_change_once_and_returns_terminal_effect() -> None:
 
     scope = _scope()
     target = _target(scope)
-    assert target.scene_id is not None
+    assert target.entry_id is not None
     source_id = uuid4()
     selector = StrategyIdentity(name="test.selector", version="1.0.0")
     provenance = _provenance(selector)
@@ -154,11 +154,11 @@ def test_process_applies_no_change_once_and_returns_terminal_effect() -> None:
         commands=(NoMemoryChangeCommand(),),
     )
     reserved = _effect(
-        scope, target.scene_id, source_id, ExtractionEffectState.RESERVED
+        scope, target.entry_id, source_id, ExtractionEffectState.RESERVED
     )
     completed = _effect(
         scope,
-        target.scene_id,
+        target.entry_id,
         source_id,
         ExtractionEffectState.NO_CHANGE,
         provenance,
@@ -192,12 +192,12 @@ def test_terminal_effect_skips_context_and_provider() -> None:
 
     scope = _scope()
     target = _target(scope)
-    assert target.scene_id is not None
+    assert target.entry_id is not None
     source_id = uuid4()
     selector = StrategyIdentity(name="test.selector", version="1.0.0")
     completed = _effect(
         scope,
-        target.scene_id,
+        target.entry_id,
         source_id,
         ExtractionEffectState.NO_CHANGE,
         _provenance(selector),
@@ -226,7 +226,7 @@ def test_invalid_delta_is_rejected_whole_before_repository_apply() -> None:
 
     scope = _scope()
     target = _target(scope)
-    assert target.scene_id is not None
+    assert target.entry_id is not None
     source_id = uuid4()
     selector = StrategyIdentity(name="test.selector", version="1.0.0")
     selection = Mock()
@@ -239,7 +239,7 @@ def test_invalid_delta_is_rejected_whole_before_repository_apply() -> None:
     memories = Mock()
     effects = Mock()
     effects.reserve.return_value = _effect(
-        scope, target.scene_id, source_id, ExtractionEffectState.RESERVED
+        scope, target.entry_id, source_id, ExtractionEffectState.RESERVED
     )
     service = StorylineMemoryExtractionService(
         contexts,
@@ -260,7 +260,7 @@ def test_create_cannot_recreate_a_subject_found_only_in_prior_context() -> None:
 
     scope = _scope()
     target = _target(scope)
-    assert target.scene_id is not None
+    assert target.entry_id is not None
     source_id = uuid4()
     selector = StrategyIdentity(name="test.selector", version="1.0.0")
     provenance = _provenance(selector)
@@ -289,7 +289,7 @@ def test_create_cannot_recreate_a_subject_found_only_in_prior_context() -> None:
     memories.list.return_value = (current_memory,)
     effects = Mock()
     effects.reserve.return_value = _effect(
-        scope, target.scene_id, source_id, ExtractionEffectState.RESERVED
+        scope, target.entry_id, source_id, ExtractionEffectState.RESERVED
     )
     service = StorylineMemoryExtractionService(
         contexts,
@@ -309,7 +309,7 @@ def test_ongoing_target_never_reserves_or_invokes_extraction() -> None:
     """Reject the memory-free mode before any durable or provider side effect."""
 
     scope = _scope()
-    target = ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING, scene_id=None)
+    target = ConversationTarget(scope=scope, mode=ContinuityMode.ONGOING)
     contexts = Mock()
     extractor = Mock()
     memories = Mock()

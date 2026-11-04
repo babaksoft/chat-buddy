@@ -10,7 +10,9 @@ from chat_buddy.characters.domain import (
     AdaptationFacet,
     CompletedTurn,
     ContextCapacityError,
+    ContinuityEntry,
     ContinuityLifecycle,
+    ContinuityMode,
     ConversationScope,
     EffectiveGeneration,
     EligibleContext,
@@ -116,9 +118,15 @@ def test_storyline_prompt_uses_exact_scene_blocks_and_selected_memory() -> None:
         revision=1,
     )
     scene = Scene(
-        id=uuid4(),
-        scope=scope,
-        position=1,
+        entry=ContinuityEntry(
+            id=uuid4(),
+            identity_id=scope.identity_id,
+            persona_id=scope.persona_id,
+            continuity_id=scope.continuity_id,
+            conversation_id=scope.conversation_id,
+            mode=ContinuityMode.STORYLINE,
+            position=1,
+        ),
         details=SceneDetails(
             title="Hidden presentation title",
             setup="They wait beside the midnight train.",

@@ -7,7 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from chat_buddy.characters.domain import (
+    ContinuityEntry,
     ContinuityLifecycle,
+    ContinuityMode,
     ConversationScope,
     Identity,
     IdentityDetails,
@@ -118,14 +120,15 @@ def _scene(storyline: Storyline, position: int, *, locked: bool = True) -> Scene
     """
 
     return Scene(
-        id=uuid4(),
-        scope=ConversationScope(
+        entry=ContinuityEntry(
+            id=uuid4(),
             identity_id=storyline.identity_id,
             persona_id=storyline.persona_id,
             continuity_id=storyline.id,
             conversation_id=uuid4(),
+            mode=ContinuityMode.STORYLINE,
+            position=position,
         ),
-        position=position,
         details=SceneDetails(
             title=f"Scene {position}",
             setup="A quiet station at dusk.",
@@ -274,7 +277,12 @@ def test_scene_sequence_requires_owned_consecutive_append_order() -> None:
 
     invalid_sequences = [
         (second, first),
-        (first, second.model_copy(update={"position": 3})),
+        (
+            first,
+            second.model_copy(
+                update={"entry": second.entry.model_copy(update={"position": 3})}
+            ),
+        ),
         (first.model_copy(update={"setup_locked": False}), second),
         (first, _scene(_storyline(), 2)),
     ]

@@ -71,7 +71,7 @@ class TimelineConversationAdapter:
                 If mode, history, or ownership is contradictory.
         """
 
-        if target.mode != ContinuityMode.TIMELINE or target.day_id is None:
+        if target.mode != ContinuityMode.TIMELINE or target.entry_id is None:
             raise ValueError("The Timeline adapter requires a Timeline day target")
         if history.scope != target.scope:
             raise ValueError("Conversation history does not match its target")
@@ -81,7 +81,7 @@ class TimelineConversationAdapter:
             target.scope.persona_id,
             target.scope.continuity_id,
         )
-        day = self._days.get(target.scope, target.day_id)
+        day = self._days.get(target.scope, target.entry_id)
         return timeline, day
 
     def require_writable(

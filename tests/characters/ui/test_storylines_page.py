@@ -14,8 +14,9 @@ from chat_buddy.characters.application import (
     StorylineService,
 )
 from chat_buddy.characters.domain import (
+    ContinuityEntry,
     ContinuityLifecycle,
-    ConversationScope,
+    ContinuityMode,
     Identity,
     IdentityDetails,
     Persona,
@@ -328,14 +329,14 @@ def test_selected_scene_conversation_uses_exact_target_and_scene_write_policy(
     call = rendered.call_args
     target = call.args[1]
     assert target.scope == latest.scope
-    assert target.scene_id == latest.id
+    assert target.entry_id == latest.id
     assert target.mode == "storyline"
     assert call.args[3] is False
     assert call.kwargs["read_only"] is False
 
     app.button(key=f"characters_select_scene_{sequence.scenes[0].id}").click().run()
     call = rendered.call_args
-    assert call.args[1].scene_id == sequence.scenes[0].id
+    assert call.args[1].entry_id == sequence.scenes[0].id
     assert call.kwargs["read_only"] is True
 
 
@@ -392,7 +393,7 @@ def test_fork_preview_duplicates_exactly_one_profile_with_observed_guards(
     preview = Mock()
     forks.preview.return_value = preview
     target = ConversationTarget(
-        scope=scene.scope, mode=ContinuityMode.STORYLINE, scene_id=scene.id
+        scope=scene.scope, mode=ContinuityMode.STORYLINE, entry_id=scene.id
     )
 
     result = storylines_page._prepare_fork_preview(
@@ -491,14 +492,15 @@ def _scene(storyline: Storyline, position: int, *, locked: bool) -> Scene:
     """
 
     return Scene(
-        id=uuid4(),
-        scope=ConversationScope(
+        entry=ContinuityEntry(
+            id=uuid4(),
             identity_id=storyline.identity_id,
             persona_id=storyline.persona_id,
             continuity_id=storyline.id,
             conversation_id=uuid4(),
+            mode=ContinuityMode.STORYLINE,
+            position=position,
         ),
-        position=position,
         details=SceneDetails(
             title="Arrival" if position == 1 else "Departure",
             setup="A quiet station at dusk.",

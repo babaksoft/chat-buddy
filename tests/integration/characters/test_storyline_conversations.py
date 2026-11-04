@@ -281,7 +281,7 @@ def test_storyline_conversation_rejects_archive_and_foreign_scene_ownership(
     assert app.history(target).messages[-1].role == "persona"
     assert archived.lifecycle == "archived"
 
-    foreign = target.model_copy(update={"scene_id": uuid4()})
+    foreign = target.model_copy(update={"entry_id": uuid4()})
     with pytest.raises(InvalidSceneOwnershipError):
         app.history(foreign)
 
@@ -300,7 +300,7 @@ def _target(scene_id: UUID, scope: ConversationScope) -> ConversationTarget:
     """
 
     return ConversationTarget(
-        scope=scope, mode=ContinuityMode.STORYLINE, scene_id=scene_id
+        scope=scope, mode=ContinuityMode.STORYLINE, entry_id=scene_id
     )
 
 

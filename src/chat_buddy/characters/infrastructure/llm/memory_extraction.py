@@ -375,7 +375,7 @@ class ContextualMemoryDeltaExtractor:
         temporal_owner = selection.context.scene or selection.context.day
         if temporal_owner is None:
             raise ValueError("Memory extraction context has no temporal owner")
-        
+
         allowed_occurrences = {temporal_owner}
         allowed_occurrences.update(
             memory.current.source.occurrence

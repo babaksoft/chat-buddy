@@ -14,8 +14,9 @@ from chat_buddy.characters.application import (
 )
 from chat_buddy.characters.domain import (
     ActiveStorylineError,
+    ContinuityEntry,
     ContinuityLifecycle,
-    ConversationScope,
+    ContinuityMode,
     Identity,
     IdentityDetails,
     Persona,
@@ -80,14 +81,15 @@ def services() -> Generator[tuple[Mock, Mock, Mock, Mock], None, None]:
             revision=1,
         )
         scene = Scene(
-            id=uuid4(),
-            scope=ConversationScope(
+            entry=ContinuityEntry(
+                id=uuid4(),
                 identity_id=storyline.identity_id,
                 persona_id=storyline.persona_id,
                 continuity_id=storyline.id,
                 conversation_id=uuid4(),
+                mode=ContinuityMode.STORYLINE,
+                position=1,
             ),
-            position=1,
             details=request.initial_scene,
             setup_locked=False,
         )
