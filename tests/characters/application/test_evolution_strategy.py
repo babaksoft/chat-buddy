@@ -18,8 +18,6 @@ from chat_buddy.characters.domain import (
     ContinuityMode,
     EvolutionConfiguration,
     EvolutionEvidence,
-    EvolutionEvidenceKind,
-    EvolutionEvidenceReference,
     EvolutionExperimentMetric,
     EvolutionExperimentResult,
     EvolutionProposal,
@@ -28,6 +26,7 @@ from chat_buddy.characters.domain import (
     EvolutionSnapshot,
     Identity,
     IdentityDetails,
+    OngoingEvolutionEvidenceReference,
     Persona,
     PersonaAdaptationProjection,
     PersonaCore,
@@ -93,9 +92,8 @@ def _snapshot() -> EvolutionSnapshot:
     scope = EvolutionScope(
         identity_id=uuid4(), persona_id=uuid4(), continuity_id=uuid4()
     )
-    reference = EvolutionEvidenceReference(
+    reference = OngoingEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.ONGOING_TURN,
         conversation_id=uuid4(),
         user_message_id=uuid4(),
         user_sequence=1,

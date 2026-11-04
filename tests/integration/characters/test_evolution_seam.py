@@ -9,12 +9,11 @@ from chat_buddy.characters.application import (
 )
 from chat_buddy.characters.domain import (
     EvolutionEvidence,
-    EvolutionEvidenceKind,
-    EvolutionEvidenceReference,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionScope,
     EvolutionSnapshot,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptationProjection,
     RelationshipAffection,
     RelationshipDynamic,
@@ -113,9 +112,8 @@ def test_strategy_substitution_cannot_mutate_production_ongoing_state(
         persona_id=scope.persona_id,
         continuity_id=scope.continuity_id,
     )
-    source = EvolutionEvidenceReference(
+    source = OngoingEvolutionEvidenceReference(
         scope=evolution_scope,
-        kind=EvolutionEvidenceKind.ONGOING_TURN,
         conversation_id=scope.conversation_id,
         user_message_id=history.messages[0].id,
         user_sequence=history.messages[0].sequence,

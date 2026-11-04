@@ -13,10 +13,11 @@ from chat_buddy.characters.domain import (
     AdaptationFacet,
     Boundary,
     ContinuityMode,
+    EntryEvolutionEvidenceReference,
+    EntryPosition,
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionEvidence,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionProposal,
     EvolutionRejectionReason,
@@ -24,6 +25,7 @@ from chat_buddy.characters.domain import (
     EvolutionSnapshot,
     Identity,
     IdentityDetails,
+    OngoingEvolutionEvidenceReference,
     Persona,
     PersonaAdaptation,
     PersonaAdaptationProjection,
@@ -51,8 +53,8 @@ class EvidenceTurn(BaseModel):
             Exact persona response.
         selected:
             Whether the exchange belongs to selected history.
-        scene_position:
-            Storyline scene position when the scenario uses Storyline mode.
+        entry_position:
+            Entry position when the scenario uses a narrative mode.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -60,8 +62,8 @@ class EvidenceTurn(BaseModel):
     user: str = Field(min_length=1, description="Exact identity message.")
     persona: str = Field(min_length=1, description="Exact persona response.")
     selected: bool = Field(default=True, description="Selected-history membership.")
-    scene_position: int | None = Field(
-        default=None, ge=1, description="Optional Storyline scene position."
+    entry_position: int | None = Field(
+        default=None, ge=1, description="Optional narrative Entry position."
     )
 
 
@@ -639,25 +641,33 @@ def _build_reference(
     """
 
     storyline = scenario.mode == ContinuityMode.STORYLINE
-    scene_position = turn.scene_position or index if storyline else None
-    return EvolutionEvidenceReference(
+    entry_position = turn.entry_position or index if storyline else None
+    conversation_id = _scenario_uuid(
+        scenario.name, f"conversation:{entry_position or 1}"
+    )
+    user_message_id = _scenario_uuid(scenario.name, f"user:{index}")
+    persona_message_id = _scenario_uuid(scenario.name, f"persona:{index}")
+    if not storyline:
+        return OngoingEvolutionEvidenceReference(
+            scope=scope,
+            conversation_id=conversation_id,
+            user_message_id=user_message_id,
+            user_sequence=index * 2 - 1,
+            persona_message_id=persona_message_id,
+            persona_sequence=index * 2,
+        )
+    assert entry_position is not None
+    return EntryEvolutionEvidenceReference(
         scope=scope,
-        kind=(
-            EvolutionEvidenceKind.STORYLINE_CHECKPOINT
-            if storyline
-            else EvolutionEvidenceKind.ONGOING_TURN
+        conversation_id=conversation_id,
+        entry=EntryPosition(
+            entry_id=_scenario_uuid(scenario.name, f"entry:{entry_position}"),
+            continuity_id=scope.continuity_id,
+            mode=ContinuityMode.STORYLINE,
+            position=entry_position,
         ),
-        conversation_id=_scenario_uuid(
-            scenario.name, f"conversation:{scene_position or 1}"
-        ),
-        scene_id=(
-            _scenario_uuid(scenario.name, f"scene:{scene_position}")
-            if storyline
-            else None
-        ),
-        scene_position=scene_position,
-        user_message_id=_scenario_uuid(scenario.name, f"user:{index}"),
+        user_message_id=user_message_id,
         user_sequence=index * 2 - 1,
-        persona_message_id=_scenario_uuid(scenario.name, f"persona:{index}"),
+        persona_message_id=persona_message_id,
         persona_sequence=index * 2,
     )

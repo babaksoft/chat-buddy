@@ -488,7 +488,7 @@ Ongoing remains memory-free, and response-context insertion remains unchanged.
 
 ### Slice 6 — Normalize evolution around Entry provenance
 
-Status: Pending
+Status: Complete
 
 Refactor existing Ongoing and Storyline evolution structure before enabling
 Timeline evolution.
@@ -536,6 +536,16 @@ that the structural rename does not change Storyline decisions.
 
 Complete when evolution no longer encodes a shared checkpoint as a Scene, yet
 Timeline evolution remains a clean, unimplemented extension for Slice 10.
+
+Delivered by explicit `OngoingEvolutionEvidenceReference` and
+`EntryEvolutionEvidenceReference` shapes, deterministic Entry-position ordering,
+shared Entry ownership resolution, and Entry-aware snapshot, reservation, replay,
+correction, inspection, observability, evaluation, and Storyline-fork paths.
+Evolution effects now persist constrained relational Entry provenance, while a
+forward-only Characters migration transforms every serialized Storyline reference
+without losing message, strategy, event, or correction audit data. Ongoing remains
+entryless, existing Storyline decisions and replay behavior are preserved, and
+Timeline processing continues to fail with the stable unavailable result.
 
 ### Slice 7 — Remove transitional concepts and prove isolation
 

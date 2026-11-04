@@ -86,6 +86,7 @@ def create_conversation_service(
 
     storylines = DbStorylineRepository(session_factory)
     scenes = DbSceneRepository(session_factory)
+    entries = DbContinuityEntryRepository(session_factory)
     timelines = DbTimelineRepository(session_factory)
     timeline_days = DbTimelineDayRepository(session_factory)
     conversations = DbConversationRepository(session_factory)
@@ -166,7 +167,7 @@ def create_conversation_service(
         conversations,
         DbContinuityRepository(session_factory),
         storylines,
-        scenes,
+        entries,
         evolution_repository,
         BaselineEvolutionSnapshotSelector(
             identities,

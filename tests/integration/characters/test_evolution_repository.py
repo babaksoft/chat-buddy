@@ -15,12 +15,12 @@ from chat_buddy.characters.domain import (
     EvolutionEffectConflictError,
     EvolutionEffectState,
     EvolutionEvent,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionProjectionConflictError,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionScope,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptationProjection,
     RelationshipAffection,
     RelationshipDynamic,
@@ -271,9 +271,8 @@ def _prepared(
         persona_id=conversation_scope.persona_id,
         continuity_id=conversation_scope.continuity_id,
     )
-    source = EvolutionEvidenceReference(
+    source = OngoingEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.ONGOING_TURN,
         conversation_id=conversation_scope.conversation_id,
         user_message_id=history.messages[0].id,
         user_sequence=1,

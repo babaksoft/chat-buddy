@@ -21,11 +21,11 @@ from chat_buddy.characters.domain import (
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionEvent,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionScope,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptation,
     PersonaAdaptationProjection,
     RelationshipAffection,
@@ -382,9 +382,8 @@ def _source(
     messages = app.history(target).messages
     user = messages[user_sequence - 1]
     persona = messages[persona_sequence - 1]
-    return EvolutionEvidenceReference(
+    return OngoingEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.ONGOING_TURN,
         conversation_id=target.scope.conversation_id,
         user_message_id=user.id,
         user_sequence=user_sequence,
@@ -423,9 +422,8 @@ def _prepared_sources(
         continuity_id=conversation_scope.continuity_id,
     )
     sources = tuple(
-        EvolutionEvidenceReference(
+        OngoingEvolutionEvidenceReference(
             scope=scope,
-            kind=EvolutionEvidenceKind.ONGOING_TURN,
             conversation_id=conversation_scope.conversation_id,
             user_message_id=messages[index * 2].id,
             user_sequence=index * 2 + 1,

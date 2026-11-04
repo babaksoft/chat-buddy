@@ -14,8 +14,6 @@ from chat_buddy.characters.domain import (
     EvolutionCommand,
     EvolutionDecisionOutcome,
     EvolutionEvidence,
-    EvolutionEvidenceKind,
-    EvolutionEvidenceReference,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionRejectionReason,
@@ -23,6 +21,7 @@ from chat_buddy.characters.domain import (
     EvolutionSnapshot,
     Identity,
     IdentityDetails,
+    OngoingEvolutionEvidenceReference,
     Persona,
     PersonaAdaptationProjection,
     PersonaCore,
@@ -73,9 +72,8 @@ def _snapshot(
     )
     conversation_id = uuid4()
     references = tuple(
-        EvolutionEvidenceReference(
+        OngoingEvolutionEvidenceReference(
             scope=scope,
-            kind=EvolutionEvidenceKind.ONGOING_TURN,
             conversation_id=conversation_id,
             user_message_id=uuid4(),
             user_sequence=index * 2 - 1,

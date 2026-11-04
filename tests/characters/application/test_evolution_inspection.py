@@ -14,12 +14,12 @@ from chat_buddy.characters.domain import (
     EvolutionCorrectionAction,
     EvolutionCorrectionEvent,
     EvolutionEvent,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionProjectionState,
     EvolutionProvenance,
     EvolutionRepository,
     EvolutionScope,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptationProjection,
     RelationshipAffection,
     RelationshipDynamic,
@@ -129,9 +129,8 @@ def _source(scope: EvolutionScope, conversation_id: UUID) -> EvolutionEvidenceRe
         Exact adjacent source reference.
     """
 
-    return EvolutionEvidenceReference(
+    return OngoingEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.ONGOING_TURN,
         conversation_id=conversation_id,
         user_message_id=uuid4(),
         user_sequence=1,

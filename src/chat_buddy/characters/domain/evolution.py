@@ -7,13 +7,14 @@ from enum import StrEnum
 from typing import Annotated, Literal, Protocol, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from chat_buddy.characters.domain.continuity import (
     Boundary,
     ContinuityMode,
     RelationshipIntent,
 )
+from chat_buddy.characters.domain.continuity_entry import EntryPosition
 from chat_buddy.characters.domain.identity import Identity
 from chat_buddy.characters.domain.persona import Persona
 from chat_buddy.characters.domain.strategy import StrategyIdentity
@@ -93,7 +94,7 @@ class EvolutionEvidenceKind(StrEnum):
     """Supported exact evidence checkpoint shapes."""
 
     ONGOING_TURN = "ongoing_turn"
-    STORYLINE_CHECKPOINT = "storyline_checkpoint"
+    ENTRY_CHECKPOINT = "entry_checkpoint"
 
 
 class EvolutionDecisionOutcome(StrEnum):
@@ -155,20 +156,14 @@ class EvolutionScope(BaseModel):
     continuity_id: UUID = Field(description="Permanent continuity owner.")
 
 
-class EvolutionEvidenceReference(BaseModel):
-    """Exact selected-history turn or Storyline checkpoint reference.
+class _EvolutionEvidenceReferenceBase(BaseModel):
+    """Facts shared by exact Ongoing and Entry-backed evidence references.
 
     Attributes:
         scope:
             Continuity ownership of the evidence.
-        kind:
-            Ongoing turn or Storyline checkpoint shape.
         conversation_id:
-            Exact source conversation, including one scene conversation.
-        scene_id:
-            Storyline scene owner, absent for Ongoing.
-        scene_position:
-            Storyline scene position, absent for Ongoing.
+            Exact source conversation.
         user_message_id:
             Source user message identifier.
         user_sequence:
@@ -182,14 +177,7 @@ class EvolutionEvidenceReference(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     scope: EvolutionScope = Field(description="Continuity evidence ownership.")
-    kind: EvolutionEvidenceKind = Field(description="Evidence checkpoint shape.")
     conversation_id: UUID = Field(description="Exact source conversation.")
-    scene_id: UUID | None = Field(
-        default=None, description="Storyline scene owner when applicable."
-    )
-    scene_position: int | None = Field(
-        default=None, ge=1, description="Storyline scene position when applicable."
-    )
     user_message_id: UUID = Field(description="Source user message identifier.")
     user_sequence: int = Field(gt=0, description="Source user message position.")
     persona_message_id: UUID = Field(description="Source persona message identifier.")
@@ -198,28 +186,116 @@ class EvolutionEvidenceReference(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_checkpoint_shape(self) -> Self:
-        """Require adjacent messages and mode-specific scene ownership.
+    def validate_adjacent_turn(self) -> Self:
+        """Require adjacent user and persona messages.
 
         Returns:
             Validated exact evidence reference.
 
         Raises:
             ValueError:
-                If message positions or scene ownership are malformed.
+                If message positions are malformed.
         """
 
         if self.persona_sequence != self.user_sequence + 1:
             raise ValueError("Evolution evidence must reference one adjacent turn.")
-        if self.kind == EvolutionEvidenceKind.ONGOING_TURN and (
-            self.scene_id is not None or self.scene_position is not None
-        ):
-            raise ValueError("Ongoing evidence cannot reference a Storyline scene.")
-        if self.kind == EvolutionEvidenceKind.STORYLINE_CHECKPOINT and (
-            self.scene_id is None or self.scene_position is None
-        ):
-            raise ValueError("Storyline evidence requires a scene checkpoint.")
         return self
+
+
+class OngoingEvolutionEvidenceReference(_EvolutionEvidenceReferenceBase):
+    """Exact selected-history turn in an entryless Ongoing continuity.
+
+    Attributes:
+        scope:
+            Continuity ownership of the evidence.
+        kind:
+            Stable Ongoing evidence discriminator.
+        conversation_id:
+            Exact source conversation.
+        user_message_id:
+            Source user message identifier.
+        user_sequence:
+            Source user message position within its conversation.
+        persona_message_id:
+            Adjacent source persona message identifier.
+        persona_sequence:
+            Source persona checkpoint position within its conversation.
+    """
+
+    kind: Literal[EvolutionEvidenceKind.ONGOING_TURN] = Field(
+        default=EvolutionEvidenceKind.ONGOING_TURN,
+        description="Stable Ongoing evidence discriminator.",
+    )
+
+
+class EntryEvolutionEvidenceReference(_EvolutionEvidenceReferenceBase):
+    """Exact selected-history checkpoint owned by one Continuity Entry.
+
+    Attributes:
+        scope:
+            Continuity ownership of the evidence.
+        kind:
+            Stable Entry-backed evidence discriminator.
+        conversation_id:
+            Exact source conversation.
+        entry:
+            Exact Entry identity, mode, and chronological position.
+        user_message_id:
+            Source user message identifier.
+        user_sequence:
+            Source user message position within its conversation.
+        persona_message_id:
+            Adjacent source persona message identifier.
+        persona_sequence:
+            Source persona checkpoint position within its conversation.
+    """
+
+    kind: Literal[EvolutionEvidenceKind.ENTRY_CHECKPOINT] = Field(
+        default=EvolutionEvidenceKind.ENTRY_CHECKPOINT,
+        description="Stable Entry-backed evidence discriminator.",
+    )
+    entry: EntryPosition = Field(description="Exact source Entry position.")
+
+    @model_validator(mode="after")
+    def validate_entry_owner(self) -> Self:
+        """Require the Entry position to share the evidence continuity.
+
+        Returns:
+            Validated Entry-backed evidence.
+
+        Raises:
+            ValueError:
+                If the Entry belongs to a different continuity.
+        """
+
+        if self.entry.continuity_id != self.scope.continuity_id:
+            raise ValueError("Evolution Entry evidence must share one continuity.")
+        return self
+
+
+EvolutionEvidenceReference = Annotated[
+    OngoingEvolutionEvidenceReference | EntryEvolutionEvidenceReference,
+    Field(discriminator="kind"),
+]
+_EVOLUTION_EVIDENCE_REFERENCE_ADAPTER: TypeAdapter[EvolutionEvidenceReference] = (
+    TypeAdapter(EvolutionEvidenceReference)
+)
+
+
+def parse_evolution_evidence_reference(
+    value: object,
+) -> EvolutionEvidenceReference:
+    """Parse serialized evidence into its explicit validated shape.
+
+    Args:
+        value:
+            Candidate serialized or model evidence value.
+
+    Returns:
+        Validated Ongoing or Entry-backed evidence reference.
+    """
+
+    return _EVOLUTION_EVIDENCE_REFERENCE_ADAPTER.validate_python(value)
 
 
 class EvolutionEvidence(BaseModel):
@@ -542,7 +618,7 @@ class EvolutionSnapshot(BaseModel):
         expected_kind = (
             EvolutionEvidenceKind.ONGOING_TURN
             if self.mode == ContinuityMode.ONGOING
-            else EvolutionEvidenceKind.STORYLINE_CHECKPOINT
+            else EvolutionEvidenceKind.ENTRY_CHECKPOINT
         )
         if self.mode == ContinuityMode.TIMELINE or any(
             reference.kind != expected_kind for reference in references
@@ -1753,10 +1829,15 @@ def _evidence_position(reference: EvolutionEvidenceReference) -> tuple[int, int]
             Exact evidence reference.
 
     Returns:
-        Scene and message position pair.
+        Entry and message position pair.
     """
 
-    return (reference.scene_position or 0, reference.persona_sequence)
+    entry_position = (
+        reference.entry.position
+        if isinstance(reference, EntryEvolutionEvidenceReference)
+        else 0
+    )
+    return (entry_position, reference.persona_sequence)
 
 
 def _require_change[CommandT](

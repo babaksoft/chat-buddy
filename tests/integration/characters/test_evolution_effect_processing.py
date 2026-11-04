@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from uuid import uuid5
+from types import SimpleNamespace
+from unittest.mock import Mock
+from uuid import uuid4, uuid5
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,6 +22,9 @@ from chat_buddy.characters.application import (
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
+    ContinuityMode,
+    ConversationScope,
+    ConversationTarget,
     EvolutionConfiguration,
     EvolutionEffectConflictError,
     EvolutionEffectState,
@@ -34,6 +39,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityEntryRepository,
     DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
@@ -123,6 +129,47 @@ class FailOnceEvolutionStrategy:
             self._failed = True
             raise RuntimeError("transient strategy failure")
         return self._delegate.propose(snapshot)
+
+
+def test_timeline_evolution_remains_explicitly_unavailable() -> None:
+    """Reject a complete Timeline checkpoint before reserving any effect."""
+
+    user_id = uuid4()
+    persona_id = uuid4()
+    conversations = Mock()
+    conversations.selected_path.return_value = SimpleNamespace(
+        messages=(
+            SimpleNamespace(id=user_id, role="user", parent_id=None),
+            SimpleNamespace(id=persona_id, role="persona", parent_id=user_id),
+        )
+    )
+    repository = Mock()
+    service = EvolutionEffectService(
+        conversations,
+        Mock(),
+        Mock(),
+        Mock(),
+        repository,
+        Mock(),
+        Mock(),
+        Mock(),
+        Mock(),
+    )
+    target = ConversationTarget(
+        scope=ConversationScope(
+            identity_id=uuid4(),
+            persona_id=uuid4(),
+            continuity_id=uuid4(),
+            conversation_id=uuid4(),
+        ),
+        mode=ContinuityMode.TIMELINE,
+        entry_id=uuid4(),
+    )
+
+    with pytest.raises(ValueError, match="Timeline evolution is not available"):
+        service.process(target, persona_id)
+
+    repository.reserve.assert_not_called()
 
 
 def test_completed_turn_applies_one_effect_and_reuses_it_on_repeat(
@@ -287,7 +334,7 @@ def _processor(
         conversations,
         continuities,
         storylines,
-        scenes,
+        DbContinuityEntryRepository(factory),
         evolution,
         selector,
         ContinuityStableEvolutionConfigurationResolver((configuration,)),

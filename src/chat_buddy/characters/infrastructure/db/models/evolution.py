@@ -51,6 +51,28 @@ class EvolutionEffectModel(CharactersBase):
             ],
             name="fk_evolution_effect_source",
         ),
+        ForeignKeyConstraint(
+            [
+                "entry_id",
+                "continuity_id",
+                "identity_id",
+                "persona_id",
+                "conversation_id",
+            ],
+            [
+                "characters.continuity_entries.id",
+                "characters.continuity_entries.continuity_id",
+                "characters.continuity_entries.identity_id",
+                "characters.continuity_entries.persona_id",
+                "characters.continuity_entries.conversation_id",
+            ],
+            name="fk_evolution_effect_entry",
+        ),
+        CheckConstraint(
+            "(evidence_kind = 'ongoing_turn' AND entry_id IS NULL) OR "
+            "(evidence_kind = 'entry_checkpoint' AND entry_id IS NOT NULL)",
+            name="ck_evolution_effect_evidence_shape",
+        ),
         CheckConstraint(
             "state IN ('reserved', 'no_change', 'applied', 'rejected')",
             name="ck_evolution_effect_state",
@@ -71,6 +93,12 @@ class EvolutionEffectModel(CharactersBase):
     conversation_id: Mapped[UUID] = mapped_column(Uuid, doc="Source conversation.")
     source_persona_message_id: Mapped[UUID] = mapped_column(
         Uuid, doc="Unique source persona checkpoint."
+    )
+    evidence_kind: Mapped[str] = mapped_column(
+        String(32), doc="Ongoing or Entry-backed evidence shape."
+    )
+    entry_id: Mapped[UUID | None] = mapped_column(
+        Uuid, doc="Exact source Entry for Entry-backed evidence."
     )
     source: Mapped[dict[str, Any]] = mapped_column(
         JSON, doc="Exact source evidence reference."

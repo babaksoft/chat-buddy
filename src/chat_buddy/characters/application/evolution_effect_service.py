@@ -14,18 +14,19 @@ from chat_buddy.characters.application.evolution_observability import (
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
+    ContinuityEntryRepository,
     ContinuityLifecycle,
     ContinuityMode,
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationTarget,
+    EntryEvolutionEvidenceReference,
     EvolutionConfiguration,
     EvolutionConfigurationResolver,
     EvolutionDecisionOutcome,
     EvolutionEffect,
     EvolutionEffectConflictError,
     EvolutionEffectState,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionObserver,
     EvolutionOperation,
@@ -35,6 +36,7 @@ from chat_buddy.characters.domain import (
     EvolutionSnapshotSelector,
     EvolutionStrategy,
     EvolutionThresholdPolicy,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptationProjection,
     RelationshipAffection,
     RelationshipDynamic,
@@ -42,7 +44,6 @@ from chat_buddy.characters.domain import (
     RelationshipRomanticStatus,
     RelationshipSocialStatus,
     RelationshipTrust,
-    SceneRepository,
     StartingRelationship,
     StorylineRepository,
 )
@@ -56,7 +57,7 @@ class EvolutionEffectService:
         conversations: ConversationGraphRepository,
         continuities: ContinuityRepository,
         storylines: StorylineRepository,
-        scenes: SceneRepository,
+        entries: ContinuityEntryRepository,
         repository: EvolutionRepository,
         selector: EvolutionSnapshotSelector,
         configuration_resolver: EvolutionConfigurationResolver,
@@ -73,8 +74,8 @@ class EvolutionEffectService:
                 Ongoing lifecycle and starting-state reader.
             storylines:
                 Storyline lifecycle and starting-state reader.
-            scenes:
-                Storyline scene position reader.
+            entries:
+                Shared narrative Entry ownership reader.
             repository:
                 Durable effect, event, and projection persistence.
             selector:
@@ -92,7 +93,7 @@ class EvolutionEffectService:
         self._conversations = conversations
         self._continuities = continuities
         self._storylines = storylines
-        self._scenes = scenes
+        self._entries = entries
         self._repository = repository
         self._selector = selector
         self._configuration_resolver = configuration_resolver
@@ -244,8 +245,6 @@ class EvolutionEffectService:
 
         user = path.messages[index - 1]
         persona = path.messages[index]
-        scene_id = None
-        scene_position = None
         if target.mode == ContinuityMode.ONGOING:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -255,8 +254,15 @@ class EvolutionEffectService:
             if continuity.conversation_id != target.scope.conversation_id:
                 raise ValueError("Evolution target contradicts its Ongoing owner.")
 
-            kind = EvolutionEvidenceKind.ONGOING_TURN
             starting_relationship = continuity.relationship
+            source: EvolutionEvidenceReference = OngoingEvolutionEvidenceReference(
+                scope=scope,
+                conversation_id=target.scope.conversation_id,
+                user_message_id=user.id,
+                user_sequence=index,
+                persona_message_id=persona.id,
+                persona_sequence=index + 1,
+            )
         elif target.mode == ContinuityMode.STORYLINE:
             storyline = self._storylines.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -266,28 +272,21 @@ class EvolutionEffectService:
             if target.entry_id is None:
                 raise ValueError("Storyline evolution requires a scene owner.")
 
-            scene = self._scenes.get(target.scope, target.entry_id)
-            kind = EvolutionEvidenceKind.STORYLINE_CHECKPOINT
-            scene_id = scene.id
-            scene_position = scene.position
+            entry = self._entries.get(target.scope, target.entry_id)
             starting_relationship = storyline.relationship
-        else:
-            raise ValueError("Timeline evolution is not available.")
-
-        return (
-            EvolutionEvidenceReference(
+            source = EntryEvolutionEvidenceReference(
                 scope=scope,
-                kind=kind,
                 conversation_id=target.scope.conversation_id,
-                scene_id=scene_id,
-                scene_position=scene_position,
+                entry=entry.entry_position,
                 user_message_id=user.id,
                 user_sequence=index,
                 persona_message_id=persona.id,
                 persona_sequence=index + 1,
-            ),
-            starting_relationship,
-        )
+            )
+        else:
+            raise ValueError("Timeline evolution is not available.")
+
+        return source, starting_relationship
 
     def _validate_configuration(self, configuration: EvolutionConfiguration) -> None:
         """Require resolved identities to match all bound implementations.

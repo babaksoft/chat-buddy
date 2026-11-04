@@ -15,8 +15,9 @@ from chat_buddy.characters.domain import (
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationScope,
+    EntryEvolutionEvidenceReference,
+    EntryPosition,
     EvolutionEvidence,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionMemory,
     EvolutionRepository,
@@ -25,13 +26,13 @@ from chat_buddy.characters.domain import (
     EvolutionSnapshotBudget,
     Identity,
     IdentityRepository,
+    OngoingEvolutionEvidenceReference,
     Persona,
     PersonaAdaptationProjection,
     PersonaRepository,
     PromptMessage,
     RelationshipIntent,
     RelationshipProjection,
-    Scene,
     SceneRepository,
     StartingRelationship,
     StorylineRepository,
@@ -139,16 +140,18 @@ class BaselineEvolutionSnapshotSelector:
         identity = self._identities.get(scope.identity_id)
         persona = self._personas.get(scope.persona_id)
         projections = self._evolution.get_projections(scope)
-        if source.kind == EvolutionEvidenceKind.ONGOING_TURN:
+        if isinstance(source, OngoingEvolutionEvidenceReference):
             mode = ContinuityMode.ONGOING
             relationship, evidence, summary, memories = self._ongoing_inputs(
                 scope, source
             )
-        else:
+        elif source.entry.mode == ContinuityMode.STORYLINE:
             mode = ContinuityMode.STORYLINE
             relationship, evidence, summary, memories = self._storyline_inputs(
                 scope, source
             )
+        else:
+            raise ValueError("Timeline evolution is not available.")
 
         source_evidence = next(
             (item for item in evidence if item.reference == source), None
@@ -199,7 +202,7 @@ class BaselineEvolutionSnapshotSelector:
         if (
             continuity.mode != ContinuityMode.ONGOING
             or continuity.conversation_id != source.conversation_id
-            or source.scene_id is not None
+            or not isinstance(source, OngoingEvolutionEvidenceReference)
         ):
             raise ValueError("Evolution source contradicts its Ongoing continuity.")
 
@@ -211,7 +214,6 @@ class BaselineEvolutionSnapshotSelector:
         )
         evidence = self._path_evidence(
             conversation_scope,
-            EvolutionEvidenceKind.ONGOING_TURN,
             source.persona_message_id,
         )
         summary = self._compatible_summary(
@@ -245,14 +247,19 @@ class BaselineEvolutionSnapshotSelector:
         )
         if storyline.lifecycle != ContinuityLifecycle.ACTIVE:
             raise ArchivedContinuityError("Archived Storylines cannot evolve.")
+        if (
+            not isinstance(source, EntryEvolutionEvidenceReference)
+            or source.entry.mode != ContinuityMode.STORYLINE
+        ):
+            raise ValueError("Evolution source contradicts its Storyline mode.")
 
         sequence = self._scenes.list(storyline)
         source_scene = next(
             (
                 scene
                 for scene in sequence.scenes
-                if scene.id == source.scene_id
-                and scene.position == source.scene_position
+                if scene.id == source.entry.entry_id
+                and scene.position == source.entry.position
                 and scene.scope.conversation_id == source.conversation_id
             ),
             None,
@@ -271,9 +278,8 @@ class BaselineEvolutionSnapshotSelector:
             )
             scene_evidence = self._path_evidence(
                 scene.scope,
-                EvolutionEvidenceKind.STORYLINE_CHECKPOINT,
                 checkpoint,
-                scene,
+                scene.entry.entry_position,
             )
             evidence_parts.extend(scene_evidence)
             selected_persona_ids.update(
@@ -304,21 +310,18 @@ class BaselineEvolutionSnapshotSelector:
     def _path_evidence(
         self,
         scope: ConversationScope,
-        kind: EvolutionEvidenceKind,
         checkpoint_id: UUID | None,
-        scene: Scene | None = None,
+        entry: EntryPosition | None = None,
     ) -> tuple[EvolutionEvidence, ...]:
         """Convert one selected ancestry into complete exact evidence turns.
 
         Args:
             scope:
                 Exact conversation ownership.
-            kind:
-                Ongoing or Storyline evidence shape.
             checkpoint_id:
                 Optional final persona checkpoint for truncation.
-            scene:
-                Storyline scene metadata when applicable.
+            entry:
+                Entry position for a narrative conversation, absent for Ongoing.
 
         Returns:
             Chronological whole selected turns through the checkpoint.
@@ -349,21 +352,31 @@ class BaselineEvolutionSnapshotSelector:
         for index in range(0, len(nodes), 2):
             user = nodes[index]
             persona = nodes[index + 1]
-            reference = EvolutionEvidenceReference(
-                scope=EvolutionScope(
-                    identity_id=scope.identity_id,
-                    persona_id=scope.persona_id,
-                    continuity_id=scope.continuity_id,
-                ),
-                kind=kind,
-                conversation_id=scope.conversation_id,
-                scene_id=scene.id if scene is not None else None,
-                scene_position=scene.position if scene is not None else None,
-                user_message_id=user.id,
-                user_sequence=index + 1,
-                persona_message_id=persona.id,
-                persona_sequence=index + 2,
+            evidence_scope = EvolutionScope(
+                identity_id=scope.identity_id,
+                persona_id=scope.persona_id,
+                continuity_id=scope.continuity_id,
             )
+            reference: EvolutionEvidenceReference
+            if entry is None:
+                reference = OngoingEvolutionEvidenceReference(
+                    scope=evidence_scope,
+                    conversation_id=scope.conversation_id,
+                    user_message_id=user.id,
+                    user_sequence=index + 1,
+                    persona_message_id=persona.id,
+                    persona_sequence=index + 2,
+                )
+            else:
+                reference = EntryEvolutionEvidenceReference(
+                    scope=evidence_scope,
+                    conversation_id=scope.conversation_id,
+                    entry=entry,
+                    user_message_id=user.id,
+                    user_sequence=index + 1,
+                    persona_message_id=persona.id,
+                    persona_sequence=index + 2,
+                )
             result.append(
                 EvolutionEvidence(
                     reference=reference,

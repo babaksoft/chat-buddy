@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    EntryEvolutionEvidenceReference,
     EvolutionCommand,
     EvolutionCorrectionAction,
     EvolutionCorrectionConflictError,
@@ -19,17 +20,18 @@ from chat_buddy.characters.domain import (
     EvolutionEffectConflictError,
     EvolutionEffectState,
     EvolutionEvent,
-    EvolutionEvidenceKind,
     EvolutionEvidenceReference,
     EvolutionProjectionConflictError,
     EvolutionProjectionState,
     EvolutionProposal,
     EvolutionProvenance,
     EvolutionScope,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptationProjection,
     RelationshipProjection,
     RemovePersonaAdaptationCommand,
     SetPersonaAdaptationCommand,
+    parse_evolution_evidence_reference,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityEntryModel,
@@ -40,7 +42,6 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
     PersonaAdaptationProjectionModel,
     RelationshipProjectionModel,
-    SceneModel,
 )
 
 _EVOLUTION_COMMAND_ADAPTER: TypeAdapter[EvolutionCommand] = TypeAdapter(
@@ -212,6 +213,12 @@ class DbEvolutionRepository:
                     persona_id=source.scope.persona_id,
                     conversation_id=source.conversation_id,
                     source_persona_message_id=source.persona_message_id,
+                    evidence_kind=source.kind.value,
+                    entry_id=(
+                        source.entry.entry_id
+                        if isinstance(source, EntryEvolutionEvidenceReference)
+                        else None
+                    ),
                     source=source.model_dump(mode="json"),
                     state=EvolutionEffectState.RESERVED.value,
                     provenance=provenance.model_dump(mode="json"),
@@ -833,7 +840,7 @@ class DbEvolutionRepository:
     ) -> None:
         """Validate terminal audit data against its fixed reservation."""
 
-        source = EvolutionEvidenceReference.model_validate(row.source)
+        source = parse_evolution_evidence_reference(row.source)
         provenance = EvolutionProvenance.model_validate(row.provenance)
         if proposal.source != source or proposal.provenance != provenance:
             raise EvolutionEffectConflictError(
@@ -873,8 +880,8 @@ class DbEvolutionRepository:
                 ConversationModel.mode
                 == (
                     "ongoing"
-                    if source.kind == EvolutionEvidenceKind.ONGOING_TURN
-                    else "storyline"
+                    if isinstance(source, OngoingEvolutionEvidenceReference)
+                    else source.entry.mode.value
                 ),
             )
         )
@@ -896,15 +903,14 @@ class DbEvolutionRepository:
             )
         )
 
-        scene_is_valid = source.kind == EvolutionEvidenceKind.ONGOING_TURN
-        if source.kind == EvolutionEvidenceKind.STORYLINE_CHECKPOINT:
-            scene_is_valid = (
+        entry_is_valid = isinstance(source, OngoingEvolutionEvidenceReference)
+        if isinstance(source, EntryEvolutionEvidenceReference):
+            entry_is_valid = (
                 session.scalar(
-                    select(SceneModel.id)
-                    .join(ContinuityEntryModel)
-                    .where(
-                        SceneModel.id == source.scene_id,
-                        ContinuityEntryModel.position == source.scene_position,
+                    select(ContinuityEntryModel.id).where(
+                        ContinuityEntryModel.id == source.entry.entry_id,
+                        ContinuityEntryModel.position == source.entry.position,
+                        ContinuityEntryModel.mode == source.entry.mode.value,
                         ContinuityEntryModel.conversation_id == source.conversation_id,
                         ContinuityEntryModel.continuity_id
                         == source.scope.continuity_id,
@@ -918,7 +924,7 @@ class DbEvolutionRepository:
             conversation is None
             or user is None
             or persona is None
-            or not scene_is_valid
+            or not entry_is_valid
         ):
             raise EvolutionEffectConflictError(
                 "Evolution source is not an owned completed turn"
@@ -1028,7 +1034,7 @@ class DbEvolutionRepository:
 
         return EvolutionEffect(
             id=row.id,
-            source=EvolutionEvidenceReference.model_validate(row.source),
+            source=parse_evolution_evidence_reference(row.source),
             state=EvolutionEffectState(row.state),
             provenance=EvolutionProvenance.model_validate(row.provenance),
             proposal=(

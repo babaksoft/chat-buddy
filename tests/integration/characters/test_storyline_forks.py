@@ -19,10 +19,9 @@ from chat_buddy.characters.domain import (
     CorrectMemoryCommand,
     CreateMemoryCommand,
     EffectiveGeneration,
+    EntryEvolutionEvidenceReference,
     EvolutionCorrectionAction,
     EvolutionCorrectionEvent,
-    EvolutionEvidenceKind,
-    EvolutionEvidenceReference,
     EvolutionScope,
     IdentityDetails,
     MemoryDelta,
@@ -505,23 +504,19 @@ def test_fork_replays_only_copied_evolution_and_remaps_corrections(
         persona_id=source_storyline.persona_id,
         continuity_id=source_storyline.id,
     )
-    first_source = EvolutionEvidenceReference(
+    first_source = EntryEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT,
         conversation_id=source_target.scope.conversation_id,
-        scene_id=source_scene.id,
-        scene_position=1,
+        entry=source_scene.entry.entry_position,
         user_message_id=history[0].id,
         user_sequence=1,
         persona_message_id=first_response_id,
         persona_sequence=2,
     )
-    later_source = EvolutionEvidenceReference(
+    later_source = EntryEvolutionEvidenceReference(
         scope=scope,
-        kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT,
         conversation_id=source_target.scope.conversation_id,
-        scene_id=source_scene.id,
-        scene_position=1,
+        entry=source_scene.entry.entry_position,
         user_message_id=history[2].id,
         user_sequence=3,
         persona_message_id=source_leaf_id,

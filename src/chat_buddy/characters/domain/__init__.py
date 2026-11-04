@@ -104,6 +104,7 @@ from chat_buddy.characters.domain.evolution import (
     MAX_COMMAND_SOURCES,
     MAX_EVOLUTION_COMMANDS,
     AdaptationFacet,
+    EntryEvolutionEvidenceReference,
     EvolutionCommand,
     EvolutionConfiguration,
     EvolutionConfigurationResolver,
@@ -132,6 +133,7 @@ from chat_buddy.characters.domain.evolution import (
     EvolutionStrategy,
     EvolutionThresholdAssessment,
     EvolutionThresholdPolicy,
+    OngoingEvolutionEvidenceReference,
     PersonaAdaptation,
     PersonaAdaptationProjection,
     RecordRelationshipMilestoneCommand,
@@ -151,6 +153,7 @@ from chat_buddy.characters.domain.evolution import (
     SetTrustCommand,
     apply_evolution_command,
     is_adaptation_command,
+    parse_evolution_evidence_reference,
 )
 from chat_buddy.characters.domain.evolution_observability import (
     EvolutionObserver,
@@ -343,6 +346,7 @@ __all__ = [
     "Dynamic",
     "EffectiveGeneration",
     "EligibleContext",
+    "EntryEvolutionEvidenceReference",
     "EntryPosition",
     "EvolutionCommand",
     "EvolutionConfiguration",
@@ -434,6 +438,7 @@ __all__ = [
     "ModelResolutionError",
     "NarrativePlacement",
     "NoMemoryChangeCommand",
+    "OngoingEvolutionEvidenceReference",
     "Persona",
     "PersonaAdaptation",
     "PersonaAdaptationProjection",
@@ -536,4 +541,5 @@ __all__ = [
     "VersionedResponseStyleSettings",
     "apply_evolution_command",
     "is_adaptation_command",
+    "parse_evolution_evidence_reference",
 ]

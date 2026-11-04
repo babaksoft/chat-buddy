@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
     ConfirmationConflictError,
+    EntryEvolutionEvidenceReference,
     EvolutionCommand,
     EvolutionCorrectionAction,
     EvolutionCorrectionEvent,
@@ -38,6 +39,7 @@ from chat_buddy.characters.domain import (
     StorylineForkResult,
     apply_evolution_command,
     is_adaptation_command,
+    parse_evolution_evidence_reference,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityEntryModel,
@@ -945,7 +947,7 @@ class DbStorylineForkRepository:
         ):
             return
 
-        source = EvolutionEvidenceReference.model_validate(effect.source)
+        source = parse_evolution_evidence_reference(effect.source)
         target_source = DbStorylineForkRepository._remap_evolution_source(
             source, target_scope, mapped
         )
@@ -956,7 +958,9 @@ class DbStorylineForkRepository:
             )
             for command in proposal.commands
         )
-        if target_source is None or any(command is None for command in commands):
+        if not isinstance(target_source, EntryEvolutionEvidenceReference) or any(
+            command is None for command in commands
+        ):
             return
 
         target_commands = tuple(command for command in commands if command is not None)
@@ -1081,7 +1085,7 @@ class DbStorylineForkRepository:
         session: Session,
         source_effect: EvolutionEffectModel,
         target_effect_id: UUID,
-        target_source: EvolutionEvidenceReference,
+        target_source: EntryEvolutionEvidenceReference,
         target_proposal: EvolutionProposal,
         target_decision: EvolutionDecision,
     ) -> None:
@@ -1111,6 +1115,8 @@ class DbStorylineForkRepository:
                 persona_id=scope.persona_id,
                 conversation_id=target_source.conversation_id,
                 source_persona_message_id=target_source.persona_message_id,
+                evidence_kind=target_source.kind.value,
+                entry_id=target_source.entry.entry_id,
                 source=target_source.model_dump(mode="json"),
                 state=source_effect.state,
                 provenance=deepcopy(source_effect.provenance),
@@ -1359,16 +1365,14 @@ class DbStorylineForkRepository:
         conversation_id = mapped["conversation"].get(source.conversation_id)
         user_message_id = mapped["message"].get(source.user_message_id)
         persona_message_id = mapped["message"].get(source.persona_message_id)
-        scene_id = (
-            mapped["scene"].get(source.scene_id)
-            if source.scene_id is not None
-            else None
-        )
+        if not isinstance(source, EntryEvolutionEvidenceReference):
+            return None
+        entry_id = mapped["scene"].get(source.entry.entry_id)
         if (
             conversation_id is None
             or user_message_id is None
             or persona_message_id is None
-            or (source.scene_id is not None and scene_id is None)
+            or entry_id is None
         ):
             return None
 
@@ -1376,7 +1380,12 @@ class DbStorylineForkRepository:
             update={
                 "scope": target_scope,
                 "conversation_id": conversation_id,
-                "scene_id": scene_id,
+                "entry": source.entry.model_copy(
+                    update={
+                        "entry_id": entry_id,
+                        "continuity_id": target_scope.continuity_id,
+                    }
+                ),
                 "user_message_id": user_message_id,
                 "persona_message_id": persona_message_id,
             }

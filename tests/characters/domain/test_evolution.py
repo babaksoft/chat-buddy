@@ -11,6 +11,8 @@ from chat_buddy.characters.domain import (
     MAX_EVOLUTION_COMMANDS,
     AdaptationFacet,
     ContinuityMode,
+    EntryEvolutionEvidenceReference,
+    EntryPosition,
     EvolutionDecision,
     EvolutionDecisionOutcome,
     EvolutionEvent,
@@ -28,6 +30,7 @@ from chat_buddy.characters.domain import (
     EvolutionThresholdPolicy,
     Identity,
     IdentityDetails,
+    OngoingEvolutionEvidenceReference,
     Persona,
     PersonaAdaptation,
     PersonaAdaptationProjection,
@@ -61,12 +64,40 @@ def test_evolution_component_seams_are_narrow_characters_protocols() -> None:
     assert "report" in dict(inspect.getmembers(EvolutionExperimentReporter))
 
 
+def test_evidence_shapes_keep_ongoing_entryless_and_require_owned_entries() -> None:
+    """Reject Entry data on Ongoing evidence and missing or foreign Entry owners."""
+
+    scope = EvolutionScope(
+        identity_id=uuid4(), persona_id=uuid4(), continuity_id=uuid4()
+    )
+    ongoing = _reference(scope)
+    entry = EntryPosition(
+        entry_id=uuid4(),
+        continuity_id=scope.continuity_id,
+        mode=ContinuityMode.STORYLINE,
+        position=1,
+    )
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        OngoingEvolutionEvidenceReference.model_validate(
+            {**ongoing.model_dump(), "entry": entry}
+        )
+    with pytest.raises(ValidationError, match="Field required"):
+        EntryEvolutionEvidenceReference.model_validate(ongoing.model_dump())
+    with pytest.raises(ValidationError, match="must share one continuity"):
+        EntryEvolutionEvidenceReference.model_validate(
+            {
+                **ongoing.model_dump(exclude={"kind"}),
+                "entry": entry.model_copy(update={"continuity_id": uuid4()}),
+            }
+        )
+
+
 def _reference(
     scope: EvolutionScope,
     *,
     kind: EvolutionEvidenceKind = EvolutionEvidenceKind.ONGOING_TURN,
     conversation_id: UUID | None = None,
-    scene_position: int | None = None,
+    entry_position: int | None = None,
 ) -> EvolutionEvidenceReference:
     """Build one exact evidence reference.
 
@@ -77,24 +108,37 @@ def _reference(
             Ongoing or Storyline evidence shape.
         conversation_id:
             Optional fixed conversation identifier.
-        scene_position:
-            Storyline scene position when applicable.
+        entry_position:
+            Entry position when applicable.
 
     Returns:
         Valid exact evidence reference.
     """
 
-    return EvolutionEvidenceReference(
+    resolved_conversation_id = conversation_id or uuid4()
+    user_message_id = uuid4()
+    persona_message_id = uuid4()
+    if kind == EvolutionEvidenceKind.ONGOING_TURN:
+        return OngoingEvolutionEvidenceReference(
+            scope=scope,
+            conversation_id=resolved_conversation_id,
+            user_message_id=user_message_id,
+            user_sequence=1,
+            persona_message_id=persona_message_id,
+            persona_sequence=2,
+        )
+    return EntryEvolutionEvidenceReference(
         scope=scope,
-        kind=kind,
-        conversation_id=conversation_id or uuid4(),
-        scene_id=(
-            uuid4() if kind == EvolutionEvidenceKind.STORYLINE_CHECKPOINT else None
+        conversation_id=resolved_conversation_id,
+        entry=EntryPosition(
+            entry_id=uuid4(),
+            continuity_id=scope.continuity_id,
+            mode=ContinuityMode.STORYLINE,
+            position=entry_position or 1,
         ),
-        scene_position=scene_position,
-        user_message_id=uuid4(),
+        user_message_id=user_message_id,
         user_sequence=1,
-        persona_message_id=uuid4(),
+        persona_message_id=persona_message_id,
         persona_sequence=2,
     )
 
@@ -134,7 +178,7 @@ def _snapshot(
         scope=scope,
         mode=(
             ContinuityMode.STORYLINE
-            if references[0].kind == EvolutionEvidenceKind.STORYLINE_CHECKPOINT
+            if references[0].kind == EvolutionEvidenceKind.ENTRY_CHECKPOINT
             else ContinuityMode.ONGOING
         ),
         identity=Identity(
@@ -181,23 +225,24 @@ def _snapshot(
     )
 
 
-def test_storyline_evidence_keeps_scene_and_conversation_checkpoints() -> None:
-    """Represent several Storyline conversations under one continuity."""
+def test_storyline_evidence_keeps_entry_and_conversation_checkpoints() -> None:
+    """Represent several Entry-owned conversations under one continuity."""
 
     scope = EvolutionScope(
         identity_id=uuid4(), persona_id=uuid4(), continuity_id=uuid4()
     )
     first = _reference(
-        scope, kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT, scene_position=1
+        scope, kind=EvolutionEvidenceKind.ENTRY_CHECKPOINT, entry_position=1
     )
     second = _reference(
-        scope, kind=EvolutionEvidenceKind.STORYLINE_CHECKPOINT, scene_position=2
+        scope, kind=EvolutionEvidenceKind.ENTRY_CHECKPOINT, entry_position=2
     )
     snapshot = _snapshot(scope, (first, second))
     assert snapshot.evidence[0].reference.conversation_id != (
         snapshot.evidence[1].reference.conversation_id
     )
-    assert snapshot.source.scene_position == 2
+    assert isinstance(snapshot.source, EntryEvolutionEvidenceReference)
+    assert snapshot.source.entry.position == 2
 
 
 def test_snapshot_rejects_foreign_duplicate_and_reordered_evidence() -> None:
