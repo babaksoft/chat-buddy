@@ -1,8 +1,8 @@
 # Stage 8 Structural Refactor Plan — Continuity Entries
 
-Status: Planned
+Status: In progress
 
-Last updated: 2026-11-03
+Last updated: 2026-11-04
 
 ## Outcome
 
@@ -234,7 +234,7 @@ the same cap.
 
 ### Slice 1 — Record the Continuity Entry decision and inventory
 
-Status: Pending
+Status: Complete
 
 Add a concise ADR defining Continuity Entry, its ownership, its relationship to
 Scene and Timeline Day, its position semantics, and the boundary between shared
@@ -274,6 +274,9 @@ genuinely differentiated concept merely for symmetry.
 Complete when the terminology and ownership model are precise enough that later
 slices do not need to guess whether a field belongs to Entry, Scene, Day, or
 Ongoing.
+
+Delivered by [ADR 040](../../docs/decisions/040-use-continuity-entries.md) and the
+[Continuity Entry structural inventory](CONTINUITY_ENTRY_INVENTORY.md).
 
 ### Slice 2 — Add executable Entry domain and repository contracts
 
