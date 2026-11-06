@@ -9,9 +9,11 @@ from chat_buddy.characters.ui import (
     render_identities,
     render_new_ongoing,
     render_new_storyline,
+    render_new_timeline,
     render_ongoing_page,
     render_personas,
     render_storylines_page,
+    render_timelines_page,
 )
 from chat_buddy.chat.ui import render as render_chat
 from chat_buddy.shared.config.logging import configure_logging
@@ -54,6 +56,18 @@ def main() -> None:
                 title="New Storyline",
                 icon="✨",
                 url_path="new-storyline",
+            ),
+            st.Page(
+                render_timelines_page,
+                title="Timelines",
+                icon="🗓️",
+                url_path="timelines",
+            ),
+            st.Page(
+                render_new_timeline,
+                title="New Timeline",
+                icon="✨",
+                url_path="new-timeline",
             ),
             st.Page(
                 render_identities,

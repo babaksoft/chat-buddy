@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 ## Outcome
 
@@ -554,7 +554,7 @@ PostgreSQL races between closure and retry, selection, or Branch from here.
 
 ### Slice 13 — Ship Timeline creation, navigation, day, and archive UI
 
-Status: Pending
+Status: Complete
 
 Add focused Streamlit pages and composition wiring for:
 
@@ -575,6 +575,23 @@ archive, and lazy area initialization.
 
 Complete when a user can create, find, understand, resume, and archive a Timeline
 without timezone setup or hidden calendar side effects.
+
+Delivered with a dedicated reviewed Timeline start page, automatically captured
+application-local IANA timezone, idempotent confirmation scope, and no day write
+before first interaction. Focused navigation groups active and archived Timelines
+under complete identity/persona ownership, represents only stored local dates,
+distinguishes current-open, closed, and archived-read-only history, and explains a
+valid Timeline with no represented days. Permanent archive requires explicit
+confirmation and preserves the selected read-only history.
+
+Production composition remains lazy and Characters-only. Timeline resume observes
+an overdue latest-day closure through the injected clock, stored boundary facts,
+selected graph path, and application/repository contracts before rendering; the UI
+does not query persistence or consult its process clock. Coverage includes invalid
+relationship input, revision-bound review, duplicate-submit prevention, absence of
+timezone controls, DST-boundary dates, no-interaction gaps, empty navigation,
+offline closure, archive confirmation, complete-scope validation, and Chat-free
+shell routing.
 
 ### Slice 14 — Ship Timeline chat, style, memory, evolution, and history guidance UI
 

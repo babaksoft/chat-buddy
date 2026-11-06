@@ -8,8 +8,12 @@ from chat_buddy.characters.application.starting_relationship import (
 )
 from chat_buddy.characters.domain import (
     ApplicationLocalTimezoneSource,
+    Clock,
+    ConversationGraphRepository,
+    DayClosureStatus,
     StartAvailability,
     StartTimeline,
+    Timeline,
     TimelineDayRepository,
     TimelineGroup,
     TimelineNavigation,
@@ -29,6 +33,8 @@ class TimelineService:
         days: TimelineDayRepository,
         timezone_source: ApplicationLocalTimezoneSource,
         calendar: TimelineCalendarPolicy | None = None,
+        graphs: ConversationGraphRepository | None = None,
+        clock: Clock | None = None,
     ) -> None:
         """Initialize Timeline lifecycle operations.
 
@@ -41,12 +47,25 @@ class TimelineService:
                 Injected application-local IANA timezone source.
             calendar:
                 Optional deterministic calendar policy.
+            graphs:
+                Optional selected-path reader used to observe closure on resume.
+            clock:
+                Optional injected clock paired with the graph reader.
+
+        Raises:
+            ValueError:
+                If only one closure-observation dependency is supplied.
         """
+
+        if (graphs is None) != (clock is None):
+            raise ValueError("Timeline resume closure requires both graph and clock")
 
         self._timelines = timelines
         self._days = days
         self._timezone_source = timezone_source
         self._calendar = calendar or TimelineCalendarPolicy()
+        self._graphs = graphs
+        self._clock = clock
 
     def start(self, review: TimelineStartReview) -> TimelineStartResult:
         """Confirm a reviewed Timeline.
@@ -153,6 +172,7 @@ class TimelineService:
         """
 
         timeline = self._timelines.get(identity_id, persona_id, timeline_id)
+        timeline = self._observe_latest_closure(timeline)
         return self._days.list(timeline)
 
     def archive(
@@ -184,3 +204,45 @@ class TimelineService:
             timeline_id,
             expected_revision,
         )
+
+    def _observe_latest_closure(self, timeline: Timeline) -> Timeline:
+        """Persist a due latest-day closure during navigation when configured.
+
+        Args:
+            timeline:
+                Loaded Timeline snapshot.
+
+        Returns:
+            Timeline snapshot refreshed after any closure write.
+        """
+
+        if self._graphs is None or self._clock is None:
+            return timeline
+
+        latest = self._days.latest(timeline)
+        if latest is None or latest.is_closed:
+            return timeline
+
+        facts = self._calendar.resolve_current(self._clock, timeline.calendar_timezone)
+        if facts.current_at < latest.boundary.closes_at:
+            return timeline
+
+        selected = self._graphs.selected_path(latest.scope)
+        result = self._days.observe_closure(
+            latest.scope,
+            latest.id,
+            facts.current_at,
+            timeline.revision,
+            selected.selected_leaf_id,
+        )
+        if result.status in {
+            DayClosureStatus.CLOSED,
+            DayClosureStatus.CLOSURE_RACE,
+            DayClosureStatus.ALREADY_CLOSED,
+            DayClosureStatus.STALE_REVISION,
+        }:
+            return self._timelines.get(
+                timeline.identity_id, timeline.persona_id, timeline.id
+            )
+
+        return timeline

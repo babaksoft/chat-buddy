@@ -11,6 +11,7 @@ from chat_buddy.characters.application import (
     ResponseStyleService,
     StorylineForkService,
     StorylineService,
+    TimelineService,
 )
 
 
@@ -115,6 +116,42 @@ def create_storyline_services() -> (
             DbStorylineRepository(CharactersSessionLocal),
             DbSceneRepository(CharactersSessionLocal),
             DbConversationRepository(CharactersSessionLocal),
+        ),
+    )
+
+
+def create_timeline_services() -> (
+    tuple[IdentityService, PersonaService, TimelineService]
+):
+    """Build profile and lifecycle services used by Timeline pages.
+
+    Returns:
+        Identity, persona, and Timeline application operations.
+    """
+
+    from chat_buddy.characters.infrastructure.clock import (
+        SystemLocalTimezoneSource,
+        SystemUtcClock,
+    )
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbConversationRepository,
+        DbTimelineDayRepository,
+        DbTimelineRepository,
+    )
+
+    timelines = DbTimelineRepository(CharactersSessionLocal)
+    days = DbTimelineDayRepository(CharactersSessionLocal)
+    conversations = DbConversationRepository(CharactersSessionLocal)
+    return (
+        create_identity_service(),
+        create_persona_service(),
+        TimelineService(
+            timelines,
+            days,
+            SystemLocalTimezoneSource(),
+            graphs=conversations,
+            clock=SystemUtcClock(),
         ),
     )
 
