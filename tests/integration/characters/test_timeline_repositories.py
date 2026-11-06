@@ -20,10 +20,12 @@ from chat_buddy.characters.domain import (
     RelationshipIntent,
     RelationshipSelection,
     ReserveTimelineDay,
+    ResponseContextProvenance,
     ResponseLength,
     ResponseStyleSettings,
     SceneDescriptionLevel,
     StartTimeline,
+    StrategyIdentity,
     StyleUpdateStatus,
     SubmittedInput,
     TimelineStartStatus,
@@ -84,6 +86,7 @@ def test_timeline_day_and_style_state_survive_repository_restart(
             boundary=boundary,
             submitted_input=SubmittedInput(content="Hello today"),
             generation=_generation(),
+            response_context=_response_context(),
         ),
     )
     assert reserved.status == DayReservationStatus.RESERVED
@@ -215,4 +218,19 @@ def _generation() -> EffectiveGeneration:
         configuration=GenerationConfiguration(max_output_tokens=128),
         capability="response",
         input_tokens=896,
+    )
+
+
+def _response_context() -> ResponseContextProvenance:
+    """Build deterministic Timeline response-context provenance.
+
+    Returns:
+        Valid Timeline selector and prompt-schema provenance.
+    """
+
+    return ResponseContextProvenance(
+        selector=StrategyIdentity(
+            name="baseline.timeline_response_context", version="1.0.0"
+        ),
+        prompt_schema_version="1.0.0",
     )

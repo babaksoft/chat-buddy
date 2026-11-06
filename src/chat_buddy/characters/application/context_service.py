@@ -112,6 +112,20 @@ class OngoingContextEligibility:
 class OngoingContextBudgeter:
     """Select a contiguous newest complete-turn suffix within one budget."""
 
+    _SELECTOR = StrategyIdentity(
+        name="baseline.ongoing_response_context", version="1.0.0"
+    )
+
+    @property
+    def selector(self) -> StrategyIdentity:
+        """Return the stable Ongoing whole-record selection identity.
+
+        Returns:
+            Ongoing response-context selector identity.
+        """
+
+        return self._SELECTOR
+
     def assemble(
         self,
         persona: Persona,
@@ -248,6 +262,20 @@ class OngoingContextBudgeter:
 
 class StorylineContextBudgeter:
     """Select one scene's newest complete-turn suffix within its response budget."""
+
+    _SELECTOR = StrategyIdentity(
+        name="baseline.storyline_response_context", version="1.0.0"
+    )
+
+    @property
+    def selector(self) -> StrategyIdentity:
+        """Return the stable Storyline whole-record selection identity.
+
+        Returns:
+            Storyline response-context selector identity.
+        """
+
+        return self._SELECTOR
 
     def assemble(
         self,

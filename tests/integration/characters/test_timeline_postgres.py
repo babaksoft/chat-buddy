@@ -49,6 +49,7 @@ from tests.integration.characters.test_timeline_day_service import MutableClock
 from tests.integration.characters.test_timeline_repositories import (
     _generation,
     _request,
+    _response_context,
 )
 
 pytestmark = pytest.mark.characters_postgres
@@ -177,6 +178,7 @@ def test_archive_and_first_send_serialize_on_timeline_owner(
         ),
         submitted_input=SubmittedInput(content="Hello today"),
         generation=_generation(),
+        response_context=_response_context(),
     )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -310,6 +312,7 @@ def test_style_update_and_first_send_snapshot_one_complete_revision(
         ),
         submitted_input=SubmittedInput(content="Race the style save"),
         generation=_generation(),
+        response_context=_response_context(),
     )
 
     with ThreadPoolExecutor(max_workers=2) as executor:

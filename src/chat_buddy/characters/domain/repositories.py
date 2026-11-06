@@ -1396,7 +1396,7 @@ class ConversationRepository(Protocol):
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
-        response_context: ResponseContextProvenance | None = None,
+        response_context: ResponseContextProvenance,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -1412,7 +1412,7 @@ class ConversationRepository(Protocol):
             submitted:
                 New input, or None to continue the existing unmatched tail.
             response_context:
-                Versioned mode-owned selector and prompt schema when recorded.
+                Versioned mode-owned selector and prompt schema.
 
         Returns:
             Detached domain snapshot.
@@ -1443,7 +1443,7 @@ class ConversationRepository(Protocol):
         generation: EffectiveGeneration,
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
-        response_context: ResponseContextProvenance | None = None,
+        response_context: ResponseContextProvenance,
     ) -> GenerationAttempt:
         """Reserve a bounded retry for the selected completed response.
 
@@ -1457,7 +1457,7 @@ class ConversationRepository(Protocol):
             expected_selected_leaf_id:
                 Selected final persona response observed during preflight.
             response_context:
-                Versioned mode-owned selector and prompt schema when recorded.
+                Versioned mode-owned selector and prompt schema.
 
         Returns:
             Detached pending retry attempt.

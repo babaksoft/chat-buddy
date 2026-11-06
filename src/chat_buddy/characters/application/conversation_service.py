@@ -70,7 +70,11 @@ from chat_buddy.characters.domain import (
     Timeline,
     TokenCounter,
 )
-from chat_buddy.characters.prompts import TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION
+from chat_buddy.characters.prompts import (
+    ONGOING_RESPONSE_PROMPT_SCHEMA_VERSION,
+    STORYLINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+    TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+)
 
 
 class _ConversationPersistence(
@@ -582,11 +586,6 @@ class ConversationService:
             retry_history.messages[-1].id,
         )
         response_context = self._response_context_provenance(target.mode)
-        if response_context is None:
-            return self._conversations.begin_retry(
-                scope, generation, settings, tail.id
-            )
-
         return self._conversations.begin_retry(
             scope, generation, settings, tail.id, response_context
         )
@@ -782,15 +781,6 @@ class ConversationService:
         expected_selected_leaf_id = tail.id if tail is not None else None
 
         response_context = self._response_context_provenance(target.mode)
-        if response_context is None:
-            return self._conversations.begin(
-                scope,
-                generation,
-                settings,
-                expected_selected_leaf_id,
-                submitted,
-            )
-
         return self._conversations.begin(
             scope,
             generation,
@@ -802,7 +792,7 @@ class ConversationService:
 
     def _response_context_provenance(
         self, mode: ContinuityMode
-    ) -> ResponseContextProvenance | None:
+    ) -> ResponseContextProvenance:
         """Resolve mode-owned response-context versions for reservation.
 
         Args:
@@ -810,16 +800,32 @@ class ConversationService:
                 Continuity mode governing prompt assembly.
 
         Returns:
-            Timeline context provenance, or none for unchanged modes.
+            Mode-specific response-context behavior provenance.
+
+        Raises:
+            ValueError:
+                If the continuity mode has no response-context policy.
         """
 
-        if mode != ContinuityMode.TIMELINE:
-            return None
+        if mode == ContinuityMode.ONGOING:
+            return ResponseContextProvenance(
+                selector=self._budgeter.selector,
+                prompt_schema_version=ONGOING_RESPONSE_PROMPT_SCHEMA_VERSION,
+            )
 
-        return ResponseContextProvenance(
-            selector=self._timeline_budgeter.selector,
-            prompt_schema_version=TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
-        )
+        if mode == ContinuityMode.STORYLINE:
+            return ResponseContextProvenance(
+                selector=self._storyline_budgeter.selector,
+                prompt_schema_version=STORYLINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+            )
+
+        if mode == ContinuityMode.TIMELINE:
+            return ResponseContextProvenance(
+                selector=self._timeline_budgeter.selector,
+                prompt_schema_version=TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+            )
+
+        raise ValueError(f"Unsupported continuity mode: {mode}")
 
     def _branch_decision(
         self,

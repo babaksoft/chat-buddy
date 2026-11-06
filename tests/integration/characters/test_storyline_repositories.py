@@ -21,6 +21,7 @@ from chat_buddy.characters.domain import (
     PersonaCore,
     RelationshipIntent,
     RelationshipSelection,
+    ResponseContextProvenance,
     ResponseProvenance,
     ResponseStyle,
     SceneAppendEligibility,
@@ -412,6 +413,12 @@ def _complete_exchange(
                     input_tokens=896,
                 ),
                 response_style=_style(),
+                response_context=ResponseContextProvenance(
+                    selector=StrategyIdentity(
+                        name="baseline.storyline_response_context", version="1.0.0"
+                    ),
+                    prompt_schema_version="1.0.0",
+                ),
                 evolution_strategy=StrategyIdentity(
                     name="baseline.no_change", version="1.0.0"
                 ),

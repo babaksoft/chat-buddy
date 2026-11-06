@@ -186,7 +186,7 @@ class GenerationAttempt(BaseModel):
         response_style:
             Immutable presentation snapshot rendered at reservation.
         response_context:
-            Versioned selector and prompt schema, when recorded by the mode.
+            Versioned mode-owned selector and prompt schema.
         status:
             Current lifecycle status.
         incomplete_output:
@@ -211,8 +211,8 @@ class GenerationAttempt(BaseModel):
     response_style: ResponseStyle = Field(
         description="Immutable effective response presentation."
     )
-    response_context: ResponseContextProvenance | None = Field(
-        default=None, description="Versioned response-context behavior."
+    response_context: ResponseContextProvenance = Field(
+        description="Versioned response-context behavior."
     )
     status: AttemptStatus = Field(description="Lifecycle status.")
     incomplete_output: str = Field(description="Accumulated output outside history.")

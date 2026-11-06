@@ -18,6 +18,7 @@ from chat_buddy.characters.domain import (
     ModelDescriptor,
     PromptMessage,
     ProviderInvocationError,
+    ResponseContextProvenance,
     SubmittedInput,
     SummaryConflictError,
 )
@@ -335,6 +336,7 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
+        response_context: ResponseContextProvenance,
     ) -> GenerationAttempt:
         """Switch selection immediately before the guarded reservation.
 
@@ -351,6 +353,8 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
                 Leaf observed during prompt preparation.
             submitted:
                 New user input.
+            response_context:
+                Versioned Ongoing selector and prompt schema.
 
         Returns:
             A reservation only if the stale guard unexpectedly permits it.
@@ -365,6 +369,7 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
             settings,
             expected_selected_leaf_id,
             submitted,
+            response_context,
         )
 
     with (

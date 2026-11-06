@@ -20,6 +20,8 @@ from chat_buddy.characters.domain import (
     InvalidProviderResponseError,
     ModelDescriptor,
     ProviderInvocationError,
+    ResponseContextProvenance,
+    StrategyIdentity,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.models import GenerationAttemptModel
@@ -54,6 +56,10 @@ def test_completed_turn_reloads_with_exact_history_and_provenance(
     gateway = FakeResponse()
     app = service(factory, gateway)
     attempt = app.send(ongoing_target(scope), SubmittedInput(content="  Hi\n"))
+    assert attempt.response_context.selector == StrategyIdentity(
+        name="baseline.ongoing_response_context", version="1.0.0"
+    )
+    assert attempt.response_context.prompt_schema_version == "1.0.0"
     assert app.history(ongoing_target(scope)).messages[0].content == "  Hi\n"
     assert list(app.stream(ongoing_target(scope), attempt.id)) == ["Hello", " there"]
     saved = service(factory, gateway).resume(ongoing_target(scope))
@@ -61,7 +67,15 @@ def test_completed_turn_reloads_with_exact_history_and_provenance(
     assert [m.sequence for m in saved.messages] == [1, 2]
     assert saved.attempts[0].status == "completed"
     assert saved.attempts[0].generation == attempt.generation
+    assert saved.attempts[0].response_context == attempt.response_context
     assert saved.attempts[0].finished_at is not None
+    completed = next(
+        node.message
+        for node in app.inspect_graph(ongoing_target(scope)).nodes
+        if node.message.role == "persona"
+    )
+    assert completed.response_provenance is not None
+    assert completed.response_provenance.response_context == attempt.response_context
     settings = ConversationSettings(
         provider="fake",
         model="second",
@@ -469,6 +483,12 @@ def test_configuration_change_preserves_pending_attempt_and_fences_stale_preflig
             ConversationSettings(provider="fake", model="first"),
             uuid4(),
             SubmittedInput(content="Stale"),
+            ResponseContextProvenance(
+                selector=StrategyIdentity(
+                    name="baseline.ongoing_response_context", version="1.0.0"
+                ),
+                prompt_schema_version="1.0.0",
+            ),
         )
     assert len(app.history(ongoing_target(scope)).messages) == 2
     next_attempt = app.send(ongoing_target(scope), SubmittedInput(content="Next"))

@@ -94,7 +94,7 @@ class DbConversationRepository:
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
-        response_context: ResponseContextProvenance | None = None,
+        response_context: ResponseContextProvenance,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -110,7 +110,7 @@ class DbConversationRepository:
             submitted:
                 New input, or None to continue the existing unmatched tail.
             response_context:
-                Versioned mode-owned selector and prompt schema when recorded.
+                Versioned mode-owned selector and prompt schema.
 
         Returns:
             Detached domain snapshot.
@@ -198,7 +198,7 @@ class DbConversationRepository:
         generation: EffectiveGeneration,
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
-        response_context: ResponseContextProvenance | None = None,
+        response_context: ResponseContextProvenance,
     ) -> GenerationAttempt:
         """Atomically reserve a bounded retry without changing selection.
 
@@ -212,7 +212,7 @@ class DbConversationRepository:
             expected_selected_leaf_id:
                 Selected final persona response observed during preflight.
             response_context:
-                Versioned mode-owned selector and prompt schema when recorded.
+                Versioned mode-owned selector and prompt schema.
 
         Returns:
             Detached pending retry attempt.
@@ -1228,29 +1228,28 @@ class DbConversationRepository:
     @staticmethod
     def _generation_payload(
         generation: EffectiveGeneration,
-        response_context: ResponseContextProvenance | None,
+        response_context: ResponseContextProvenance,
     ) -> dict[str, object]:
-        """Store generation and optional context versions in the existing ledger.
+        """Store generation and context versions in one attempt ledger value.
 
         Args:
             generation:
                 Effective provider generation snapshot.
             response_context:
-                Versioned response-context behavior when recorded.
+                Versioned response-context behavior.
 
         Returns:
-            Backward-compatible JSON payload.
+            Complete generation and response-context JSON payload.
         """
 
         payload: dict[str, object] = generation.model_dump(mode="json")
-        if response_context is not None:
-            payload["_response_context"] = response_context.model_dump(mode="json")
+        payload["_response_context"] = response_context.model_dump(mode="json")
 
         return payload
 
     @staticmethod
     def _effective_generation(payload: dict[str, object]) -> EffectiveGeneration:
-        """Read effective generation while ignoring optional context metadata.
+        """Read effective generation without its embedded context metadata.
 
         Args:
             payload:
@@ -1267,21 +1266,18 @@ class DbConversationRepository:
     @staticmethod
     def _response_context(
         payload: dict[str, object],
-    ) -> ResponseContextProvenance | None:
-        """Read optional context metadata from an attempt generation payload.
+    ) -> ResponseContextProvenance:
+        """Read required context metadata from an attempt generation payload.
 
         Args:
             payload:
                 Existing attempt generation JSON.
 
         Returns:
-            Recorded context provenance, or none for legacy and other-mode rows.
+            Recorded response-context provenance.
         """
 
-        value = payload.get("_response_context")
-        return (
-            None if value is None else ResponseContextProvenance.model_validate(value)
-        )
+        return ResponseContextProvenance.model_validate(payload["_response_context"])
 
 
 def _utc(value: datetime) -> datetime:

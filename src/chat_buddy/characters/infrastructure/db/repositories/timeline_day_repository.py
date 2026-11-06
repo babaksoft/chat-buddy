@@ -510,7 +510,7 @@ class DbTimelineDayRepository:
     @staticmethod
     def _generation_payload(
         generation: EffectiveGeneration,
-        response_context: ResponseContextProvenance | None,
+        response_context: ResponseContextProvenance,
     ) -> dict[str, object]:
         """Store generation and context versions in the existing JSON ledger.
 
@@ -521,18 +521,17 @@ class DbTimelineDayRepository:
                 Versioned Timeline selector and prompt schema.
 
         Returns:
-            Backward-compatible generation JSON.
+            Complete generation and response-context JSON payload.
         """
 
         payload: dict[str, object] = generation.model_dump(mode="json")
-        if response_context is not None:
-            payload["_response_context"] = response_context.model_dump(mode="json")
+        payload["_response_context"] = response_context.model_dump(mode="json")
 
         return payload
 
     @staticmethod
     def _effective_generation(payload: dict[str, object]) -> EffectiveGeneration:
-        """Read generation while ignoring optional context metadata.
+        """Read generation without its embedded context metadata.
 
         Args:
             payload:
@@ -549,21 +548,18 @@ class DbTimelineDayRepository:
     @staticmethod
     def _response_context(
         payload: dict[str, object],
-    ) -> ResponseContextProvenance | None:
-        """Read optional context versions from attempt generation JSON.
+    ) -> ResponseContextProvenance:
+        """Read required context versions from attempt generation JSON.
 
         Args:
             payload:
                 Persisted attempt generation JSON.
 
         Returns:
-            Recorded context provenance, if present.
+            Recorded Timeline context provenance.
         """
 
-        value = payload.get("_response_context")
-        return (
-            None if value is None else ResponseContextProvenance.model_validate(value)
-        )
+        return ResponseContextProvenance.model_validate(payload["_response_context"])
 
     @staticmethod
     def _utc(value: datetime) -> datetime:

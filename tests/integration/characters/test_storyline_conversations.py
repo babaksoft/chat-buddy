@@ -27,6 +27,7 @@ from chat_buddy.characters.domain import (
     ModelDescriptor,
     ProviderInvocationError,
     ResponseMemoryBudget,
+    StrategyIdentity,
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
@@ -114,7 +115,18 @@ def test_storyline_response_prompt_reads_current_eligible_memory(
     target = _target(scene.id, scene.scope)
 
     attempt = app.send(target, SubmittedInput(content="Remind me when we leave."))
+    assert attempt.response_context.selector == StrategyIdentity(
+        name="baseline.storyline_response_context", version="1.0.0"
+    )
+    assert attempt.response_context.prompt_schema_version == "1.0.0"
     list(app.stream(target, attempt.id))
+    completed = next(
+        node.message
+        for node in app.inspect_graph(target).nodes
+        if node.message.role == "persona"
+    )
+    assert completed.response_provenance is not None
+    assert completed.response_provenance.response_context == attempt.response_context
     rendered = "\n".join(message.content for message in responses.captured[-1])
     assert "Continuity memory:" in rendered
     assert "The train leaves at midnight." in rendered

@@ -489,7 +489,7 @@ class ReserveTimelineDay(BaseModel):
         generation:
             Effective provider, model, configuration, and budget snapshot.
         response_context:
-            Versioned Timeline selector and prompt schema when available.
+            Versioned Timeline selector and prompt schema.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -506,8 +506,8 @@ class ReserveTimelineDay(BaseModel):
     generation: EffectiveGeneration = Field(
         description="Effective generation selection for the first attempt."
     )
-    response_context: ResponseContextProvenance | None = Field(
-        default=None, description="Versioned Timeline response-context behavior."
+    response_context: ResponseContextProvenance = Field(
+        description="Versioned Timeline response-context behavior."
     )
 
 

@@ -29,7 +29,7 @@ class ResponseProvenance(BaseModel):
         response_style:
             Fixed response-presentation snapshot.
         response_context:
-            Versioned context selector and prompt schema when recorded.
+            Versioned mode-owned context selector and prompt schema.
         evolution_strategy:
             Configured persona-evolution strategy name and version.
         attempt_id:
@@ -44,8 +44,8 @@ class ResponseProvenance(BaseModel):
     response_style: ResponseStyle = Field(
         description="Effective response-presentation behavior."
     )
-    response_context: ResponseContextProvenance | None = Field(
-        default=None, description="Versioned response-context behavior."
+    response_context: ResponseContextProvenance = Field(
+        description="Versioned response-context behavior."
     )
     evolution_strategy: StrategyIdentity = Field(
         description="Configured persona-evolution strategy."

@@ -13,6 +13,8 @@ from chat_buddy.characters.domain import (
     Storyline,
 )
 
+STORYLINE_RESPONSE_PROMPT_SCHEMA_VERSION = "1.0.0"
+
 
 def assemble_continuity_memory_blocks(
     memories: tuple[ContinuityMemory, ...],

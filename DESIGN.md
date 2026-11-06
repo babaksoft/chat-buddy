@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-11-04
+Last updated: 2026-11-06
 
 ## Purpose and scope
 
@@ -514,6 +514,12 @@ and incomplete attempt output. Every operation requires the complete identity,
 persona, continuity, and conversation scope. Writes serialize with continuity
 archival, so no message or response can commit after the continuity becomes
 read-only.
+
+Every Ongoing, Storyline, and Timeline attempt records its mode-specific context
+selector identity and ordered prompt-schema version. A completed persona response
+retains that same immutable response-context provenance with its generation and
+response-style provenance. Selector identities remain distinct because each mode
+owns different eligibility and temporal rules.
 
 Ongoing context is ordered as:
 

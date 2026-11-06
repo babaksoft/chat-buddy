@@ -18,6 +18,7 @@ from chat_buddy.characters.domain import (
     Message,
     MessageNode,
     ProviderInvocationError,
+    ResponseContextProvenance,
     ResponseProvenance,
     ResponseStyle,
     StaleSelectionError,
@@ -82,6 +83,12 @@ def _graph_with_controls(service: Mock) -> tuple[MessageNode, MessageNode, Messa
                 generation=generation,
                 response_style=ResponseStyle(
                     name="ongoing", version="1.0.0", instruction="Respond naturally."
+                ),
+                response_context=ResponseContextProvenance(
+                    selector=StrategyIdentity(
+                        name="baseline.ongoing_response_context", version="1.0.0"
+                    ),
+                    prompt_schema_version="1.0.0",
                 ),
                 evolution_strategy=StrategyIdentity(name="baseline", version="1.0.0"),
                 attempt_id=uuid4(),
@@ -246,6 +253,12 @@ def conversation_ui() -> Generator[tuple[AppTest, Mock], None, None]:
             name="characters.response_style",
             version="1.0.0",
             instruction="Use the saved presentation controls.",
+        ),
+        response_context=ResponseContextProvenance(
+            selector=StrategyIdentity(
+                name="baseline.ongoing_response_context", version="1.0.0"
+            ),
+            prompt_schema_version="1.0.0",
         ),
         status="pending",
         incomplete_output="",

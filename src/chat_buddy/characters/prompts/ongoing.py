@@ -13,6 +13,7 @@ from chat_buddy.characters.domain import (
 
 # Extra deterministic safety reserve beyond the provider counter's framing.
 PROMPT_OVERHEAD_TOKENS = 64
+ONGOING_RESPONSE_PROMPT_SCHEMA_VERSION = "1.0.0"
 
 
 def assemble_ongoing_prompt(

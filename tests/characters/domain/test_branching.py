@@ -18,6 +18,7 @@ from chat_buddy.characters.domain import (
     GraphActionRequest,
     MessageNode,
     ModelDescriptor,
+    ResponseContextProvenance,
     ResponseProvenance,
     ResponseStyle,
     RetryAvailability,
@@ -69,6 +70,12 @@ def _provenance() -> ResponseProvenance:
             name="ongoing.default",
             version="1.0.0",
             instruction="Respond naturally while preserving authored boundaries.",
+        ),
+        response_context=ResponseContextProvenance(
+            selector=StrategyIdentity(
+                name="baseline.ongoing_response_context", version="1.0.0"
+            ),
+            prompt_schema_version="1.0.0",
         ),
         evolution_strategy=StrategyIdentity(name="baseline.no_change", version="1.0.0"),
         attempt_id=uuid4(),
@@ -242,7 +249,14 @@ def test_response_provenance_and_graph_values_are_frozen() -> None:
     assert provenance.generation.configuration.max_output_tokens == 128
     assert provenance.generation.input_tokens == 8064
     assert provenance.response_style.name == "ongoing.default"
+    assert provenance.response_context.selector.name == (
+        "baseline.ongoing_response_context"
+    )
     assert provenance.evolution_strategy.name == "baseline.no_change"
+    with pytest.raises(ValidationError, match="response_context"):
+        ResponseProvenance.model_validate(
+            provenance.model_dump(exclude={"response_context"})
+        )
     with pytest.raises(ValidationError):
         provenance.attempt_id = uuid4()
     with pytest.raises(ValidationError, match="response generation"):
@@ -254,6 +268,7 @@ def test_response_provenance_and_graph_values_are_frozen() -> None:
                 update={"model": summary_descriptor, "capability": "summary"}
             ),
             response_style=provenance.response_style,
+            response_context=provenance.response_context,
             evolution_strategy=provenance.evolution_strategy,
             attempt_id=uuid4(),
         )
