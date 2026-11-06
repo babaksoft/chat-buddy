@@ -24,6 +24,7 @@ from chat_buddy.characters.domain import (
     ProviderInvocationError,
     SubmittedInput,
     TimelineDayReadOnlyError,
+    TimelineGraphActionUnavailableReason,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
@@ -434,6 +435,82 @@ def test_incomplete_timeline_attempt_recovers_after_service_restart(
     assert history.attempts[-2].incomplete_output == "Partial"
     assert all(
         "Partial" not in message.content for message in recovered_gateway.captured[-1]
+    )
+
+
+def test_open_day_branching_preserves_every_saved_future(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Branch in place on the latest open day without deleting graph nodes.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    clock = MutableClock(datetime(2026, 11, 2, 8, tzinfo=UTC))
+    responses = FakeResponse()
+    app, target = _start_day(factory, clock, responses, FakeSummary(), "First")
+    list(app.stream(target, app.history(target).attempts[0].id))
+    first_response_id = app.history(target).messages[-1].id
+    second = app.send(target, SubmittedInput(content="Second"))
+    list(app.stream(target, second.id))
+    saved_leaf_id = app.history(target).messages[-1].id
+    before = app.inspect_graph(target)
+
+    selected = app.branch_from_here(target, first_response_id, saved_leaf_id)
+
+    assert selected.selected_leaf_id == first_response_id
+    assert tuple(node.message for node in app.inspect_graph(target).nodes) == tuple(
+        node.message for node in before.nodes
+    )
+    branched = app.send(target, SubmittedInput(content="Alternate second"))
+    list(app.stream(target, branched.id))
+    graph = app.inspect_graph(target)
+    assert saved_leaf_id in {node.message.id for node in graph.nodes}
+
+
+def test_closed_day_graph_actions_return_stable_reason_and_preserve_graph(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Reject retry, selection, and branching after observed day closure.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters database factory.
+    """
+
+    factory = characters_session_factory
+    clock = MutableClock(datetime(2026, 11, 2, 8, tzinfo=UTC))
+    responses = FakeResponse()
+    app, target = _start_day(factory, clock, responses, FakeSummary(), "Close me")
+    list(app.stream(target, app.history(target).attempts[0].id))
+    original_id = app.history(target).messages[-1].id
+    retry = app.retry_completed_response(target)
+    list(app.stream(target, retry.id))
+    selected_id = app.history(target).messages[-1].id
+    before = app.inspect_graph(target)
+    assert target.entry_id is not None
+    day = DbTimelineDayRepository(factory).get(target.scope, target.entry_id)
+    clock.value = day.boundary.closes_at
+
+    closed_view = app.inspect_graph(target)
+    assert not any(node.branchable for node in closed_view.nodes)
+    actions = (
+        lambda: app.retry_completed_response(target),
+        lambda: app.select_alternative(target, original_id, selected_id),
+        lambda: app.branch_from_here(target, original_id, selected_id),
+        lambda: app.send(target, SubmittedInput(content="Too late")),
+    )
+    for action in actions:
+        with pytest.raises(TimelineDayReadOnlyError) as error:
+            action()
+        assert error.value.reason == TimelineGraphActionUnavailableReason.CLOSED_DAY
+
+    after = app.inspect_graph(target)
+    assert tuple(node.message for node in after.nodes) == tuple(
+        node.message for node in before.nodes
     )
 
 

@@ -68,6 +68,8 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
     SummaryRepository,
     Timeline,
+    TimelineDayReadOnlyError,
+    TimelineWriteGuard,
     TokenCounter,
 )
 from chat_buddy.characters.prompts import (
@@ -240,7 +242,10 @@ class ConversationService:
         self._evolution_projections = evolution_projections
         self._evolution_rebuilder = evolution_rebuilder
         self._branch_mode_facts = (
-            branch_mode_facts or storyline_adapter or DeferredBranchModeFactsResolver()
+            branch_mode_facts
+            or storyline_adapter
+            or timeline_adapter
+            or DeferredBranchModeFactsResolver()
         )
         self._eligibility = OngoingContextEligibility()
         self._budgeter = OngoingContextBudgeter()
@@ -304,6 +309,7 @@ class ConversationService:
         scope = target.scope
         graph = self._conversations.graph(scope)
         history = self.history(target)
+        mode_read_only = False
         if target.mode == ContinuityMode.STORYLINE:
             storyline, _ = self._validate_target(target, history, writable=False)
             if storyline is None:
@@ -314,6 +320,10 @@ class ConversationService:
                 raise ValueError("Timeline conversation support is not configured")
             timeline, _ = self._timeline_adapter.inspect(target, history)
             lifecycle = timeline.lifecycle
+            try:
+                self._timeline_adapter.require_writable(target, history)
+            except (ArchivedContinuityError, TimelineDayReadOnlyError):
+                mode_read_only = True
         else:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -326,8 +336,13 @@ class ConversationService:
                 continue
             alternatives_by_parent.setdefault(node.parent_id, ())
             alternatives_by_parent[node.parent_id] += (node.id,)
-        blocked = lifecycle != "active" or any(
-            attempt.status in {"pending", "streaming"} for attempt in history.attempts
+        blocked = (
+            mode_read_only
+            or lifecycle != "active"
+            or any(
+                attempt.status in {"pending", "streaming"}
+                for attempt in history.attempts
+            )
         )
         views = []
         for node in graph.nodes:
@@ -381,7 +396,8 @@ class ConversationService:
                 action=GraphAction.ALTERNATIVE_SELECTION,
                 expected_selected_leaf_id=expected_selected_leaf_id,
                 target_message_id=message_id,
-            )
+            ),
+            self._timeline_write_guard(target),
         )
         self._rebuild_evolution(target, EvolutionRebuildReason.PATH_SELECTION)
         return selected
@@ -433,7 +449,7 @@ class ConversationService:
         storyline, _ = self._validate_target(
             target,
             history,
-            writable=target.mode == ContinuityMode.ONGOING,
+            writable=target.mode in {ContinuityMode.ONGOING, ContinuityMode.TIMELINE},
         )
         if storyline is not None and storyline.lifecycle != "active":
             raise ArchivedContinuityError("Archived Storylines are read-only")
@@ -444,7 +460,8 @@ class ConversationService:
                 action=GraphAction.BRANCH_FROM_HERE,
                 expected_selected_leaf_id=expected_selected_leaf_id,
                 target_message_id=message_id,
-            )
+            ),
+            self._timeline_write_guard(target),
         )
         self._rebuild_evolution(target, EvolutionRebuildReason.BRANCH)
         return selected
@@ -486,7 +503,9 @@ class ConversationService:
         )
         scope = target.scope
         self._validate_write_target(target, self._conversations.history(scope))
-        self._conversations.configure(scope, settings)
+        self._conversations.configure(
+            scope, settings, self._timeline_write_guard(target)
+        )
 
     def send(
         self,
@@ -587,7 +606,12 @@ class ConversationService:
         )
         response_context = self._response_context_provenance(target.mode)
         return self._conversations.begin_retry(
-            scope, generation, settings, tail.id, response_context
+            scope,
+            generation,
+            settings,
+            tail.id,
+            response_context,
+            self._timeline_write_guard(target),
         )
 
     def branch_decision(
@@ -632,7 +656,9 @@ class ConversationService:
         # A losing duplicate consumer must never stop the winning stream.
         scope = target.scope
         self._validate_write_target(target, self._conversations.history(scope))
-        attempt = self._conversations.claim(scope, attempt_id)
+        attempt = self._conversations.claim(
+            scope, attempt_id, self._timeline_write_guard(target)
+        )
         output: Iterator[str] | None = None
         completed = False
         try:
@@ -658,10 +684,14 @@ class ConversationService:
             gateway = self._models.response_gateway(attempt.generation.model.provider)
             output = gateway.stream(prompt, attempt.generation)
             for chunk in output:
-                self._conversations.append(scope, attempt_id, chunk)
+                self._conversations.append(
+                    scope, attempt_id, chunk, self._timeline_write_guard(target)
+                )
                 yield chunk
             self._validate_write_target(target, self._conversations.history(scope))
-            message = self._conversations.complete(scope, attempt_id)
+            message = self._conversations.complete(
+                scope, attempt_id, self._timeline_write_guard(target)
+            )
             completed = True
             self._rebuild_evolution(target, EvolutionRebuildReason.RESPONSE_COMPLETION)
             if (
@@ -788,7 +818,28 @@ class ConversationService:
             expected_selected_leaf_id,
             submitted,
             response_context,
+            self._timeline_write_guard(target),
         )
+
+    def _timeline_write_guard(
+        self, target: ConversationTarget
+    ) -> TimelineWriteGuard | None:
+        """Capture an injected-time guard immediately before a repository write.
+
+        Args:
+            target:
+                Exact mode-owned conversation target.
+
+        Returns:
+            Timeline guard for Timeline targets, otherwise None.
+        """
+
+        if target.mode != ContinuityMode.TIMELINE:
+            return None
+        if self._timeline_adapter is None:
+            raise ValueError("Timeline conversation support is not configured")
+        history = self._conversations.history(target.scope)
+        return self._timeline_adapter.write_guard(target, history)
 
     def _response_context_provenance(
         self, mode: ContinuityMode

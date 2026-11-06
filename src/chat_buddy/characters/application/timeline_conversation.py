@@ -1,22 +1,27 @@
 """Timeline day adapter for shared conversation orchestration."""
 
 from datetime import datetime
+from uuid import UUID
 
 from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
+    BranchModeFacts,
     Clock,
     ContinuityLifecycle,
     ContinuityMode,
     ConversationGraphRepository,
     ConversationHistory,
+    ConversationScope,
     ConversationTarget,
     DayClosureStatus,
     Timeline,
     TimelineDay,
     TimelineDayReadOnlyError,
     TimelineDayRepository,
+    TimelineGraphActionUnavailableReason,
     TimelineRepository,
+    TimelineWriteGuard,
 )
 
 
@@ -105,6 +110,97 @@ class TimelineConversationAdapter:
                 If the day is closed, nonlatest, or crosses its boundary.
         """
 
+        timeline, day, _ = self._require_writable(target, history)
+        return timeline, day
+
+    def write_guard(
+        self, target: ConversationTarget, history: ConversationHistory
+    ) -> TimelineWriteGuard:
+        """Resolve closure and capture facts for the immediate write transaction.
+
+        Args:
+            target:
+                Exact Timeline day target.
+            history:
+                Current selected ancestry and attempts.
+
+        Returns:
+            Immutable injected-time write guard.
+        """
+
+        timeline, day, current_at = self._require_writable(target, history)
+        return TimelineWriteGuard(
+            timeline_id=timeline.id,
+            day_id=day.id,
+            expected_timeline_revision=timeline.revision,
+            observed_at=current_at,
+        )
+
+    def resolve(
+        self,
+        scope: ConversationScope,
+        source_message_id: UUID,
+        mode: ContinuityMode,
+    ) -> BranchModeFacts:
+        """Resolve fail-closed Timeline branching facts after write validation.
+
+        Args:
+            scope:
+                Exact conversation scope.
+            source_message_id:
+                Exact proposed persona branch point.
+            mode:
+                Requested continuity mode.
+
+        Returns:
+            Exact open-day fact, or missing facts when ownership contradicts.
+        """
+
+        facts = BranchModeFacts(
+            scope=scope,
+            source_message_id=source_message_id,
+            mode=mode,
+        )
+        if mode != ContinuityMode.TIMELINE:
+            return facts
+
+        try:
+            timeline = self._timelines.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
+            latest = self._days.latest(timeline)
+            graph = self._graphs.graph(scope)
+        except (LookupError, ValueError):
+            return facts
+
+        source = next(
+            (node for node in graph.nodes if node.id == source_message_id), None
+        )
+        if (
+            latest is None
+            or latest.scope != scope
+            or source is None
+            or source.role != "persona"
+        ):
+            return facts
+
+        return facts.model_copy(update={"timeline_day_closed": latest.is_closed})
+
+    def _require_writable(
+        self, target: ConversationTarget, history: ConversationHistory
+    ) -> tuple[Timeline, TimelineDay, datetime]:
+        """Return exact open-day state and the instant used to authorize it.
+
+        Args:
+            target:
+                Exact Timeline day target.
+            history:
+                Current selected ancestry and attempts.
+
+        Returns:
+            Timeline, day, and injected aware UTC observation.
+        """
+
         timeline, day = self.inspect(target, history)
         if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
             raise ArchivedContinuityError("Archived Timelines are read-only")
@@ -112,15 +208,19 @@ class TimelineConversationAdapter:
         latest = self._days.latest(timeline)
         if latest is None or latest.id != day.id:
             raise TimelineDayReadOnlyError(
-                "Only the latest represented Timeline day can accept writes"
+                "Only the latest represented Timeline day can accept writes",
+                TimelineGraphActionUnavailableReason.NOT_LATEST_DAY,
             )
         if day.is_closed:
-            raise TimelineDayReadOnlyError("Closed Timeline days are read-only")
+            raise TimelineDayReadOnlyError(
+                "Closed Timeline days are read-only",
+                TimelineGraphActionUnavailableReason.CLOSED_DAY,
+            )
 
         facts = self._calendar.resolve_current(self._clock, timeline.calendar_timezone)
         self._validate_clock(day, facts.current_at)
         if facts.current_at < day.boundary.closes_at:
-            return timeline, day
+            return timeline, day, facts.current_at
 
         selected = self._graphs.selected_path(day.scope)
         result = self._days.observe_closure(
@@ -138,13 +238,20 @@ class TimelineConversationAdapter:
             if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
                 raise ArchivedContinuityError("Archived Timelines are read-only")
             if refreshed.is_closed:
-                raise TimelineDayReadOnlyError("Closed Timeline days are read-only")
+                raise TimelineDayReadOnlyError(
+                    "Closed Timeline days are read-only",
+                    TimelineGraphActionUnavailableReason.CLOSED_DAY,
+                )
 
             raise TimelineDayReadOnlyError(
-                "Timeline state changed while observing the day boundary"
+                "Timeline state changed while observing the day boundary",
+                TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
             )
 
-        raise TimelineDayReadOnlyError("Closed Timeline days are read-only")
+        raise TimelineDayReadOnlyError(
+            "Closed Timeline days are read-only",
+            TimelineGraphActionUnavailableReason.CLOSED_DAY,
+        )
 
     @staticmethod
     def _validate_clock(day: TimelineDay, current_at: datetime) -> None:
@@ -165,5 +272,6 @@ class TimelineConversationAdapter:
             day.closed_at is not None and current_at < day.closed_at
         ):
             raise TimelineDayReadOnlyError(
-                "The clock predates committed Timeline day facts"
+                "The clock predates committed Timeline day facts",
+                TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
             )

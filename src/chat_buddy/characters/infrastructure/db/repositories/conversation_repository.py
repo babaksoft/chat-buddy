@@ -40,6 +40,9 @@ from chat_buddy.characters.domain import (
     StaleSelectionError,
     StrategyIdentity,
     SubmittedInput,
+    TimelineDayReadOnlyError,
+    TimelineGraphActionUnavailableReason,
+    TimelineWriteGuard,
     VersionedResponseStyleSettings,
 )
 from chat_buddy.characters.infrastructure.db.models import (
@@ -71,7 +74,10 @@ class DbConversationRepository:
         self._factory = session_factory
 
     def configure(
-        self, scope: ConversationScope, settings: ConversationSettings
+        self,
+        scope: ConversationScope,
+        settings: ConversationSettings,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> None:
         """Save next-attempt defaults on a writable conversation.
 
@@ -80,11 +86,13 @@ class DbConversationRepository:
                 Complete required ownership.
             settings:
                 Validated requested selection.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
         """
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             row.generation_settings = settings.model_dump(mode="json")
 
     def begin(
@@ -95,6 +103,7 @@ class DbConversationRepository:
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
         response_context: ResponseContextProvenance,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -111,6 +120,8 @@ class DbConversationRepository:
                 New input, or None to continue the existing unmatched tail.
             response_context:
                 Versioned mode-owned selector and prompt schema.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.
@@ -121,7 +132,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            scene = self._writable_mode_owner(session, scope, row)
+            scene = self._writable_mode_owner(session, scope, row, timeline_guard)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -199,6 +210,7 @@ class DbConversationRepository:
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
         response_context: ResponseContextProvenance,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve a bounded retry without changing selection.
 
@@ -213,6 +225,8 @@ class DbConversationRepository:
                 Selected final persona response observed during preflight.
             response_context:
                 Versioned mode-owned selector and prompt schema.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached pending retry attempt.
@@ -227,7 +241,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             if (
                 row.generation_settings is not None
                 and row.generation_settings != settings.model_dump(mode="json")
@@ -275,7 +289,12 @@ class DbConversationRepository:
             session.flush()
             return self._attempt(scope, attempt)
 
-    def claim(self, scope: ConversationScope, attempt_id: UUID) -> GenerationAttempt:
+    def claim(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> GenerationAttempt:
         """Atomically transition a pending attempt to streaming.
 
         Args:
@@ -283,6 +302,8 @@ class DbConversationRepository:
                 Complete required ownership.
             attempt_id:
                 Pending attempt identifier.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.
@@ -290,7 +311,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "pending")
             attempt.status = "streaming"
@@ -298,7 +319,13 @@ class DbConversationRepository:
             session.flush()
             return self._attempt(scope, attempt)
 
-    def append(self, scope: ConversationScope, attempt_id: UUID, chunk: str) -> None:
+    def append(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        chunk: str,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> None:
         """Persist progress and refresh its heartbeat.
 
         Args:
@@ -308,17 +335,24 @@ class DbConversationRepository:
                 Streaming attempt identifier.
             chunk:
                 New output text.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
         """
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
             attempt.incomplete_output += chunk
             attempt.updated_at = datetime.now(UTC)
 
-    def complete(self, scope: ConversationScope, attempt_id: UUID) -> Message:
+    def complete(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> Message:
         """Atomically append a persona message and complete its attempt.
 
         Args:
@@ -326,6 +360,8 @@ class DbConversationRepository:
                 Complete required ownership.
             attempt_id:
                 Streaming attempt identifier.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.
@@ -333,7 +369,7 @@ class DbConversationRepository:
 
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             attempt = self._find_attempt(session, scope, attempt_id)
             self._require_status(attempt, "streaming")
             if row.selected_leaf_id != attempt.selection_guard_id:
@@ -387,6 +423,7 @@ class DbConversationRepository:
         session: Session,
         scope: ConversationScope,
         conversation: ConversationModel,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> SceneModel | None:
         """Lock and require any mode-specific owner to remain writable.
 
@@ -397,6 +434,8 @@ class DbConversationRepository:
                 Complete conversation ownership.
             conversation:
                 Locked owned conversation.
+            timeline_guard:
+                Required injected-time facts for Timeline writes only.
 
         Returns:
             Storyline scene when applicable, otherwise None.
@@ -408,6 +447,8 @@ class DbConversationRepository:
 
         scene = cls._writable_storyline_scene(session, scope, conversation)
         if conversation.mode != "timeline":
+            if timeline_guard is not None:
+                raise ValueError("Only Timeline writes accept a Timeline guard")
             return scene
 
         owner = session.scalar(
@@ -436,13 +477,56 @@ class DbConversationRepository:
                 ContinuityEntryModel.mode == "timeline",
             )
         )
-        if owner is None or day is None or latest_position is None:
-            raise AttemptConflictError("Timeline day ownership changed")
+        if (
+            owner is None
+            or day is None
+            or latest_position is None
+            or timeline_guard is None
+            or timeline_guard.timeline_id != scope.continuity_id
+            or timeline_guard.day_id != day.id
+            or timeline_guard.expected_timeline_revision != owner.revision
+        ):
+            raise TimelineDayReadOnlyError(
+                "Timeline calendar facts changed or are incomplete",
+                TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
+            )
         if day.entry.position != latest_position:
-            raise AttemptConflictError("A later Timeline day makes this day read-only")
-        if day.closed_at is not None:
-            raise AttemptConflictError("The Timeline day is closed")
+            raise TimelineDayReadOnlyError(
+                "A later Timeline day makes this day read-only",
+                TimelineGraphActionUnavailableReason.NOT_LATEST_DAY,
+            )
+        if day.closed_at is not None or timeline_guard.observed_at >= cls._aware_utc(
+            day.closes_at
+        ):
+            raise TimelineDayReadOnlyError(
+                "The Timeline day is closed",
+                TimelineGraphActionUnavailableReason.CLOSED_DAY,
+            )
+        if (
+            timeline_guard.observed_at < cls._aware_utc(day.opens_at)
+            or day.settled_selected_leaf_id is not None
+        ):
+            raise TimelineDayReadOnlyError(
+                "Timeline calendar facts are contradictory",
+                TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
+            )
         return None
+
+    @staticmethod
+    def _aware_utc(value: datetime) -> datetime:
+        """Normalize database UTC values across SQLite and PostgreSQL.
+
+        Args:
+            value:
+                Persisted UTC timestamp, possibly naive under SQLite.
+
+        Returns:
+            Aware UTC timestamp.
+        """
+
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @classmethod
     def _writable_storyline_scene(
@@ -741,12 +825,18 @@ class DbConversationRepository:
             session.flush()
             return self._selected_path(session, scope, row)
 
-    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
+    def apply_action(
+        self,
+        request: GraphActionRequest,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> SelectedPath:
         """Apply exact-future selection or branch-point choice under one lock.
 
         Args:
             request:
                 Fully owned graph action with its compare-and-swap guard.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Newly selected ancestry.
@@ -771,7 +861,7 @@ class DbConversationRepository:
         scope = request.scope
         with self._factory() as session, session.begin():
             row = self._owned(session, scope, writable=True)
-            self._writable_mode_owner(session, scope, row)
+            self._writable_mode_owner(session, scope, row, timeline_guard)
             if row.selected_leaf_id != request.expected_selected_leaf_id:
                 raise StaleSelectionError("Selected conversation path changed")
             active_attempt = session.scalar(

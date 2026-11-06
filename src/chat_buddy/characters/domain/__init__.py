@@ -289,6 +289,7 @@ from chat_buddy.characters.domain.timeline import (
     TimelineStartResult,
     TimelineStartReview,
     TimelineStartStatus,
+    TimelineWriteGuard,
 )
 
 __all__ = [
@@ -536,6 +537,7 @@ __all__ = [
     "TimelineStartResult",
     "TimelineStartReview",
     "TimelineStartStatus",
+    "TimelineWriteGuard",
     "TokenCounter",
     "Trust",
     "UnsupportedContinuityModeError",

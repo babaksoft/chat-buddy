@@ -639,6 +639,52 @@ class TimelineGraphActionUnavailableReason(StrEnum):
     ARCHIVED_TIMELINE = "archived_timeline"
     NOT_LATEST_DAY = "not_latest_day"
     CLOSED_DAY = "closed_day"
+    MISSING_OR_CONTRADICTORY_FACTS = "missing_or_contradictory_calendar_facts"
+
+
+class TimelineWriteGuard(BaseModel):
+    """Injected-time facts that fence one Timeline conversation mutation.
+
+    Attributes:
+        timeline_id:
+            Expected owning Timeline.
+        day_id:
+            Exact represented day accepting the write.
+        expected_timeline_revision:
+            Timeline revision observed after closure policy ran.
+        observed_at:
+            Aware UTC instant used to decide day writability.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    timeline_id: UUID = Field(description="Expected owning Timeline identifier.")
+    day_id: UUID = Field(description="Exact represented-day identifier.")
+    expected_timeline_revision: int = Field(
+        ge=1, strict=True, description="Observed Timeline revision."
+    )
+    observed_at: datetime = Field(description="Injected aware UTC observation.")
+
+    @field_validator("observed_at")
+    @classmethod
+    def validate_observed_at(cls, value: datetime) -> datetime:
+        """Require an aware UTC observation.
+
+        Args:
+            value:
+                Submitted observation instant.
+
+        Returns:
+            Normalized UTC instant.
+
+        Raises:
+            ValueError:
+                If the instant is naive or not expressed in UTC.
+        """
+
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+            raise ValueError("Timeline write observations must be aware UTC")
+        return value.astimezone(UTC)
 
 
 class TimelineGraphActionAvailability(BaseModel):

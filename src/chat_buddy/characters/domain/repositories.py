@@ -83,6 +83,7 @@ from chat_buddy.characters.domain.timeline import (
     TimelineRevisionResult,
     TimelineStartResult,
     TimelineStartReview,
+    TimelineWriteGuard,
 )
 
 
@@ -1345,12 +1346,18 @@ class ConversationGraphRepository(Protocol):
 
         ...
 
-    def apply_action(self, request: GraphActionRequest) -> SelectedPath:
+    def apply_action(
+        self,
+        request: GraphActionRequest,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> SelectedPath:
         """Apply one validated graph action under the selection lock.
 
         Args:
             request:
                 Fully owned action target and compare-and-swap guard.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Newly selected ancestry.
@@ -1376,7 +1383,10 @@ class ConversationRepository(Protocol):
         ...
 
     def configure(
-        self, scope: ConversationScope, settings: ConversationSettings
+        self,
+        scope: ConversationScope,
+        settings: ConversationSettings,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> None:
         """Save next-attempt defaults on a writable conversation.
 
@@ -1385,6 +1395,8 @@ class ConversationRepository(Protocol):
                 Complete required ownership.
             settings:
                 Validated requested selection.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
         """
 
         ...
@@ -1397,6 +1409,7 @@ class ConversationRepository(Protocol):
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
         response_context: ResponseContextProvenance,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -1413,6 +1426,8 @@ class ConversationRepository(Protocol):
                 New input, or None to continue the existing unmatched tail.
             response_context:
                 Versioned mode-owned selector and prompt schema.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.
@@ -1444,6 +1459,7 @@ class ConversationRepository(Protocol):
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
         response_context: ResponseContextProvenance,
+        timeline_guard: TimelineWriteGuard | None = None,
     ) -> GenerationAttempt:
         """Reserve a bounded retry for the selected completed response.
 
@@ -1458,6 +1474,8 @@ class ConversationRepository(Protocol):
                 Selected final persona response observed during preflight.
             response_context:
                 Versioned mode-owned selector and prompt schema.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached pending retry attempt.
@@ -1465,7 +1483,12 @@ class ConversationRepository(Protocol):
 
         ...
 
-    def claim(self, scope: ConversationScope, attempt_id: UUID) -> GenerationAttempt:
+    def claim(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> GenerationAttempt:
         """Atomically transition a pending attempt to streaming.
 
         Args:
@@ -1473,6 +1496,8 @@ class ConversationRepository(Protocol):
                 Complete required ownership.
             attempt_id:
                 Pending attempt identifier.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.
@@ -1480,7 +1505,13 @@ class ConversationRepository(Protocol):
 
         ...
 
-    def append(self, scope: ConversationScope, attempt_id: UUID, chunk: str) -> None:
+    def append(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        chunk: str,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> None:
         """Persist progress and refresh its heartbeat.
 
         Args:
@@ -1490,11 +1521,18 @@ class ConversationRepository(Protocol):
                 Streaming attempt identifier.
             chunk:
                 New output text.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
         """
 
         ...
 
-    def complete(self, scope: ConversationScope, attempt_id: UUID) -> Message:
+    def complete(
+        self,
+        scope: ConversationScope,
+        attempt_id: UUID,
+        timeline_guard: TimelineWriteGuard | None = None,
+    ) -> Message:
         """Atomically append a persona message and complete its attempt.
 
         Args:
@@ -1502,6 +1540,8 @@ class ConversationRepository(Protocol):
                 Complete required ownership.
             attempt_id:
                 Streaming attempt identifier.
+            timeline_guard:
+                Required injected-time fence for Timeline writes only.
 
         Returns:
             Detached domain snapshot.

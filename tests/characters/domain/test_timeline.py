@@ -1,6 +1,6 @@
 """Executable Timeline ownership, day, result, and repository contracts."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -39,6 +39,7 @@ from chat_buddy.characters.domain import (
     TimelineRevisionStatus,
     TimelineStartResult,
     TimelineStartStatus,
+    TimelineWriteGuard,
     VersionedResponseStyleSettings,
 )
 
@@ -509,6 +510,32 @@ def test_latest_open_day_allows_guarded_graph_actions() -> None:
 
     assert availability.is_available
     assert availability.unavailable_reason is None
+
+
+def test_timeline_write_guard_requires_an_aware_utc_observation() -> None:
+    """Reject naive or non-UTC instants at the repository-guard boundary."""
+
+    values = {
+        "timeline_id": uuid4(),
+        "day_id": uuid4(),
+        "expected_timeline_revision": 2,
+        "observed_at": datetime(2026, 11, 2, 8, tzinfo=UTC),
+    }
+
+    assert TimelineWriteGuard.model_validate(values).observed_at.tzinfo == UTC
+    with pytest.raises(ValidationError, match="aware UTC"):
+        TimelineWriteGuard.model_validate(
+            {**values, "observed_at": datetime(2026, 11, 2, 8)}  # noqa: DTZ001
+        )
+    with pytest.raises(ValidationError, match="aware UTC"):
+        TimelineWriteGuard.model_validate(
+            {
+                **values,
+                "observed_at": datetime(
+                    2026, 11, 2, 8, tzinfo=timezone(timedelta(hours=3, minutes=30))
+                ),
+            }
+        )
 
 
 @pytest.mark.parametrize(

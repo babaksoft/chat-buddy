@@ -477,7 +477,7 @@ remains incomplete. PostgreSQL verification requires
 
 ### Slice 11 — Assemble deterministic Timeline response context
 
-Status: Pending
+Status: Complete
 
 Implement the final Timeline response context in the accepted Characters order:
 
@@ -509,9 +509,17 @@ evolution projections, and provider limits.
 Complete when prompt assembly is deterministic and a Timeline response has the
 required long-term continuity without transcript or temporal leakage.
 
+Delivered with versioned deterministic Timeline prompt assembly in the accepted
+block order, whole-record budget selection, current-day-only transcript and
+summary inputs, branch- and time-eligible memory, and current evolution
+projections. Attempt provenance records the Timeline selector and prompt-schema
+versions. Focused coverage includes ordering, mandatory-capacity failure,
+optional-budget pressure, Unicode, prior-day memory, and exclusion of the
+Timeline title and other-day transcript.
+
 ### Slice 12 — Enforce latest-open-day graph actions and closed-history guards
 
-Status: Pending
+Status: Complete
 
 Complete Timeline graph policy:
 
@@ -529,6 +537,20 @@ on a formerly open day.
 
 Complete when latest-open-day exploration is non-destructive, every historical
 graph is permanently read-only, and no Timeline history-copy path exists.
+
+Delivered with an injected-time Timeline write guard carried from closure policy
+into attempt, streaming, completion, retry, selection, branching, and settings
+transactions. Repository writes lock and revalidate exact Timeline/day ownership,
+optimistic revision, latest Entry position, immutable boundary facts, and closure
+state. Missing or contradictory facts fail closed with a stable reason. Timeline
+Branch from here now resolves through the day adapter, open-day selection and
+branching preserve every saved node, and graph inspection removes actions as soon
+as due closure is observed.
+
+Coverage includes open-day retry, selection, and non-destructive branching;
+closed-day input and graph-action rejection; exact-boundary completion; stale and
+non-latest callers; restart; evolution replay after path mutation; and opt-in
+PostgreSQL races between closure and retry, selection, or Branch from here.
 
 ### Slice 13 — Ship Timeline creation, navigation, day, and archive UI
 

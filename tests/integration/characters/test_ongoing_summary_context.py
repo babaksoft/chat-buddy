@@ -21,6 +21,7 @@ from chat_buddy.characters.domain import (
     ResponseContextProvenance,
     SubmittedInput,
     SummaryConflictError,
+    TimelineWriteGuard,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
     DbContinuityRepository,
@@ -337,6 +338,7 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
         response_context: ResponseContextProvenance,
+        timeline_guard: TimelineWriteGuard | None,
     ) -> GenerationAttempt:
         """Switch selection immediately before the guarded reservation.
 
@@ -355,12 +357,15 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
                 New user input.
             response_context:
                 Versioned Ongoing selector and prompt schema.
+            timeline_guard:
+                Absent Timeline-only write fence.
 
         Returns:
             A reservation only if the stale guard unexpectedly permits it.
         """
 
         assert requested_scope == scope
+        assert timeline_guard is None
         self.select_leaf(scope, old_leaf_id, expected_selected_leaf_id)
         return original_begin(
             self,
@@ -370,6 +375,7 @@ def test_prompt_preparation_reserves_against_the_observed_selected_leaf(
             expected_selected_leaf_id,
             submitted,
             response_context,
+            timeline_guard,
         )
 
     with (

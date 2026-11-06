@@ -81,7 +81,20 @@ class HistoricalSceneReadOnlyError(ValueError):
 
 
 class TimelineDayReadOnlyError(ValueError):
-    """A closed or nonlatest Timeline day cannot accept conversation writes."""
+    """A Timeline day write was rejected with a stable read-only reason."""
+
+    def __init__(self, message: str, reason: str = "closed_day") -> None:
+        """Initialize the rejection.
+
+        Args:
+            message:
+                Human-readable failure description.
+            reason:
+                Stable machine-readable unavailability reason.
+        """
+
+        super().__init__(message)
+        self.reason = reason
 
 
 class ModelResolutionError(ValueError):

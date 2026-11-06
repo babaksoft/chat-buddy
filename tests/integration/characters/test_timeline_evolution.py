@@ -32,8 +32,6 @@ from chat_buddy.characters.domain import (
     EvolutionProposal,
     EvolutionScope,
     EvolutionSnapshot,
-    GraphAction,
-    GraphActionRequest,
     MemoryDelta,
     MemoryEvidence,
     RelationshipDynamic,
@@ -468,13 +466,10 @@ def test_timeline_branch_race_keeps_inference_retryable_without_stale_events(
                 timeline.revision,
             )
         else:
-            DbConversationRepository(factory).apply_action(
-                GraphActionRequest(
-                    scope=target.scope,
-                    action=GraphAction.ALTERNATIVE_SELECTION,
-                    expected_selected_leaf_id=alternative.persona_message_id,
-                    target_message_id=original.persona_message_id,
-                )
+            app.select_alternative(
+                target,
+                original.persona_message_id,
+                alternative.persona_message_id,
             )
         return proposal
 

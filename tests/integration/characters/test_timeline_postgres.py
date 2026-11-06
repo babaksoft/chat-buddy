@@ -1,7 +1,7 @@
 """PostgreSQL migration and race coverage for Timeline persistence."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -18,6 +18,8 @@ from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     DayBoundary,
     DayReservationStatus,
+    GraphAction,
+    GraphActionRequest,
     Message,
     NarrativePlacement,
     ReserveTimelineDay,
@@ -26,9 +28,11 @@ from chat_buddy.characters.domain import (
     SceneDescriptionLevel,
     StyleUpdateStatus,
     SubmittedInput,
+    TimelineDayReadOnlyError,
     TimelineRevisionStatus,
     TimelineStartResult,
     TimelineStartStatus,
+    TimelineWriteGuard,
 )
 from chat_buddy.characters.infrastructure.db.models import (
     GenerationAttemptModel,
@@ -45,7 +49,12 @@ from tests.integration.characters.test_continuity_postgres import (
     _chat_snapshot,
     _configuration,
 )
-from tests.integration.characters.test_timeline_day_service import MutableClock
+from tests.integration.characters.test_timeline_conversations import (
+    FakeResponse,
+    FakeSummary,
+    MutableClock,
+    _start_day,
+)
 from tests.integration.characters.test_timeline_repositories import (
     _generation,
     _request,
@@ -224,11 +233,12 @@ def test_archive_and_timeline_completion_serialize_without_deadlock(
     )
     assert started.timeline is not None
     timeline = started.timeline
+    clock = MutableClock(datetime(2026, 11, 3, 8, tzinfo=UTC))
     reserved = TimelineDayService(
         timelines,
         DbTimelineDayRepository(factory),
         DbConversationRepository(factory),
-        MutableClock(datetime(2026, 11, 3, 8, tzinfo=UTC)),
+        clock,
     ).reserve(
         timeline.identity_id,
         timeline.persona_id,
@@ -240,9 +250,15 @@ def test_archive_and_timeline_completion_serialize_without_deadlock(
     assert reserved.attempt is not None
     scope = reserved.day.scope
     attempt_id = reserved.attempt.id
+    guard = TimelineWriteGuard(
+        timeline_id=timeline.id,
+        day_id=reserved.day.id,
+        expected_timeline_revision=timeline.revision + 1,
+        observed_at=clock.value,
+    )
     repository = DbConversationRepository(factory)
-    repository.claim(scope, attempt_id)
-    repository.append(scope, attempt_id, "Durable response")
+    repository.claim(scope, attempt_id, guard)
+    repository.append(scope, attempt_id, "Durable response", guard)
     current = timelines.get(timeline.identity_id, timeline.persona_id, timeline.id)
 
     def complete() -> Message | ArchivedContinuityError:
@@ -253,7 +269,7 @@ def test_archive_and_timeline_completion_serialize_without_deadlock(
         """
 
         try:
-            return DbConversationRepository(factory).complete(scope, attempt_id)
+            return DbConversationRepository(factory).complete(scope, attempt_id, guard)
         except ArchivedContinuityError as error:
             return error
 
@@ -421,6 +437,113 @@ def test_two_first_sends_create_one_atomic_day(
             session.scalar(select(func.count()).select_from(GenerationAttemptModel))
             == 1
         )
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        GraphAction.COMPLETED_RESPONSE_RETRY,
+        GraphAction.ALTERNATIVE_SELECTION,
+        GraphAction.BRANCH_FROM_HERE,
+    ),
+)
+def test_graph_actions_serialize_with_boundary_closure(
+    characters_postgres_engine: Engine, action: GraphAction
+) -> None:
+    """Serialize retry, selection, and branching with exact-boundary closure.
+
+    Args:
+        characters_postgres_engine:
+            Explicit disposable PostgreSQL database.
+        action:
+            Racing graph operation.
+    """
+
+    engine = characters_postgres_engine
+    command.upgrade(_configuration(engine), "head")
+    factory = sessionmaker(bind=engine, autoflush=False)
+    clock = MutableClock(datetime(2026, 11, 3, 8, tzinfo=UTC))
+    responses = FakeResponse()
+    app, target = _start_day(factory, clock, responses, FakeSummary(), "Race me")
+    list(app.stream(target, app.history(target).attempts[0].id))
+    original_id = app.history(target).messages[-1].id
+    retry = app.retry_completed_response(target)
+    list(app.stream(target, retry.id))
+    selected_id = app.history(target).messages[-1].id
+    assert target.entry_id is not None
+    days = DbTimelineDayRepository(factory)
+    day = days.get(target.scope, target.entry_id)
+    timeline = DbTimelineRepository(factory).get(
+        target.scope.identity_id,
+        target.scope.persona_id,
+        target.scope.continuity_id,
+    )
+    guard = TimelineWriteGuard(
+        timeline_id=timeline.id,
+        day_id=day.id,
+        expected_timeline_revision=timeline.revision,
+        observed_at=day.boundary.closes_at - timedelta(microseconds=1),
+    )
+    repository = DbConversationRepository(factory)
+    graph_before = repository.graph(target.scope)
+
+    def mutate() -> bool:
+        """Apply the guarded action or report that closure won.
+
+        Returns:
+            True when the action committed before closure.
+        """
+
+        try:
+            if action == GraphAction.COMPLETED_RESPONSE_RETRY:
+                history = repository.history(target.scope)
+                assert history.settings is not None
+                repository.begin_retry(
+                    target.scope,
+                    history.attempts[-1].generation,
+                    history.settings,
+                    selected_id,
+                    _response_context(),
+                    guard,
+                )
+            else:
+                repository.apply_action(
+                    GraphActionRequest(
+                        scope=target.scope,
+                        action=action,
+                        expected_selected_leaf_id=selected_id,
+                        target_message_id=original_id,
+                    ),
+                    guard,
+                )
+            return True
+        except TimelineDayReadOnlyError:
+            return False
+
+    def close() -> None:
+        """Observe closure at the exact stored boundary."""
+
+        days.observe_closure(
+            target.scope,
+            day.id,
+            day.boundary.closes_at,
+            timeline.revision,
+            selected_id,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        action_future = executor.submit(mutate)
+        closure_future = executor.submit(close)
+        action_future.result(timeout=10)
+        closure_future.result(timeout=10)
+
+    closed = days.get(target.scope, day.id)
+    assert closed.is_closed
+    assert closed.settled_selected_leaf_id is not None
+    graph_after = repository.graph(target.scope)
+    assert {node.id for node in graph_before.nodes} == {
+        node.id for node in graph_after.nodes
+    }
 
 
 def _insert_stage_seven_continuity(engine: Engine) -> None:

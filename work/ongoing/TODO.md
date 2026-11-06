@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 11 — Assemble deterministic Timeline response
-context.
+Next delivery focus: Stage 8, Slice 13 — Ship Timeline creation, navigation, day,
+and archive UI.
 
 Deferred product exploration:
 
