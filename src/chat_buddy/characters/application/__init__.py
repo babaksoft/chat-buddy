@@ -36,6 +36,9 @@ from chat_buddy.characters.application.evolution import (
 from chat_buddy.characters.application.evolution_effect_service import (
     EvolutionEffectService,
 )
+from chat_buddy.characters.application.evolution_entry_history import (
+    EvolutionEntryHistory,
+)
 from chat_buddy.characters.application.evolution_inspection_service import (
     EvolutionEventInspection,
     EvolutionInspection,
@@ -126,6 +129,7 @@ __all__ = [
     "DeferredBranchModeFactsResolver",
     "DeterministicFixtureEvolutionStrategy",
     "EvolutionEffectService",
+    "EvolutionEntryHistory",
     "EvolutionEvaluator",
     "EvolutionEventInspection",
     "EvolutionInspection",

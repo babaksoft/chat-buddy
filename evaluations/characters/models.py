@@ -279,9 +279,6 @@ class EvolutionScenario(BaseModel):
                 If the scenario cannot be evaluated deterministically.
         """
 
-        if self.mode == ContinuityMode.TIMELINE:
-            raise ValueError("Timeline evolution scenarios are deferred.")
-
         if not any(turn.selected for turn in self.evidence):
             raise ValueError("An evolution scenario requires selected evidence.")
 
@@ -640,14 +637,15 @@ def _build_reference(
         Exact reproducible evidence reference.
     """
 
-    storyline = scenario.mode == ContinuityMode.STORYLINE
-    entry_position = turn.entry_position or index if storyline else None
+    narrative = scenario.mode != ContinuityMode.ONGOING
+    entry_position = turn.entry_position or index if narrative else None
     conversation_id = _scenario_uuid(
         scenario.name, f"conversation:{entry_position or 1}"
     )
     user_message_id = _scenario_uuid(scenario.name, f"user:{index}")
     persona_message_id = _scenario_uuid(scenario.name, f"persona:{index}")
-    if not storyline:
+
+    if not narrative:
         return OngoingEvolutionEvidenceReference(
             scope=scope,
             conversation_id=conversation_id,
@@ -656,6 +654,7 @@ def _build_reference(
             persona_message_id=persona_message_id,
             persona_sequence=index * 2,
         )
+
     assert entry_position is not None
     return EntryEvolutionEvidenceReference(
         scope=scope,
@@ -663,7 +662,7 @@ def _build_reference(
         entry=EntryPosition(
             entry_id=_scenario_uuid(scenario.name, f"entry:{entry_position}"),
             continuity_id=scope.continuity_id,
-            mode=ContinuityMode.STORYLINE,
+            mode=scenario.mode,
             position=entry_position,
         ),
         user_message_id=user_message_id,

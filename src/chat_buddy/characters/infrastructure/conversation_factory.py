@@ -16,6 +16,7 @@ from chat_buddy.characters.application import (
     ContinuityStableEvolutionConfigurationResolver,
     ConversationService,
     EvolutionEffectService,
+    EvolutionEntryHistory,
     EvolutionProjectionService,
     ResponseStyleService,
     StorylineConversationAdapter,
@@ -187,6 +188,9 @@ def create_conversation_service(
                     evolution_generation.input_tokens - 1,
                 ),
             ),
+            timelines=timelines,
+            days=timeline_days,
+            entries=entries,
         ),
         ContinuityStableEvolutionConfigurationResolver((evolution_configuration,)),
         BaselineEvolutionStrategy(
@@ -196,6 +200,8 @@ def create_conversation_service(
         ),
         StrictBaselineEvolutionThresholdPolicy(),
         observer,
+        timelines=timelines,
+        days=timeline_days,
     )
     evolution_rebuilder = EvolutionProjectionService(
         evolution_repository,
@@ -203,6 +209,8 @@ def create_conversation_service(
         conversations,
         storylines,
         observer,
+        timelines=timelines,
+        entry_history=EvolutionEntryHistory(entries, conversations, timeline_days),
     )
     return ConversationService(
         conversations,

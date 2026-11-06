@@ -620,8 +620,13 @@ class EvolutionSnapshot(BaseModel):
             if self.mode == ContinuityMode.ONGOING
             else EvolutionEvidenceKind.ENTRY_CHECKPOINT
         )
-        if self.mode == ContinuityMode.TIMELINE or any(
-            reference.kind != expected_kind for reference in references
+        if any(
+            reference.kind != expected_kind
+            or (
+                isinstance(reference, EntryEvolutionEvidenceReference)
+                and reference.entry.mode != self.mode
+            )
+            for reference in references
         ):
             raise ValueError("Evolution evidence does not match the continuity mode.")
         if (

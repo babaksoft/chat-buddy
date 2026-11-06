@@ -50,6 +50,8 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbSceneRepository,
     DbStorylineRepository,
     DbSummaryRepository,
+    DbTimelineDayRepository,
+    DbTimelineRepository,
 )
 from chat_buddy.characters.infrastructure.llm import Utf8TokenCounter
 from tests.characters_support import FakeResponse, ongoing_target, registry, start
@@ -131,8 +133,8 @@ class FailOnceEvolutionStrategy:
         return self._delegate.propose(snapshot)
 
 
-def test_timeline_evolution_remains_explicitly_unavailable() -> None:
-    """Reject a complete Timeline checkpoint before reserving any effect."""
+def test_timeline_evolution_requires_ownership_readers() -> None:
+    """Reject Timeline processing without its lifecycle ownership reader."""
 
     user_id = uuid4()
     persona_id = uuid4()
@@ -166,7 +168,9 @@ def test_timeline_evolution_remains_explicitly_unavailable() -> None:
         entry_id=uuid4(),
     )
 
-    with pytest.raises(ValueError, match="Timeline evolution is not available"):
+    with pytest.raises(
+        ValueError, match="Timeline evolution requires configured ownership readers"
+    ):
         service.process(target, persona_id)
 
     repository.reserve.assert_not_called()
@@ -329,6 +333,9 @@ def _processor(
         evolution,
         Utf8TokenCounter(),
         EvolutionSnapshotBudget(input_tokens=200_000, fixed_overhead_tokens=64),
+        timelines=DbTimelineRepository(factory),
+        days=DbTimelineDayRepository(factory),
+        entries=DbContinuityEntryRepository(factory),
     )
     return EvolutionEffectService(
         conversations,
@@ -340,6 +347,8 @@ def _processor(
         ContinuityStableEvolutionConfigurationResolver((configuration,)),
         strategy,
         StrictBaselineEvolutionThresholdPolicy(),
+        timelines=DbTimelineRepository(factory),
+        days=DbTimelineDayRepository(factory),
     )
 
 

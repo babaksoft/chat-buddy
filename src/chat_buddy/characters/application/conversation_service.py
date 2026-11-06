@@ -667,7 +667,7 @@ class ConversationService:
                         "outcome for persona message %s.",
                         message.id,
                     )
-            if self._evolution is not None and target.mode != ContinuityMode.TIMELINE:
+            if self._evolution is not None:
                 try:
                     self._evolution.process(target, message.id)
                 except Exception:

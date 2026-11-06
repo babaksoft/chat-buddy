@@ -3,6 +3,7 @@
 from chat_buddy.characters.application import (
     ContinuityMemoryService,
     ContinuityService,
+    EvolutionEntryHistory,
     EvolutionInspectionService,
     EvolutionProjectionService,
     IdentityService,
@@ -175,10 +176,13 @@ def create_evolution_inspection_service() -> EvolutionInspectionService:
 
     from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
     from chat_buddy.characters.infrastructure.db.repositories import (
+        DbContinuityEntryRepository,
         DbContinuityRepository,
         DbConversationRepository,
         DbEvolutionRepository,
         DbStorylineRepository,
+        DbTimelineDayRepository,
+        DbTimelineRepository,
     )
     from chat_buddy.characters.infrastructure.evolution_observability import (
         default_evolution_observer,
@@ -192,5 +196,11 @@ def create_evolution_inspection_service() -> EvolutionInspectionService:
         conversations,
         DbStorylineRepository(CharactersSessionLocal),
         default_evolution_observer(),
+        timelines=DbTimelineRepository(CharactersSessionLocal),
+        entry_history=EvolutionEntryHistory(
+            DbContinuityEntryRepository(CharactersSessionLocal),
+            conversations,
+            DbTimelineDayRepository(CharactersSessionLocal),
+        ),
     )
     return EvolutionInspectionService(evolution, conversations, projections)

@@ -25,6 +25,7 @@ from chat_buddy.characters.domain import (
     SubmittedInput,
 )
 from chat_buddy.characters.infrastructure.db.repositories import (
+    DbContinuityEntryRepository,
     DbContinuityMemoryRepository,
     DbContinuityRepository,
     DbConversationRepository,
@@ -35,6 +36,8 @@ from chat_buddy.characters.infrastructure.db.repositories import (
     DbSceneRepository,
     DbStorylineRepository,
     DbSummaryRepository,
+    DbTimelineDayRepository,
+    DbTimelineRepository,
 )
 from chat_buddy.characters.infrastructure.llm import Utf8TokenCounter
 from tests.characters_support import FakeResponse, ongoing_target, service, start
@@ -294,4 +297,7 @@ def _selector(
         counter or Utf8TokenCounter(),
         budget
         or EvolutionSnapshotBudget(input_tokens=200_000, fixed_overhead_tokens=64),
+        timelines=DbTimelineRepository(factory),
+        days=DbTimelineDayRepository(factory),
+        entries=DbContinuityEntryRepository(factory),
     )

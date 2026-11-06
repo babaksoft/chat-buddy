@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 10 — Add Timeline relationship and persona
-evolution.
+Next delivery focus: Stage 8, Slice 11 — Assemble deterministic Timeline response
+context.
 
 Deferred product exploration:
 

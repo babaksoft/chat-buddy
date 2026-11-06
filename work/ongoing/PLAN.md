@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Last updated: 2026-11-04
+Last updated: 2026-11-06
 
 ## Outcome
 
@@ -415,10 +415,10 @@ and mode-isolated.
 
 ### Slice 10 — Add Timeline relationship and persona evolution
 
-Status: Pending
+Status: Complete
 
 Prerequisite: the
-[Continuity Entry structural refactor](CONTINUITY_ENTRY_REFACTOR_PLAN.md) is
+[Continuity Entry structural refactor](../complete/CONTINUITY_ENTRY_REFACTOR_PLAN.md) is
 complete. Extend its Entry-backed checkpoint evidence and relational Entry
 ownership to Timeline. Use `ContinuityEntry` and `EntryPosition` for shared
 ownership and temporal inputs, retaining Day vocabulary for calendar behavior and
@@ -453,6 +453,27 @@ Timeline-only relationship dimensions or expose numeric scores.
 Complete when Timeline evolution is conservative, replayable, temporally correct
 through Entry positions and exact branch checkpoints, and unable to affect
 another continuity or Chat. Timeline response-context insertion remains Slice 11.
+
+Delivered with Timeline Entry-backed effects, exact selected checkpoint evidence,
+current-day evidence selection, eligible prior-memory provenance, and projection
+replay bounded by Entry position and checkpoint. The shared Entry history adapter
+validates relational ownership and closure-frozen ancestry; inference commits
+recheck selected Timeline sources. Open-day alternative selection rebuilds state,
+failed inference remains retryable, and corrections preserve source and strategy
+provenance. Ongoing and Storyline behavior remains covered by the existing suite.
+No migration is required.
+
+Coverage includes day boundaries, offline gaps, prior-memory provenance, future
+relationship and adaptation exclusion, alternative selection, inference/selection
+races, correction and restart, archive guards, contradictory persisted evidence,
+native Timeline evaluation scenarios, and opt-in PostgreSQL duplicate-processing
+coverage.
+
+Validation: the full suite passed with 872 passed and 56 skipped; the final
+focused evolution regression run passed all 21 tests. isort, Ruff, mypy, and diff
+checks pass. Black exceeded its 30-second cap and was not rerun; its format check
+remains incomplete. PostgreSQL verification requires
+`CHARACTERS_TEST_DATABASE_URL`; provider smoke tests remain opt-in.
 
 ### Slice 11 — Assemble deterministic Timeline response context
 

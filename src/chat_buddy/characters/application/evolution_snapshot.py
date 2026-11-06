@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from chat_buddy.characters.application.evolution_entry_history import (
+    EvolutionEntryHistory,
+)
+from chat_buddy.characters.application.evolution_projection_service import (
+    EvolutionProjectionService,
+)
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     Boundary,
     ContextCapacityError,
+    ContinuityEntryRepository,
     ContinuityLifecycle,
     ContinuityMemory,
     ContinuityMemoryRepository,
@@ -38,6 +45,8 @@ from chat_buddy.characters.domain import (
     StorylineRepository,
     StrategyIdentity,
     SummaryRepository,
+    TimelineDayRepository,
+    TimelineRepository,
     TokenCounter,
 )
 
@@ -60,6 +69,10 @@ class BaselineEvolutionSnapshotSelector:
         evolution: EvolutionRepository,
         counter: TokenCounter,
         budget: EvolutionSnapshotBudget,
+        *,
+        timelines: TimelineRepository | None = None,
+        days: TimelineDayRepository | None = None,
+        entries: ContinuityEntryRepository | None = None,
     ) -> None:
         """Bind owned readers and deterministic token accounting.
 
@@ -84,6 +97,12 @@ class BaselineEvolutionSnapshotSelector:
                 Current relationship and adaptation projection reader.
             counter:
                 Deterministic provider-specific token estimator.
+            timelines:
+                Timeline ownership reader.
+            days:
+                Represented Day and settled history reader.
+            entries:
+                Exact relational Entry ownership reader.
             budget:
                 Dedicated evolution input capacity.
         """
@@ -99,6 +118,13 @@ class BaselineEvolutionSnapshotSelector:
         self._evolution = evolution
         self._counter = counter
         self._budget = budget
+        self._timelines = timelines
+        self._days = days
+        self._entry_history = (
+            EvolutionEntryHistory(entries, conversations, days)
+            if entries is not None and days is not None
+            else None
+        )
 
     @property
     def selector_id(self) -> StrategyIdentity:
@@ -151,7 +177,18 @@ class BaselineEvolutionSnapshotSelector:
                 scope, source
             )
         else:
-            raise ValueError("Timeline evolution is not available.")
+            mode = ContinuityMode.TIMELINE
+            relationship, evidence, summary, memories = self._timeline_inputs(
+                scope, source
+            )
+            projections = EvolutionProjectionService(
+                self._evolution,
+                self._continuities,
+                self._conversations,
+                self._storylines,
+                timelines=self._timelines,
+                entry_history=self._entry_history,
+            ).as_of(scope, source)
 
         source_evidence = next(
             (item for item in evidence if item.reference == source), None
@@ -307,6 +344,89 @@ class BaselineEvolutionSnapshotSelector:
 
         return storyline.relationship, evidence, summary, memories
 
+    def _timeline_inputs(
+        self, scope: EvolutionScope, source: EntryEvolutionEvidenceReference
+    ) -> tuple[
+        StartingRelationship,
+        tuple[EvolutionEvidence, ...],
+        str | None,
+        tuple[EvolutionMemory, ...],
+    ]:
+        """Select current-day evidence and eligible memory provenance.
+
+        Args:
+            scope:
+                Expected Timeline and profile ownership.
+            source:
+                Exact selected Day checkpoint and temporal upper bound.
+
+        Returns:
+            Starting state, current-day turns, summary, and eligible memories.
+
+        Raises:
+            ValueError:
+                If Timeline ownership or settled history is unavailable or invalid.
+            ArchivedContinuityError:
+                If the Timeline is archived.
+        """
+
+        if self._timelines is None or self._days is None or self._entry_history is None:
+            raise ValueError("Timeline evolution requires Entry and Day readers.")
+
+        timeline = self._timelines.get(
+            scope.identity_id, scope.persona_id, scope.continuity_id
+        )
+        if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
+            raise ArchivedContinuityError("Archived Timelines cannot evolve.")
+
+        day = self._days.get(
+            ConversationScope(
+                identity_id=scope.identity_id,
+                persona_id=scope.persona_id,
+                continuity_id=scope.continuity_id,
+                conversation_id=source.conversation_id,
+            ),
+            source.entry.entry_id,
+        )
+        if day.entry.entry_position != source.entry:
+            raise ValueError("Evolution source contradicts its Timeline Entry.")
+
+        evidence = self._path_evidence(
+            day.scope, source.persona_message_id, source.entry
+        )
+        prior_evidence: list[EvolutionEvidence] = []
+        for candidate in self._days.list(timeline).days:
+            if candidate.entry.entry_position >= source.entry:
+                continue
+
+            prior_evidence.extend(
+                self._path_evidence(
+                    candidate.scope, None, candidate.entry.entry_position
+                )
+            )
+
+        all_evidence = (*prior_evidence, *evidence)
+        by_persona = {item.reference.persona_message_id: item for item in all_evidence}
+        eligible = self._memories.list_eligible(
+            scope.continuity_id, day.position, frozenset(by_persona)
+        )
+        memories = tuple(
+            context
+            for memory in eligible
+            if (context := self._memory_context(memory, by_persona)) is not None
+        )
+
+        # Prior transcript is available solely to resolve exact memory provenance.
+        cited = {reference for memory in memories for reference in memory.sources}
+        selected = (
+            tuple(item for item in prior_evidence if item.reference in cited) + evidence
+        )
+        summary = self._compatible_summary(
+            day.scope, source.user_message_id, source.user_sequence
+        )
+
+        return timeline.relationship, selected, summary, memories
+
     def _path_evidence(
         self,
         scope: ConversationScope,
@@ -331,7 +451,11 @@ class BaselineEvolutionSnapshotSelector:
                 If the checkpoint is absent or not a complete persona turn.
         """
 
-        path = self._conversations.selected_path(scope)
+        path = (
+            self._entry_history.selected(scope, entry)
+            if entry is not None and self._entry_history is not None
+            else self._conversations.selected_path(scope)
+        )
         nodes = path.messages
         if checkpoint_id is not None:
             checkpoint_index = next(
@@ -559,6 +683,11 @@ class BaselineEvolutionSnapshotSelector:
                 token_count = candidate_count
 
         for evidence in reversed(eligible_evidence[:-1]):
+            if (
+                mode == ContinuityMode.TIMELINE
+                and evidence.reference.conversation_id != source.conversation_id
+            ):
+                continue
             candidate_references = selected_references | {evidence.reference}
             candidate_evidence = self._ordered_evidence(
                 evidence_by_reference, candidate_references

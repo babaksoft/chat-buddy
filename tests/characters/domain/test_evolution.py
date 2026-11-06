@@ -405,3 +405,36 @@ def test_events_and_decisions_enforce_terminal_shapes() -> None:
             proposal_id=proposal_id,
             outcome=EvolutionDecisionOutcome.APPLIED,
         )
+
+
+def test_timeline_snapshot_accepts_entry_evidence_and_rejects_other_modes() -> None:
+    """Keep Timeline temporal evidence distinct from Storyline and Ongoing."""
+
+    scope = EvolutionScope(
+        identity_id=uuid4(), persona_id=uuid4(), continuity_id=uuid4()
+    )
+    reference = _reference(scope, kind=EvolutionEvidenceKind.ENTRY_CHECKPOINT)
+    assert isinstance(reference, EntryEvolutionEvidenceReference)
+    values = _snapshot(scope, (reference,)).model_dump()
+    values["mode"] = ContinuityMode.TIMELINE
+    with pytest.raises(ValidationError, match="continuity mode"):
+        EvolutionSnapshot.model_validate(values)
+    timeline_reference = reference.model_copy(
+        update={
+            "entry": reference.entry.model_copy(
+                update={"mode": ContinuityMode.TIMELINE}
+            )
+        }
+    )
+    values["evidence"] = (
+        EvolutionEvidence(
+            reference=timeline_reference, user_content="Hello", persona_content="Hi"
+        ),
+    )
+    values["source"] = timeline_reference
+    snapshot = EvolutionSnapshot.model_validate(values)
+    assert snapshot.mode == ContinuityMode.TIMELINE
+    assert snapshot.source == timeline_reference
+    values["mode"] = ContinuityMode.ONGOING
+    with pytest.raises(ValidationError, match="continuity mode"):
+        EvolutionSnapshot.model_validate(values)

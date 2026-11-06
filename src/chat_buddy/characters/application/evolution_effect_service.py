@@ -9,8 +9,14 @@ from chat_buddy.characters.application.evolution import (
     EvolutionEvaluator,
     EvolutionProposalValidator,
 )
+from chat_buddy.characters.application.evolution_entry_history import (
+    EvolutionEntryHistory,
+)
 from chat_buddy.characters.application.evolution_observability import (
     NoOpEvolutionObserver,
+)
+from chat_buddy.characters.application.evolution_projection_service import (
+    EvolutionProjectionService,
 )
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
@@ -46,6 +52,8 @@ from chat_buddy.characters.domain import (
     RelationshipTrust,
     StartingRelationship,
     StorylineRepository,
+    TimelineDayRepository,
+    TimelineRepository,
 )
 
 
@@ -64,6 +72,9 @@ class EvolutionEffectService:
         strategy: EvolutionStrategy,
         threshold_policy: EvolutionThresholdPolicy,
         observer: EvolutionObserver | None = None,
+        *,
+        timelines: TimelineRepository | None = None,
+        days: TimelineDayRepository | None = None,
     ) -> None:
         """Bind exact-history readers and replaceable evolution components.
 
@@ -86,6 +97,10 @@ class EvolutionEffectService:
                 Typed proposal implementation.
             threshold_policy:
                 Versioned gradual-change calibration policy.
+            days:
+                Timeline Day policy reader for replay after inference.
+            timelines:
+                Timeline lifecycle and starting-state reader.
             observer:
                 Optional privacy-safe telemetry sink.
         """
@@ -99,6 +114,8 @@ class EvolutionEffectService:
         self._configuration_resolver = configuration_resolver
         self._strategy = strategy
         self._threshold_policy = threshold_policy
+        self._timelines = timelines
+        self._days = days
         self._observer = observer or NoOpEvolutionObserver()
 
     def process(
@@ -112,7 +129,7 @@ class EvolutionEffectService:
 
         Args:
             target:
-                Exact Ongoing conversation or Storyline scene target.
+                Exact mode-owned conversation target.
             source_persona_message_id:
                 Newly committed or retryable selected persona checkpoint.
 
@@ -190,6 +207,20 @@ class EvolutionEffectService:
                 snapshot_seconds,
                 strategy_seconds,
             )
+            if target.mode == ContinuityMode.TIMELINE:
+                if self._days is None:
+                    raise ValueError("Timeline evolution requires a Day policy reader.")
+
+                EvolutionProjectionService(
+                    self._repository,
+                    self._continuities,
+                    self._conversations,
+                    self._storylines,
+                    timelines=self._timelines,
+                    entry_history=EvolutionEntryHistory(
+                        self._entries, self._conversations, self._days
+                    ),
+                ).rebuild(scope)
             return terminal
         except EvolutionEffectConflictError:
             self._observer.duplicate_reservation()
@@ -273,6 +304,9 @@ class EvolutionEffectService:
                 raise ValueError("Storyline evolution requires a scene owner.")
 
             entry = self._entries.get(target.scope, target.entry_id)
+            if entry.mode != target.mode:
+                raise ValueError("Evolution Entry mode contradicts the target.")
+
             starting_relationship = storyline.relationship
             source = EntryEvolutionEvidenceReference(
                 scope=scope,
@@ -284,7 +318,31 @@ class EvolutionEffectService:
                 persona_sequence=index + 1,
             )
         else:
-            raise ValueError("Timeline evolution is not available.")
+            if self._timelines is None or self._days is None or target.entry_id is None:
+                raise ValueError(
+                    "Timeline evolution requires configured ownership readers."
+                )
+
+            timeline = self._timelines.get(
+                scope.identity_id, scope.persona_id, scope.continuity_id
+            )
+            if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
+                raise ArchivedContinuityError("Archived Timelines cannot evolve.")
+
+            entry = self._entries.get(target.scope, target.entry_id)
+            if entry.mode != target.mode:
+                raise ValueError("Evolution Entry mode contradicts the target.")
+
+            starting_relationship = timeline.relationship
+            source = EntryEvolutionEvidenceReference(
+                scope=scope,
+                conversation_id=target.scope.conversation_id,
+                entry=entry.entry_position,
+                user_message_id=user.id,
+                user_sequence=index,
+                persona_message_id=persona.id,
+                persona_sequence=index + 1,
+            )
 
         return source, starting_relationship
 

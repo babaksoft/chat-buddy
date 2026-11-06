@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from time import perf_counter
 from uuid import UUID, uuid4
 
+from chat_buddy.characters.application.evolution_entry_history import (
+    EvolutionEntryHistory,
+)
 from chat_buddy.characters.application.evolution_observability import (
     NoOpEvolutionObserver,
 )
@@ -13,15 +16,18 @@ from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     Continuity,
     ContinuityLifecycle,
+    ContinuityMode,
     ContinuityNotFoundError,
     ContinuityRepository,
     ConversationGraphRepository,
     ConversationScope,
+    EntryEvolutionEvidenceReference,
     EvolutionCommand,
     EvolutionCorrectionAction,
     EvolutionCorrectionConflictError,
     EvolutionCorrectionEvent,
     EvolutionEvent,
+    EvolutionEvidenceReference,
     EvolutionObserver,
     EvolutionProjectionConflictError,
     EvolutionProjectionState,
@@ -40,6 +46,8 @@ from chat_buddy.characters.domain import (
     SetPersonaAdaptationCommand,
     Storyline,
     StorylineRepository,
+    Timeline,
+    TimelineRepository,
     apply_evolution_command,
     is_adaptation_command,
 )
@@ -55,6 +63,9 @@ class EvolutionProjectionService:
         conversation_repository: ConversationGraphRepository,
         storyline_repository: StorylineRepository | None = None,
         observer: EvolutionObserver | None = None,
+        *,
+        timelines: TimelineRepository | None = None,
+        entry_history: EvolutionEntryHistory | None = None,
     ) -> None:
         """Initialize the replay service.
 
@@ -67,6 +78,10 @@ class EvolutionProjectionService:
                 Selected conversation ancestry used to determine active evidence.
             storyline_repository:
                 Optional Storyline owner resolver for shared correction workflows.
+            timelines:
+                Optional Timeline owner reader.
+            entry_history:
+                Exact Entry and settled Day history adapter.
             observer:
                 Optional privacy-safe telemetry sink.
         """
@@ -75,6 +90,8 @@ class EvolutionProjectionService:
         self._continuity_repository = continuity_repository
         self._conversation_repository = conversation_repository
         self._storyline_repository = storyline_repository
+        self._timelines = timelines
+        self._entry_history = entry_history
         self._observer = observer or NoOpEvolutionObserver()
 
     def rebuild(
@@ -311,6 +328,7 @@ class EvolutionProjectionService:
         scope: EvolutionScope,
         events: tuple[EvolutionEvent, ...] | None = None,
         corrections: tuple[EvolutionCorrectionEvent, ...] | None = None,
+        source: EvolutionEvidenceReference | None = None,
     ) -> tuple[EvolutionProjectionState, UUID | None, UUID | None]:
         """Derive both projections and inferred checkpoints from history."""
 
@@ -348,7 +366,9 @@ class EvolutionProjectionService:
         adaptation_checkpoint: UUID | None = None
 
         for event in inferred:
-            if not self._event_is_selected(event):
+            if not self._event_is_selected(event) or (
+                source is not None and not self._event_precedes(event, source)
+            ):
                 continue
 
             command = dispositions.get(event.id, event.command)
@@ -389,15 +409,68 @@ class EvolutionProjectionService:
             adaptation_checkpoint,
         )
 
-    def _owner(self, scope: EvolutionScope) -> Continuity | Storyline:
-        """Resolve an Ongoing or Storyline owner for replay and correction.
+    def as_of(
+        self, scope: EvolutionScope, source: EvolutionEvidenceReference
+    ) -> EvolutionProjectionState:
+        """Replay eligible state through one exact checkpoint.
+
+        Args:
+            scope:
+                Exact continuity ownership.
+            source:
+                Upper temporal bound for eligible source evidence.
+
+        Returns:
+            Eligible state retaining current optimistic history revisions.
+        """
+
+        if source.scope != scope:
+            raise ValueError("Evolution checkpoint belongs to another continuity.")
+
+        state, _, _ = self._replay(scope, source=source)
+        return state
+
+    @staticmethod
+    def _event_precedes(
+        event: EvolutionEvent, source: EvolutionEvidenceReference
+    ) -> bool:
+        """Require every cited checkpoint to be at or before the target.
+
+        Args:
+            event:
+                Accepted event under consideration.
+            source:
+                Exact temporal upper bound.
+
+        Returns:
+            Whether all event evidence precedes the target checkpoint.
+        """
+
+        for reference in event.command.sources:
+            if isinstance(source, EntryEvolutionEvidenceReference):
+                if not isinstance(reference, EntryEvolutionEvidenceReference):
+                    return False
+                if reference.entry > source.entry:
+                    return False
+                if reference.entry < source.entry:
+                    continue
+            if (
+                reference.conversation_id != source.conversation_id
+                or reference.persona_sequence > source.persona_sequence
+            ):
+                return False
+
+        return True
+
+    def _owner(self, scope: EvolutionScope) -> Continuity | Storyline | Timeline:
+        """Resolve a mode-owned continuity for replay and correction.
 
         Args:
             scope:
                 Complete expected continuity ownership.
 
         Returns:
-            Owned Ongoing or Storyline snapshot.
+            Owned continuity snapshot.
         """
 
         try:
@@ -405,12 +478,20 @@ class EvolutionProjectionService:
                 scope.identity_id, scope.persona_id, scope.continuity_id
             )
         except ContinuityNotFoundError:
-            if self._storyline_repository is None:
-                raise
+            try:
+                if self._storyline_repository is None:
+                    raise ContinuityNotFoundError(str(scope.continuity_id))
 
-            return self._storyline_repository.get(
-                scope.identity_id, scope.persona_id, scope.continuity_id
-            )
+                return self._storyline_repository.get(
+                    scope.identity_id, scope.persona_id, scope.continuity_id
+                )
+            except ContinuityNotFoundError:
+                if self._timelines is None:
+                    raise
+
+                return self._timelines.get(
+                    scope.identity_id, scope.persona_id, scope.continuity_id
+                )
 
     def _event_is_selected(self, event: EvolutionEvent) -> bool:
         """Return whether every exact source remains on selected ancestry.
@@ -423,21 +504,37 @@ class EvolutionProjectionService:
             Whether all cited turns remain selected and adjacent.
         """
 
-        selected_turns_by_conversation: dict[UUID, set[tuple[UUID, int, UUID, int]]] = (
-            {}
-        )
+        selected_turns_by_conversation: dict[
+            UUID, set[tuple[UUID, int, UUID, int]]
+        ] = {}
 
         for source in event.command.sources:
             selected_turns = selected_turns_by_conversation.get(source.conversation_id)
             if selected_turns is None:
-                path = self._conversation_repository.selected_path(
-                    ConversationScope(
-                        identity_id=event.scope.identity_id,
-                        persona_id=event.scope.persona_id,
-                        continuity_id=event.scope.continuity_id,
-                        conversation_id=source.conversation_id,
-                    )
+                conversation_scope = ConversationScope(
+                    identity_id=event.scope.identity_id,
+                    persona_id=event.scope.persona_id,
+                    continuity_id=event.scope.continuity_id,
+                    conversation_id=source.conversation_id,
                 )
+                if (
+                    isinstance(source, EntryEvolutionEvidenceReference)
+                    and self._entry_history is not None
+                ):
+                    path = self._entry_history.selected(
+                        conversation_scope, source.entry
+                    )
+                elif (
+                    isinstance(source, EntryEvolutionEvidenceReference)
+                    and source.entry.mode == ContinuityMode.TIMELINE
+                ):
+                    raise ValueError(
+                        "Timeline replay requires an Entry history adapter."
+                    )
+                else:
+                    path = self._conversation_repository.selected_path(
+                        conversation_scope
+                    )
                 selected_turns = {
                     (
                         user.id,

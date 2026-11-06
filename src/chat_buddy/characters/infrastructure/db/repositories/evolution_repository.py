@@ -9,6 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from chat_buddy.characters.domain import (
+    ArchivedContinuityError,
+    ContinuityMode,
     EntryEvolutionEvidenceReference,
     EvolutionCommand,
     EvolutionCorrectionAction,
@@ -35,6 +37,7 @@ from chat_buddy.characters.domain import (
 )
 from chat_buddy.characters.infrastructure.db.models import (
     ContinuityEntryModel,
+    ContinuityModel,
     ConversationModel,
     EvolutionCorrectionEventModel,
     EvolutionEffectModel,
@@ -42,6 +45,7 @@ from chat_buddy.characters.infrastructure.db.models import (
     MessageModel,
     PersonaAdaptationProjectionModel,
     RelationshipProjectionModel,
+    TimelineDayModel,
 )
 
 _EVOLUTION_COMMAND_ADAPTER: TypeAdapter[EvolutionCommand] = TypeAdapter(
@@ -199,6 +203,7 @@ class DbEvolutionRepository:
         now = datetime.now(UTC)
         try:
             with self._factory() as session, session.begin():
+                self._lock_timeline_owner(session, source)
                 existing = self._effect_by_source(
                     session, source.scope, source.persona_message_id
                 )
@@ -331,6 +336,7 @@ class DbEvolutionRepository:
         now = datetime.now(UTC)
         try:
             with self._factory() as session, session.begin():
+                self._lock_timeline_owner(session, proposal.source)
                 row = session.scalar(
                     select(EvolutionEffectModel)
                     .where(EvolutionEffectModel.id == effect_id)
@@ -351,6 +357,11 @@ class DbEvolutionRepository:
                     )
 
                 self._validate_terminal(row, proposal, decision)
+                self._validate_source(session, proposal.source, require_selected=True)
+                for command in proposal.commands:
+                    for source in command.sources:
+                        self._validate_source(session, source, require_selected=True)
+
                 if decision.outcome == EvolutionDecisionOutcome.APPLIED:
                     if relationship is None or persona_adaptations is None:
                         raise EvolutionProjectionConflictError(
@@ -411,7 +422,11 @@ class DbEvolutionRepository:
                 )
             )
 
-            return tuple(self._event_snapshot(row) for row in rows)
+            events = tuple(self._event_snapshot(row) for row in rows)
+            for event in events:
+                for source in event.command.sources:
+                    self._validate_source(session, source)
+            return events
 
     def list_corrections(
         self, scope: EvolutionScope
@@ -868,8 +883,66 @@ class DbEvolutionRepository:
                 )
 
     @staticmethod
-    def _validate_source(session: Session, source: EvolutionEvidenceReference) -> None:
-        """Require an owned adjacent committed user/persona checkpoint."""
+    def _lock_timeline_owner(
+        session: Session, source: EvolutionEvidenceReference
+    ) -> None:
+        """Serialize Timeline inference writes with lifecycle transitions.
+
+        Args:
+            session:
+                Current repository transaction.
+            source:
+                Exact source ownership determining the Timeline lock.
+
+        Raises:
+            EvolutionEffectConflictError:
+                If the source does not own a Timeline.
+            ArchivedContinuityError:
+                If archival won before the inference write.
+        """
+
+        if (
+            not isinstance(source, EntryEvolutionEvidenceReference)
+            or source.entry.mode != ContinuityMode.TIMELINE
+        ):
+            return
+
+        owner = session.scalar(
+            select(ContinuityModel)
+            .where(
+                ContinuityModel.id == source.scope.continuity_id,
+                ContinuityModel.identity_id == source.scope.identity_id,
+                ContinuityModel.persona_id == source.scope.persona_id,
+                ContinuityModel.mode == ContinuityMode.TIMELINE.value,
+            )
+            .with_for_update()
+        )
+        if owner is None:
+            raise EvolutionEffectConflictError("Evolution source has no Timeline owner")
+        if owner.lifecycle != "active":
+            raise ArchivedContinuityError("Archived Timelines cannot evolve")
+
+    @staticmethod
+    def _validate_source(
+        session: Session,
+        source: EvolutionEvidenceReference,
+        *,
+        require_selected: bool = False,
+    ) -> None:
+        """Require owned adjacent evidence and optionally selected Timeline ancestry.
+
+        Args:
+            session:
+                Current repository transaction.
+            source:
+                Exact evidence ownership and checkpoint.
+            require_selected:
+                Whether Timeline evidence must remain selected at commit.
+
+        Raises:
+            EvolutionEffectConflictError:
+                If ownership, adjacency, or required selected ancestry conflicts.
+        """
 
         conversation = session.scalar(
             select(ConversationModel).where(
@@ -929,6 +1002,39 @@ class DbEvolutionRepository:
             raise EvolutionEffectConflictError(
                 "Evolution source is not an owned completed turn"
             )
+
+        if (
+            require_selected
+            and isinstance(source, EntryEvolutionEvidenceReference)
+            and source.entry.mode == ContinuityMode.TIMELINE
+        ):
+            selected_leaf_id = session.scalar(
+                select(ConversationModel.selected_leaf_id)
+                .where(ConversationModel.id == source.conversation_id)
+                .with_for_update()
+            )
+            day = session.get(TimelineDayModel, source.entry.entry_id)
+            if day is None or (
+                day.closed_at is not None
+                and day.settled_selected_leaf_id != selected_leaf_id
+            ):
+                raise EvolutionEffectConflictError(
+                    "Evolution Day ancestry is unsettled"
+                )
+
+            ancestor_id = selected_leaf_id
+            while ancestor_id is not None and ancestor_id != source.persona_message_id:
+                ancestor_id = session.scalar(
+                    select(MessageModel.parent_id).where(
+                        MessageModel.id == ancestor_id,
+                        MessageModel.conversation_id == source.conversation_id,
+                    )
+                )
+
+            if ancestor_id is None:
+                raise EvolutionEffectConflictError(
+                    "Evolution source is no longer selected"
+                )
 
     @staticmethod
     def _resume(

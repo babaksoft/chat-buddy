@@ -410,3 +410,22 @@ def _build_command(
     return TypeAdapter(EvolutionCommand).validate_python(
         {"kind": expectation.kind, **common, **values}
     )
+
+
+def test_timeline_native_scenarios_preserve_conservative_and_selected_evidence() -> (
+    None
+):
+    """Evaluate Timeline boundary, gap, alternative, and settled-ancestry cases."""
+
+    scenarios = load_scenarios(DATASET.with_name("timeline_v1.jsonl"))
+    run = EvolutionEvaluationRunner().run(
+        scenarios,
+        DatasetFixtureStrategy(scenarios),
+        BaselineEvolutionEvaluationPolicy(),
+    )
+    assert run.metrics.scenario_count == 4
+    assert run.metrics.pass_rate == 1.0
+    assert run.metrics.hard_invariant_violation_rate == 0.0
+    for scenario in scenarios:
+        snapshot = scenario.build_snapshot()
+        assert all("tense" not in item.user_content for item in snapshot.evidence)
