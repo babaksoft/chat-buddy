@@ -183,7 +183,11 @@ def upgrade() -> None:
     op.execute("""
         UPDATE characters.generation_attempts AS attempt
         SET response_style = COALESCE(
-            message.response_provenance -> 'response_style',
+            (
+                SELECT message.response_provenance -> 'response_style'
+                FROM characters.messages AS message
+                WHERE message.id = attempt.persona_message_id
+            ),
             json_build_object(
                 'name', 'characters.response_style',
                 'version', '1.0.0',
@@ -195,7 +199,6 @@ def upgrade() -> None:
             )
         )
         FROM characters.conversations AS conversation
-        LEFT JOIN characters.messages AS message ON message.id = attempt.persona_message_id
         WHERE conversation.id = attempt.conversation_id
           AND conversation.continuity_id = attempt.continuity_id
         """)

@@ -14,9 +14,6 @@ Deferred product exploration:
 
 Deferred engineering:
 
-- Revise migration history in a later slice; the prior incompatible migration
-  notice does not block the completed Entry refactor.
-
 - Calibrate the Ollama token estimate against `prompt_eval_count` for the curated
   cloud models using representative English, Persian, code, long-text, and
   multi-message prompts; adjust the safety margin if the proxy undercounts.
