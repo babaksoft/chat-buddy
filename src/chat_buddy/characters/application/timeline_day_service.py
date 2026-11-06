@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
+from chat_buddy.characters.application.context_service import TimelineContextBudgeter
 from chat_buddy.characters.domain import (
     Clock,
     ContinuityLifecycle,
@@ -13,12 +14,14 @@ from chat_buddy.characters.domain import (
     DayReservationStatus,
     EffectiveGeneration,
     ReserveTimelineDay,
+    ResponseContextProvenance,
     SubmittedInput,
     Timeline,
     TimelineDay,
     TimelineDayRepository,
     TimelineRepository,
 )
+from chat_buddy.characters.prompts import TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION
 
 
 class TimelineDayService:
@@ -123,6 +126,10 @@ class TimelineDayService:
             boundary=facts.boundary,
             submitted_input=submitted_input,
             generation=generation,
+            response_context=ResponseContextProvenance(
+                selector=TimelineContextBudgeter().selector,
+                prompt_schema_version=TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+            ),
         )
 
         return self._days.reserve_first(timeline, request)

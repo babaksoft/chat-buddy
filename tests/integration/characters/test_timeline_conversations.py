@@ -226,12 +226,21 @@ def test_open_day_conversation_summarizes_and_survives_restart(
     app, target = _start_day(factory, clock, responses, summaries, "First input")
 
     first_attempt = app.history(target).attempts[0]
+    assert first_attempt.response_context is not None
+    assert first_attempt.response_context.selector.name == (
+        "baseline.timeline_response_context"
+    )
+    assert first_attempt.response_context.prompt_schema_version == "1.0.0"
     assert list(app.stream(target, first_attempt.id)) == ["Hello", " there"]
     first_node = DbConversationRepository(factory).graph(target.scope).nodes[-1]
     assert first_node.response_provenance is not None
     assert (
         first_node.response_provenance.response_style.source_revision
         == first_attempt.response_style.source_revision
+    )
+    assert (
+        first_node.response_provenance.response_context
+        == first_attempt.response_context
     )
 
     for content in ("Second input", "Third input", "Fourth input"):

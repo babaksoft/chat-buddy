@@ -52,6 +52,7 @@ from chat_buddy.characters.domain.conversation import (
     ConversationTarget,
     GenerationAttempt,
     Message,
+    ResponseContextProvenance,
     SubmittedInput,
 )
 from chat_buddy.characters.domain.errors import (
@@ -463,6 +464,7 @@ __all__ = [
     "RemovePersonaAdaptationCommand",
     "ReserveTimelineDay",
     "ResolvedLocalCalendarFacts",
+    "ResponseContextProvenance",
     "ResponseGateway",
     "ResponseLength",
     "ResponseMemoryBudget",

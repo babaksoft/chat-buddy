@@ -504,9 +504,9 @@ class EvolutionProjectionService:
             Whether all cited turns remain selected and adjacent.
         """
 
-        selected_turns_by_conversation: dict[
-            UUID, set[tuple[UUID, int, UUID, int]]
-        ] = {}
+        selected_turns_by_conversation: dict[UUID, set[tuple[UUID, int, UUID, int]]] = (
+            {}
+        )
 
         for source in event.command.sources:
             selected_turns = selected_turns_by_conversation.get(source.conversation_id)

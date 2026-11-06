@@ -28,6 +28,7 @@ from chat_buddy.characters.domain import (
     Message,
     MessageNode,
     NarrativePlacement,
+    ResponseContextProvenance,
     ResponseLength,
     ResponseProvenance,
     ResponseStyle,
@@ -93,6 +94,7 @@ class DbConversationRepository:
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
+        response_context: ResponseContextProvenance | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -107,6 +109,8 @@ class DbConversationRepository:
                 Last selected leaf observed during prompt preflight.
             submitted:
                 New input, or None to continue the existing unmatched tail.
+            response_context:
+                Versioned mode-owned selector and prompt schema when recorded.
 
         Returns:
             Detached domain snapshot.
@@ -175,7 +179,7 @@ class DbConversationRepository:
                 user_message_id=user_message_id,
                 selection_guard_id=user_message_id,
                 submitted_input=content,
-                generation=generation.model_dump(mode="json"),
+                generation=self._generation_payload(generation, response_context),
                 response_style=self._response_style(
                     session, scope.continuity_id
                 ).model_dump(mode="json"),
@@ -194,6 +198,7 @@ class DbConversationRepository:
         generation: EffectiveGeneration,
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
+        response_context: ResponseContextProvenance | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve a bounded retry without changing selection.
 
@@ -206,6 +211,8 @@ class DbConversationRepository:
                 Current requested selection to persist.
             expected_selected_leaf_id:
                 Selected final persona response observed during preflight.
+            response_context:
+                Versioned mode-owned selector and prompt schema when recorded.
 
         Returns:
             Detached pending retry attempt.
@@ -255,7 +262,7 @@ class DbConversationRepository:
                 user_message_id=parent.id,
                 selection_guard_id=target.id,
                 submitted_input=parent.content,
-                generation=generation.model_dump(mode="json"),
+                generation=self._generation_payload(generation, response_context),
                 response_style=self._response_style(
                     session, scope.continuity_id
                 ).model_dump(mode="json"),
@@ -356,8 +363,9 @@ class DbConversationRepository:
                 content=attempt.incomplete_output,
                 parent_id=attempt.user_message_id,
                 response_provenance=ResponseProvenance(
-                    generation=EffectiveGeneration.model_validate(attempt.generation),
+                    generation=self._effective_generation(attempt.generation),
                     response_style=ResponseStyle.model_validate(attempt.response_style),
+                    response_context=self._response_context(attempt.generation),
                     evolution_strategy=self._EVOLUTION_STRATEGY,
                     attempt_id=attempt.id,
                 ).model_dump(mode="json"),
@@ -1207,13 +1215,72 @@ class DbConversationRepository:
             scope=scope,
             user_message_id=row.user_message_id,
             submitted_input=row.submitted_input,
-            generation=EffectiveGeneration.model_validate(row.generation),
+            generation=DbConversationRepository._effective_generation(row.generation),
             response_style=ResponseStyle.model_validate(row.response_style),
+            response_context=DbConversationRepository._response_context(row.generation),
             status=cast(AttemptStatus, row.status),
             incomplete_output=row.incomplete_output,
             created_at=_utc(row.created_at),
             updated_at=_utc(row.updated_at),
             finished_at=(_utc(row.finished_at) if row.finished_at else None),
+        )
+
+    @staticmethod
+    def _generation_payload(
+        generation: EffectiveGeneration,
+        response_context: ResponseContextProvenance | None,
+    ) -> dict[str, object]:
+        """Store generation and optional context versions in the existing ledger.
+
+        Args:
+            generation:
+                Effective provider generation snapshot.
+            response_context:
+                Versioned response-context behavior when recorded.
+
+        Returns:
+            Backward-compatible JSON payload.
+        """
+
+        payload: dict[str, object] = generation.model_dump(mode="json")
+        if response_context is not None:
+            payload["_response_context"] = response_context.model_dump(mode="json")
+
+        return payload
+
+    @staticmethod
+    def _effective_generation(payload: dict[str, object]) -> EffectiveGeneration:
+        """Read effective generation while ignoring optional context metadata.
+
+        Args:
+            payload:
+                Existing attempt generation JSON.
+
+        Returns:
+            Valid effective generation snapshot.
+        """
+
+        generation = dict(payload)
+        generation.pop("_response_context", None)
+        return EffectiveGeneration.model_validate(generation)
+
+    @staticmethod
+    def _response_context(
+        payload: dict[str, object],
+    ) -> ResponseContextProvenance | None:
+        """Read optional context metadata from an attempt generation payload.
+
+        Args:
+            payload:
+                Existing attempt generation JSON.
+
+        Returns:
+            Recorded context provenance, or none for legacy and other-mode rows.
+        """
+
+        value = payload.get("_response_context")
+        return (
+            None if value is None else ResponseContextProvenance.model_validate(value)
         )
 
 

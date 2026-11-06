@@ -21,6 +21,7 @@ from chat_buddy.characters.domain.conversation import (
     ConversationScope,
     GenerationAttempt,
     Message,
+    ResponseContextProvenance,
     SubmittedInput,
 )
 from chat_buddy.characters.domain.llm import EffectiveGeneration
@@ -487,6 +488,8 @@ class ReserveTimelineDay(BaseModel):
             Exact first user input.
         generation:
             Effective provider, model, configuration, and budget snapshot.
+        response_context:
+            Versioned Timeline selector and prompt schema when available.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -502,6 +505,9 @@ class ReserveTimelineDay(BaseModel):
     submitted_input: SubmittedInput = Field(description="Exact first user input.")
     generation: EffectiveGeneration = Field(
         description="Effective generation selection for the first attempt."
+    )
+    response_context: ResponseContextProvenance | None = Field(
+        default=None, description="Versioned Timeline response-context behavior."
     )
 
 

@@ -10,7 +10,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chat_buddy.characters.domain.continuity import ContinuityMode
-from chat_buddy.characters.domain.conversation import ConversationScope
+from chat_buddy.characters.domain.conversation import (
+    ConversationScope,
+    ResponseContextProvenance,
+)
 from chat_buddy.characters.domain.llm import EffectiveGeneration
 from chat_buddy.characters.domain.response_style import ResponseStyle
 from chat_buddy.characters.domain.strategy import StrategyIdentity
@@ -25,6 +28,8 @@ class ResponseProvenance(BaseModel):
             Effective provider, model, configuration, capability, and budget.
         response_style:
             Fixed response-presentation snapshot.
+        response_context:
+            Versioned context selector and prompt schema when recorded.
         evolution_strategy:
             Configured persona-evolution strategy name and version.
         attempt_id:
@@ -38,6 +43,9 @@ class ResponseProvenance(BaseModel):
     )
     response_style: ResponseStyle = Field(
         description="Effective response-presentation behavior."
+    )
+    response_context: ResponseContextProvenance | None = Field(
+        default=None, description="Versioned response-context behavior."
     )
     evolution_strategy: StrategyIdentity = Field(
         description="Configured persona-evolution strategy."

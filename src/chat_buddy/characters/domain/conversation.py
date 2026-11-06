@@ -12,7 +12,28 @@ from chat_buddy.characters.domain.llm import (
     GenerationConfiguration,
 )
 from chat_buddy.characters.domain.response_style import ResponseStyle
+from chat_buddy.characters.domain.strategy import StrategyIdentity
 from chat_buddy.characters.domain.validation import NON_BLANK_TEXT_PATTERN
+
+
+class ResponseContextProvenance(BaseModel):
+    """Versioned response-context behavior reserved with an attempt.
+
+    Attributes:
+        selector:
+            Deterministic whole-record context selector identity.
+        prompt_schema_version:
+            Semantic version of the ordered prompt schema.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    selector: StrategyIdentity = Field(description="Context selector identity.")
+    prompt_schema_version: str = Field(
+        min_length=1,
+        max_length=64,
+        description="Ordered response prompt-schema version.",
+    )
 
 
 class ConversationScope(BaseModel):
@@ -164,6 +185,8 @@ class GenerationAttempt(BaseModel):
             Immutable effective provider/model/configuration and budget.
         response_style:
             Immutable presentation snapshot rendered at reservation.
+        response_context:
+            Versioned selector and prompt schema, when recorded by the mode.
         status:
             Current lifecycle status.
         incomplete_output:
@@ -187,6 +210,9 @@ class GenerationAttempt(BaseModel):
     )
     response_style: ResponseStyle = Field(
         description="Immutable effective response presentation."
+    )
+    response_context: ResponseContextProvenance | None = Field(
+        default=None, description="Versioned response-context behavior."
     )
     status: AttemptStatus = Field(description="Lifecycle status.")
     incomplete_output: str = Field(description="Accumulated output outside history.")

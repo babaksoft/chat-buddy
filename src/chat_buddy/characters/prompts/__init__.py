@@ -18,12 +18,16 @@ from chat_buddy.characters.prompts.storyline import (
     assemble_storyline_memory_blocks,
     assemble_storyline_prompt,
 )
-from chat_buddy.characters.prompts.timeline import assemble_timeline_prompt
+from chat_buddy.characters.prompts.timeline import (
+    TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
+    assemble_timeline_prompt,
+)
 
 __all__ = [
     "EVOLUTION_PROMPT_SCHEMA_VERSION",
     "MEMORY_DELTA_PROMPT_SCHEMA_VERSION",
     "PROMPT_OVERHEAD_TOKENS",
+    "TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION",
     "assemble_continuity_memory_blocks",
     "assemble_evolution_prompt",
     "assemble_memory_extraction_prompt",

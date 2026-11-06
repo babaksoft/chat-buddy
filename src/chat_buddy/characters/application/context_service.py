@@ -17,8 +17,10 @@ from chat_buddy.characters.domain import (
     ResponseStyle,
     Scene,
     Storyline,
+    StrategyIdentity,
     SummaryRevision,
     Timeline,
+    TimelineDay,
     TokenCounter,
 )
 from chat_buddy.characters.prompts import (
@@ -422,15 +424,32 @@ class StorylineContextBudgeter:
 class TimelineContextBudgeter:
     """Select one Timeline day's newest complete-turn suffix within its budget."""
 
+    _SELECTOR = StrategyIdentity(
+        name="baseline.timeline_response_context", version="1.0.0"
+    )
+
+    @property
+    def selector(self) -> StrategyIdentity:
+        """Return the stable whole-record selection behavior identity.
+
+        Returns:
+            Timeline response-context selector identity.
+        """
+
+        return self._SELECTOR
+
     def assemble(
         self,
         persona: Persona,
         identity: Identity,
         timeline: Timeline,
+        day: TimelineDay,
         response_style: ResponseStyle,
         context: EligibleContext,
         generation: EffectiveGeneration,
         counter: TokenCounter,
+        memories: tuple[ContinuityMemory, ...] = (),
+        projections: EvolutionProjectionState | None = None,
     ) -> ContextSelection:
         """Reserve mandatory Timeline blocks and add whole turns newest first.
 
@@ -441,6 +460,8 @@ class TimelineContextBudgeter:
                 Frozen authored identity.
             timeline:
                 Owned starting relationship state.
+            day:
+                Exact current represented day.
             response_style:
                 Effective presentation snapshot for the response.
             context:
@@ -449,6 +470,10 @@ class TimelineContextBudgeter:
                 Effective response capacity after output reservation.
             counter:
                 Provider-specific deterministic estimator.
+            memories:
+                Dedicated-budget response memories in selector priority order.
+            projections:
+                Current relationship and adaptation caches when initialized.
 
         Returns:
             Bounded current-day prompt and explicit compression prefix.
@@ -459,10 +484,20 @@ class TimelineContextBudgeter:
         """
 
         turns = context.uncovered_turns
-        mandatory_count = min(1, len(turns))
-        selected = turns[-mandatory_count:] if mandatory_count else ()
+        selected: tuple[CompletedTurn, ...] = ()
+        selected_memories: tuple[ContinuityMemory, ...] = ()
+        summary_included = False
         prompt = self._render(
-            persona, identity, timeline, response_style, context, selected
+            persona,
+            identity,
+            timeline,
+            day,
+            response_style,
+            context,
+            selected,
+            selected_memories,
+            projections,
+            summary_included,
         )
         tokens = counter.count(prompt)
         if tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -470,16 +505,39 @@ class TimelineContextBudgeter:
                 "Mandatory Timeline context exceeds this model's capacity."
             )
 
-        omitted = turns[:-mandatory_count] if mandatory_count else ()
-        for turn in reversed(omitted):
+        for memory in memories:
+            candidate_memories = (*selected_memories, memory)
+            candidate = self._render(
+                persona,
+                identity,
+                timeline,
+                day,
+                response_style,
+                context,
+                selected,
+                candidate_memories,
+                projections,
+                summary_included,
+            )
+            candidate_tokens = counter.count(candidate)
+            if candidate_tokens + PROMPT_OVERHEAD_TOKENS <= generation.input_tokens:
+                selected_memories = candidate_memories
+                prompt = candidate
+                tokens = candidate_tokens
+
+        for turn in reversed(turns):
             candidate_turns = (turn,) + selected
             candidate = self._render(
                 persona,
                 identity,
                 timeline,
+                day,
                 response_style,
                 context,
                 candidate_turns,
+                selected_memories,
+                projections,
+                summary_included,
             )
             candidate_tokens = counter.count(candidate)
             if candidate_tokens + PROMPT_OVERHEAD_TOKENS > generation.input_tokens:
@@ -488,6 +546,25 @@ class TimelineContextBudgeter:
             selected = candidate_turns
             prompt = candidate
             tokens = candidate_tokens
+
+        if context.summary is not None:
+            candidate = self._render(
+                persona,
+                identity,
+                timeline,
+                day,
+                response_style,
+                context,
+                selected,
+                selected_memories,
+                projections,
+                True,
+            )
+            candidate_tokens = counter.count(candidate)
+            if candidate_tokens + PROMPT_OVERHEAD_TOKENS <= generation.input_tokens:
+                summary_included = True
+                prompt = candidate
+                tokens = candidate_tokens
         omitted_count = len(turns) - len(selected)
 
         return ContextSelection(
@@ -502,9 +579,13 @@ class TimelineContextBudgeter:
         persona: Persona,
         identity: Identity,
         timeline: Timeline,
+        day: TimelineDay,
         response_style: ResponseStyle,
         context: EligibleContext,
         turns: tuple[CompletedTurn, ...],
+        memories: tuple[ContinuityMemory, ...],
+        projections: EvolutionProjectionState | None,
+        summary_included: bool,
     ) -> tuple[PromptMessage, ...]:
         """Format one candidate from exact current-day inputs.
 
@@ -515,12 +596,20 @@ class TimelineContextBudgeter:
                 Frozen authored identity.
             timeline:
                 Owned Timeline snapshot.
+            day:
+                Exact current represented day.
             response_style:
                 Effective presentation snapshot for the response.
             context:
                 Current-day summary and input.
             turns:
                 Selected chronological complete current-day turns.
+            memories:
+                Whole eligible memories admitted within capacity.
+            projections:
+                Current relationship and adaptation caches when initialized.
+            summary_included:
+                Whether the compatible current-day summary fits this candidate.
 
         Returns:
             Provider-ready prompt messages.
@@ -534,8 +623,16 @@ class TimelineContextBudgeter:
             persona,
             identity,
             timeline,
+            day,
             response_style,
             messages,
             context.current_input,
-            context.summary.content if context.summary is not None else None,
+            (
+                context.summary.content
+                if summary_included and context.summary is not None
+                else None
+            ),
+            memories,
+            projections.relationship if projections is not None else None,
+            projections.persona_adaptations if projections is not None else None,
         )

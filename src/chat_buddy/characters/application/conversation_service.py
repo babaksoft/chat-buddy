@@ -58,6 +58,7 @@ from chat_buddy.characters.domain import (
     ModelRegistry,
     PersonaRepository,
     PromptMessage,
+    ResponseContextProvenance,
     ResponseMemorySelection,
     ResponseStyle,
     RetryAvailability,
@@ -69,6 +70,7 @@ from chat_buddy.characters.domain import (
     Timeline,
     TokenCounter,
 )
+from chat_buddy.characters.prompts import TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION
 
 
 class _ConversationPersistence(
@@ -579,7 +581,15 @@ class ConversationService:
             None,
             retry_history.messages[-1].id,
         )
-        return self._conversations.begin_retry(scope, generation, settings, tail.id)
+        response_context = self._response_context_provenance(target.mode)
+        if response_context is None:
+            return self._conversations.begin_retry(
+                scope, generation, settings, tail.id
+            )
+
+        return self._conversations.begin_retry(
+            scope, generation, settings, tail.id, response_context
+        )
 
     def branch_decision(
         self,
@@ -771,12 +781,44 @@ class ConversationService:
         )
         expected_selected_leaf_id = tail.id if tail is not None else None
 
+        response_context = self._response_context_provenance(target.mode)
+        if response_context is None:
+            return self._conversations.begin(
+                scope,
+                generation,
+                settings,
+                expected_selected_leaf_id,
+                submitted,
+            )
+
         return self._conversations.begin(
             scope,
             generation,
             settings,
             expected_selected_leaf_id,
             submitted,
+            response_context,
+        )
+
+    def _response_context_provenance(
+        self, mode: ContinuityMode
+    ) -> ResponseContextProvenance | None:
+        """Resolve mode-owned response-context versions for reservation.
+
+        Args:
+            mode:
+                Continuity mode governing prompt assembly.
+
+        Returns:
+            Timeline context provenance, or none for unchanged modes.
+        """
+
+        if mode != ContinuityMode.TIMELINE:
+            return None
+
+        return ResponseContextProvenance(
+            selector=self._timeline_budgeter.selector,
+            prompt_schema_version=TIMELINE_RESPONSE_PROMPT_SCHEMA_VERSION,
         )
 
     def _branch_decision(
@@ -879,14 +921,11 @@ class ConversationService:
         identity = self._identities.get(scope.identity_id)
         counter = self._models.token_counter(generation.model.provider)
         current = self._summaries.current(scope, summary_path_leaf_id)
-        projections = (
-            None
-            if target.mode == ContinuityMode.TIMELINE
-            else self._response_projections(scope, history)
-        )
+        projections = self._response_projections(scope, history)
         storyline: Storyline | None = None
         scene: Scene | None = None
         timeline: Timeline | None = None
+        timeline_day = None
         continuity = None
         if target.mode == ContinuityMode.STORYLINE:
             storyline, scene = self._validate_target(target, history, writable=True)
@@ -895,7 +934,9 @@ class ConversationService:
         elif target.mode == ContinuityMode.TIMELINE:
             if self._timeline_adapter is None:
                 raise ValueError("Timeline conversation support is not configured")
-            timeline, _ = self._timeline_adapter.require_writable(target, history)
+            timeline, timeline_day = self._timeline_adapter.require_writable(
+                target, history
+            )
         else:
             continuity = self._continuities.get(
                 scope.identity_id, scope.persona_id, scope.continuity_id
@@ -924,14 +965,24 @@ class ConversationService:
                     projections,
                 )
             elif timeline is not None:
+                if timeline_day is None:
+                    raise ValueError("Timeline day target resolution failed")
+                memories = (
+                    self._response_memories.select(target, counter).included_memories
+                    if self._response_memories is not None
+                    else ()
+                )
                 selection = self._timeline_budgeter.assemble(
                     persona,
                     identity,
                     timeline,
+                    timeline_day,
                     response_style,
                     eligible,
                     generation,
                     counter,
+                    memories,
+                    projections,
                 )
             else:
                 if continuity is None:

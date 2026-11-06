@@ -24,6 +24,7 @@ from chat_buddy.characters.domain import (
     Message,
     NarrativePlacement,
     ReserveTimelineDay,
+    ResponseContextProvenance,
     ResponseLength,
     ResponseStyle,
     ResponseStyleSettings,
@@ -272,7 +273,9 @@ class DbTimelineDayRepository:
                     user_message_id=message.id,
                     selection_guard_id=message.id,
                     submitted_input=message.content,
-                    generation=request.generation.model_dump(mode="json"),
+                    generation=self._generation_payload(
+                        request.generation, request.response_context
+                    ),
                     response_style=style,
                     status="pending",
                     incomplete_output="",
@@ -494,13 +497,72 @@ class DbTimelineDayRepository:
             scope=scope,
             user_message_id=row.user_message_id,
             submitted_input=row.submitted_input,
-            generation=EffectiveGeneration.model_validate(row.generation),
+            generation=cls._effective_generation(row.generation),
             response_style=ResponseStyle.model_validate(row.response_style),
+            response_context=cls._response_context(row.generation),
             status=cast(AttemptStatus, row.status),
             incomplete_output=row.incomplete_output,
             created_at=cls._utc(row.created_at),
             updated_at=cls._utc(row.updated_at),
             finished_at=None if row.finished_at is None else cls._utc(row.finished_at),
+        )
+
+    @staticmethod
+    def _generation_payload(
+        generation: EffectiveGeneration,
+        response_context: ResponseContextProvenance | None,
+    ) -> dict[str, object]:
+        """Store generation and context versions in the existing JSON ledger.
+
+        Args:
+            generation:
+                Effective first-response generation.
+            response_context:
+                Versioned Timeline selector and prompt schema.
+
+        Returns:
+            Backward-compatible generation JSON.
+        """
+
+        payload: dict[str, object] = generation.model_dump(mode="json")
+        if response_context is not None:
+            payload["_response_context"] = response_context.model_dump(mode="json")
+
+        return payload
+
+    @staticmethod
+    def _effective_generation(payload: dict[str, object]) -> EffectiveGeneration:
+        """Read generation while ignoring optional context metadata.
+
+        Args:
+            payload:
+                Persisted attempt generation JSON.
+
+        Returns:
+            Effective generation snapshot.
+        """
+
+        generation = dict(payload)
+        generation.pop("_response_context", None)
+        return EffectiveGeneration.model_validate(generation)
+
+    @staticmethod
+    def _response_context(
+        payload: dict[str, object],
+    ) -> ResponseContextProvenance | None:
+        """Read optional context versions from attempt generation JSON.
+
+        Args:
+            payload:
+                Persisted attempt generation JSON.
+
+        Returns:
+            Recorded context provenance, if present.
+        """
+
+        value = payload.get("_response_context")
+        return (
+            None if value is None else ResponseContextProvenance.model_validate(value)
         )
 
     @staticmethod

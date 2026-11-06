@@ -24,6 +24,7 @@ from chat_buddy.characters.domain.conversation import (
     ConversationSettings,
     GenerationAttempt,
     Message,
+    ResponseContextProvenance,
     SubmittedInput,
 )
 from chat_buddy.characters.domain.evolution import (
@@ -1395,6 +1396,7 @@ class ConversationRepository(Protocol):
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID | None,
         submitted: SubmittedInput | None,
+        response_context: ResponseContextProvenance | None = None,
     ) -> GenerationAttempt:
         """Atomically reserve an attempt and optionally append its user message.
 
@@ -1409,6 +1411,8 @@ class ConversationRepository(Protocol):
                 Last selected leaf observed during prompt preflight.
             submitted:
                 New input, or None to continue the existing unmatched tail.
+            response_context:
+                Versioned mode-owned selector and prompt schema when recorded.
 
         Returns:
             Detached domain snapshot.
@@ -1439,6 +1443,7 @@ class ConversationRepository(Protocol):
         generation: EffectiveGeneration,
         settings: ConversationSettings,
         expected_selected_leaf_id: UUID,
+        response_context: ResponseContextProvenance | None = None,
     ) -> GenerationAttempt:
         """Reserve a bounded retry for the selected completed response.
 
@@ -1451,6 +1456,8 @@ class ConversationRepository(Protocol):
                 Current requested selection to persist.
             expected_selected_leaf_id:
                 Selected final persona response observed during preflight.
+            response_context:
+                Versioned mode-owned selector and prompt schema when recorded.
 
         Returns:
             Detached pending retry attempt.
