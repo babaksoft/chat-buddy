@@ -5,9 +5,16 @@ from uuid import UUID
 
 from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
 from chat_buddy.characters.application.context_service import TimelineContextBudgeter
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.domain import (
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
     Clock,
     ContinuityLifecycle,
+    ContinuityMode,
     ConversationGraphRepository,
     DayClosureStatus,
     DayReservationResult,
@@ -34,6 +41,7 @@ class TimelineDayService:
         graphs: ConversationGraphRepository,
         clock: Clock,
         calendar: TimelineCalendarPolicy | None = None,
+        diagnostics: CharactersDiagnosticObserver | None = None,
     ) -> None:
         """Initialize deterministic day orchestration.
 
@@ -48,6 +56,8 @@ class TimelineDayService:
                 Injected source of aware UTC instants.
             calendar:
                 Optional deterministic calendar policy.
+            diagnostics:
+                Optional privacy-safe structured diagnostic sink.
         """
 
         self._timelines = timelines
@@ -55,6 +65,7 @@ class TimelineDayService:
         self._graphs = graphs
         self._clock = clock
         self._calendar = calendar or TimelineCalendarPolicy()
+        self._diagnostics = diagnostics or NoOpCharactersDiagnosticObserver()
 
     def reserve(
         self,
@@ -132,7 +143,24 @@ class TimelineDayService:
             ),
         )
 
-        return self._days.reserve_first(timeline, request)
+        result = self._days.reserve_first(timeline, request)
+        day = result.day
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_DAY_RESERVATION,
+                continuity_id=timeline.id,
+                conversation_id=day.scope.conversation_id if day is not None else None,
+                entry_id=day.id if day is not None else None,
+                attempt_id=result.attempt.id if result.attempt is not None else None,
+                mode=ContinuityMode.TIMELINE,
+                local_date=request.boundary.local_date,
+                boundary_timezone=request.boundary.timezone,
+                policy=request.response_context.selector.name,
+                version=request.response_context.selector.version,
+                terminal_reason=result.status.value,
+            )
+        )
+        return result
 
     def _observe_closure(
         self, timeline: Timeline, latest: TimelineDay, current_at: datetime
@@ -161,6 +189,21 @@ class TimelineDayService:
             current_at,
             timeline.revision,
             selected.selected_leaf_id,
+        )
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_CLOSURE,
+                continuity_id=timeline.id,
+                conversation_id=latest.scope.conversation_id,
+                entry_id=latest.id,
+                attempt_id=result.interrupted_attempt_id,
+                mode=ContinuityMode.TIMELINE,
+                local_date=latest.boundary.local_date,
+                boundary_timezone=latest.boundary.timezone,
+                policy="timeline_calendar",
+                version="1.0.0",
+                terminal_reason=result.status.value,
+            )
         )
         if result.status == DayClosureStatus.STALE_REVISION:
             refreshed = self._timelines.get(

@@ -16,6 +16,9 @@ from chat_buddy.characters.application.context_service import (
     StorylineContextBudgeter,
     TimelineContextBudgeter,
 )
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.application.response_style import ResponseStyleService
 from chat_buddy.characters.application.rolling_summary_service import (
     RollingSummaryService,
@@ -31,7 +34,12 @@ from chat_buddy.characters.domain import (
     AttemptConflictError,
     BranchDecision,
     BranchModeFactsResolver,
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
+    Clock,
     ContextCapacityError,
+    ContextSelection,
     ContinuityMode,
     ContinuityRepository,
     ConversationGraphRepository,
@@ -192,6 +200,8 @@ class ConversationService:
         evolution: _EvolutionEffectProcessor | None = None,
         evolution_projections: EvolutionRepository | None = None,
         evolution_rebuilder: _EvolutionProjectionRebuilder | None = None,
+        recovery_clock: Clock | None = None,
+        diagnostics: CharactersDiagnosticObserver | None = None,
     ) -> None:
         """Bind Characters-owned contracts only.
 
@@ -226,6 +236,10 @@ class ConversationService:
                 Optional current evolution projection reader for response context.
             evolution_rebuilder:
                 Optional selected-ancestry projection replay workflow.
+            recovery_clock:
+                Optional injected clock for scoped abandoned-attempt recovery.
+            diagnostics:
+                Optional privacy-safe structured diagnostic sink.
         """
 
         self._conversations = conversations
@@ -241,6 +255,8 @@ class ConversationService:
         self._evolution = evolution
         self._evolution_projections = evolution_projections
         self._evolution_rebuilder = evolution_rebuilder
+        self._recovery_clock = recovery_clock
+        self._diagnostics = diagnostics or NoOpCharactersDiagnosticObserver()
         self._branch_mode_facts = (
             branch_mode_facts
             or storyline_adapter
@@ -478,10 +494,38 @@ class ConversationService:
         """
 
         scope = target.scope
-        history = self._conversations.reconcile(
-            scope, datetime.now(UTC) - timedelta(minutes=5)
+        before = self._conversations.history(scope)
+        now = (
+            self._recovery_clock.now()
+            if self._recovery_clock is not None
+            else datetime.now(UTC)
         )
+        history = self._conversations.reconcile(scope, now - timedelta(minutes=5))
         self._validate_target(target, history, writable=False)
+        active_before = {
+            attempt.id
+            for attempt in before.attempts
+            if attempt.status in {"pending", "streaming"}
+        }
+        recovered = tuple(
+            attempt
+            for attempt in history.attempts
+            if attempt.id in active_before and attempt.status == "interrupted"
+        )
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.ATTEMPT_RECOVERY,
+                continuity_id=scope.continuity_id,
+                conversation_id=scope.conversation_id,
+                entry_id=target.entry_id,
+                mode=target.mode,
+                attempt_id=recovered[0].id if len(recovered) == 1 else None,
+                policy="inactive_attempt_timeout",
+                version="1.0.0",
+                terminal_reason="recovered" if recovered else "no_change",
+                recovered_attempt_count=len(recovered),
+            )
+        )
         return history
 
     def configure(
@@ -699,8 +743,18 @@ class ConversationService:
                 and target.mode != ContinuityMode.ONGOING
             ):
                 try:
-                    self._memory_extraction.process(target, message.id)
+                    extraction = self._memory_extraction.process(target, message.id)
+                    self._emit_terminal_processor(
+                        CharactersDiagnosticName.MEMORY_EXTRACTION_TERMINAL,
+                        target,
+                        extraction,
+                    )
                 except Exception:
+                    self._emit_terminal_processor(
+                        CharactersDiagnosticName.MEMORY_EXTRACTION_TERMINAL,
+                        target,
+                        None,
+                    )
                     logger.exception(
                         "Continuity memory extraction did not reach a terminal "
                         "outcome for persona message %s.",
@@ -708,8 +762,18 @@ class ConversationService:
                     )
             if self._evolution is not None:
                 try:
-                    self._evolution.process(target, message.id)
+                    evolution = self._evolution.process(target, message.id)
+                    self._emit_terminal_processor(
+                        CharactersDiagnosticName.EVOLUTION_TERMINAL,
+                        target,
+                        evolution,
+                    )
                 except Exception:
+                    self._emit_terminal_processor(
+                        CharactersDiagnosticName.EVOLUTION_TERMINAL,
+                        target,
+                        None,
+                    )
                     logger.exception(
                         "Evolution did not reach a terminal outcome for persona "
                         "message %s.",
@@ -1055,6 +1119,7 @@ class ConversationService:
                     projections,
                 )
             if not selection.omitted_turns:
+                self._emit_context_selection(target, selection)
                 return selection.prompt
             current = self._summaries.advance(
                 scope,
@@ -1064,6 +1129,70 @@ class ConversationService:
             )
         raise ContextCapacityError(
             "Conversation summary did not make bounded progress."
+        )
+
+    def _emit_context_selection(
+        self, target: ConversationTarget, selection: ContextSelection
+    ) -> None:
+        """Emit bounded response-context counts without prompt content.
+
+        Args:
+            target:
+                Exact mode-owned target.
+            selection:
+                Context selection exposing only aggregate fields used here.
+        """
+
+        included_turns = selection.included_turns
+        omitted_turns = selection.omitted_turns
+        tokens = selection.tokens
+        provenance = self._response_context_provenance(target.mode)
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.RESPONSE_CONTEXT_ASSEMBLY,
+                continuity_id=target.scope.continuity_id,
+                conversation_id=target.scope.conversation_id,
+                entry_id=target.entry_id,
+                mode=target.mode,
+                policy=provenance.selector.name,
+                version=provenance.selector.version,
+                terminal_reason="assembled",
+                included_turn_count=len(included_turns),
+                omitted_turn_count=len(omitted_turns),
+                token_count=tokens,
+            )
+        )
+
+    def _emit_terminal_processor(
+        self,
+        name: CharactersDiagnosticName,
+        target: ConversationTarget,
+        result: object | None,
+    ) -> None:
+        """Emit a post-response processor terminal state without its content.
+
+        Args:
+            name:
+                Memory or evolution diagnostic name.
+            target:
+                Exact mode-owned target.
+            result:
+                Processor result, or None when processing raised.
+        """
+
+        state = getattr(result, "state", None)
+        reason = "exception" if state is None else str(state)
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=name,
+                continuity_id=target.scope.continuity_id,
+                conversation_id=target.scope.conversation_id,
+                entry_id=target.entry_id,
+                mode=target.mode,
+                policy="post_response_processor",
+                version="1.0.0",
+                terminal_reason=reason,
+            )
         )
 
     def _response_projections(

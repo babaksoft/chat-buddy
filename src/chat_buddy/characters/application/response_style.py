@@ -2,7 +2,13 @@
 
 from uuid import UUID
 
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.domain import (
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
     ContinuityMode,
     NarrativePlacement,
     ResponseLength,
@@ -146,6 +152,7 @@ class ResponseStyleService:
         self,
         repository: ResponseStyleRepository,
         renderer: ResponseStyleRenderer | None = None,
+        diagnostics: CharactersDiagnosticObserver | None = None,
     ) -> None:
         """Initialize response-style operations.
 
@@ -154,10 +161,13 @@ class ResponseStyleService:
                 Continuity-owned style persistence.
             renderer:
                 Optional deterministic renderer override.
+            diagnostics:
+                Optional privacy-safe structured diagnostic sink.
         """
 
         self._repository = repository
         self._renderer = renderer or ResponseStyleRenderer()
+        self._diagnostics = diagnostics or NoOpCharactersDiagnosticObserver()
 
     def get(self, continuity_id: UUID) -> VersionedResponseStyleSettings:
         """Load the current requested controls and revision.
@@ -205,4 +215,14 @@ class ResponseStyleService:
             Explicit updated, idempotent, stale, or archived outcome.
         """
 
-        return self._repository.update(continuity_id, settings, expected_revision)
+        result = self._repository.update(continuity_id, settings, expected_revision)
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.RESPONSE_STYLE_REVISION,
+                continuity_id=continuity_id,
+                policy=RESPONSE_STYLE_RENDERER_NAME,
+                version=RESPONSE_STYLE_RENDERER_VERSION,
+                terminal_reason=result.status.value,
+            )
+        )
+        return result

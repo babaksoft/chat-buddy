@@ -7,6 +7,7 @@ from uuid import uuid4
 from chat_buddy.characters.application import TimelineService
 from chat_buddy.characters.domain import (
     ApplicationLocalTimezone,
+    CharactersDiagnosticName,
     ContinuityEntry,
     ContinuityLifecycle,
     ContinuityMode,
@@ -78,6 +79,7 @@ def test_resume_observes_due_latest_day_closure_before_listing() -> None:
     timelines = Mock()
     days = Mock()
     graphs = Mock()
+    diagnostics = Mock()
     timelines.get.side_effect = (timeline, refreshed)
     days.latest.return_value = day
     graphs.selected_path.return_value.selected_leaf_id = uuid4()
@@ -91,6 +93,7 @@ def test_resume_observes_due_latest_day_closure_before_listing() -> None:
         FixedTimezoneSource(),
         graphs=graphs,
         clock=FixedClock(day.boundary.closes_at),
+        diagnostics=diagnostics,
     )
 
     result = service.resume(timeline.identity_id, timeline.persona_id, timeline.id)
@@ -105,6 +108,13 @@ def test_resume_observes_due_latest_day_closure_before_listing() -> None:
     )
     days.list.assert_called_once_with(refreshed)
     assert result.days[0].is_closed
+    diagnostic = diagnostics.emit.call_args.args[0]
+    assert diagnostic.name == CharactersDiagnosticName.TIMELINE_CLOSURE
+    assert diagnostic.continuity_id == timeline.id
+    assert diagnostic.entry_id == day.id
+    assert diagnostic.local_date == day.boundary.local_date
+    assert diagnostic.boundary_timezone == "UTC"
+    assert diagnostic.terminal_reason == "closed"
 
 
 def test_resume_of_empty_timeline_does_not_create_or_resolve_a_day() -> None:

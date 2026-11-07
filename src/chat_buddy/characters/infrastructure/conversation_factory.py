@@ -26,6 +26,7 @@ from chat_buddy.characters.application import (
     TimelineExtractionContextAdapter,
 )
 from chat_buddy.characters.domain import (
+    CharactersDiagnosticObserver,
     Clock,
     EvolutionConfiguration,
     EvolutionSnapshotBudget,
@@ -51,6 +52,7 @@ _EVOLUTION_FIXED_OVERHEAD_TOKENS = 512
 def create_conversation_service(
     session_factory: sessionmaker[Session] | None = None,
     clock: Clock | None = None,
+    diagnostics: CharactersDiagnosticObserver | None = None,
 ) -> ConversationService:
     """Compose repositories and configured local providers only on explicit use.
 
@@ -59,6 +61,8 @@ def create_conversation_service(
             Optional isolated Characters sessions; otherwise use area settings.
         clock:
             Optional injected Timeline clock; otherwise use aware system UTC.
+        diagnostics:
+            Optional privacy-safe structured diagnostic sink.
 
     Returns:
         Ready Ongoing application service without initializing Chat.
@@ -81,9 +85,15 @@ def create_conversation_service(
         DbTimelineDayRepository,
         DbTimelineRepository,
     )
+    from chat_buddy.characters.infrastructure.diagnostics import (
+        default_characters_diagnostic_observer,
+    )
 
     if session_factory is None:
         session_factory = CharactersSessionLocal
+
+    diagnostic_observer = diagnostics or default_characters_diagnostic_observer()
+    recovery_clock = clock or SystemUtcClock()
 
     storylines = DbStorylineRepository(session_factory)
     scenes = DbSceneRepository(session_factory)
@@ -219,17 +229,23 @@ def create_conversation_service(
         personas,
         summaries,
         models,
-        ResponseStyleService(DbResponseStyleRepository(session_factory)),
+        ResponseStyleService(
+            DbResponseStyleRepository(session_factory),
+            diagnostics=diagnostic_observer,
+        ),
         storyline_adapter=StorylineConversationAdapter(storylines, scenes),
         timeline_adapter=TimelineConversationAdapter(
             timelines,
             timeline_days,
             conversations,
-            clock or SystemUtcClock(),
+            recovery_clock,
+            diagnostics=diagnostic_observer,
         ),
         memory_extraction=extraction,
         response_memories=response_memories,
         evolution=evolution,
         evolution_projections=evolution_repository,
         evolution_rebuilder=evolution_rebuilder,
+        recovery_clock=recovery_clock,
+        diagnostics=diagnostic_observer,
     )

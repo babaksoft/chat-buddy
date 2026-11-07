@@ -29,8 +29,14 @@ def create_response_style_service() -> ResponseStyleService:
     from chat_buddy.characters.infrastructure.db.repositories import (
         DbResponseStyleRepository,
     )
+    from chat_buddy.characters.infrastructure.diagnostics import (
+        default_characters_diagnostic_observer,
+    )
 
-    return ResponseStyleService(DbResponseStyleRepository(CharactersSessionLocal))
+    return ResponseStyleService(
+        DbResponseStyleRepository(CharactersSessionLocal),
+        diagnostics=default_characters_diagnostic_observer(),
+    )
 
 
 def create_identity_service() -> IdentityService:
@@ -142,6 +148,9 @@ def create_timeline_services() -> (
         DbTimelineDayRepository,
         DbTimelineRepository,
     )
+    from chat_buddy.characters.infrastructure.diagnostics import (
+        default_characters_diagnostic_observer,
+    )
 
     timelines = DbTimelineRepository(CharactersSessionLocal)
     days = DbTimelineDayRepository(CharactersSessionLocal)
@@ -155,6 +164,7 @@ def create_timeline_services() -> (
             SystemLocalTimezoneSource(),
             graphs=conversations,
             clock=SystemUtcClock(),
+            diagnostics=default_characters_diagnostic_observer(),
         ),
     )
 
@@ -179,9 +189,13 @@ def create_timeline_interaction_services() -> (
         DbTimelineDayRepository,
         DbTimelineRepository,
     )
+    from chat_buddy.characters.infrastructure.diagnostics import (
+        default_characters_diagnostic_observer,
+    )
     from chat_buddy.characters.infrastructure.llm import create_model_registry
 
     clock = SystemUtcClock()
+    diagnostics = default_characters_diagnostic_observer()
     models = create_model_registry()
     return (
         TimelineDayService(
@@ -189,8 +203,11 @@ def create_timeline_interaction_services() -> (
             DbTimelineDayRepository(CharactersSessionLocal),
             DbConversationRepository(CharactersSessionLocal),
             clock,
+            diagnostics=diagnostics,
         ),
-        create_conversation_service(CharactersSessionLocal, clock),
+        create_conversation_service(
+            CharactersSessionLocal, clock, diagnostics=diagnostics
+        ),
         models.resolve_default("response"),
     )
 

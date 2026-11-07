@@ -12,6 +12,7 @@ from chat_buddy.characters.application import ConversationService, ResponseStyle
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     AttemptConflictError,
+    CharactersDiagnosticName,
     ContextCapacityError,
     ConversationNotFoundError,
     ConversationSettings,
@@ -39,6 +40,34 @@ from chat_buddy.characters.infrastructure.llm import (
     Utf8TokenCounter,
 )
 from tests.characters_support import FakeResponse, ongoing_target, service, start
+
+
+class FixedClock:
+    """Return one deterministic aware UTC instant.
+
+    Attributes:
+        value:
+            Instant returned by every read.
+    """
+
+    def __init__(self, value: datetime) -> None:
+        """Capture the deterministic instant.
+
+        Args:
+            value:
+                Aware UTC instant returned by the clock.
+        """
+
+        self.value = value
+
+    def now(self) -> datetime:
+        """Return the configured instant.
+
+        Returns:
+            Deterministic aware UTC instant.
+        """
+
+        return self.value
 
 
 def test_completed_turn_reloads_with_exact_history_and_provenance(
@@ -211,6 +240,55 @@ def test_pending_abandonment_and_duplicate_consumers_preserve_live_stream(
         list(app.stream(ongoing_target(scope), continued.id))
     assert list(stream) == [" there"]
     assert app.history(ongoing_target(scope)).attempts[-1].status == "completed"
+
+
+def test_recovery_uses_injected_clock_and_mutates_only_selected_conversation(
+    characters_session_factory: sessionmaker[Session],
+) -> None:
+    """Recover one scoped attempt deterministically without a continuity scan.
+
+    Args:
+        characters_session_factory:
+            Isolated Characters repositories.
+    """
+
+    factory = characters_session_factory
+    gateway = FakeResponse()
+    first_scope = start(factory, "First")
+    second_scope = start(factory, "Second")
+    first = service(factory, gateway).send(
+        ongoing_target(first_scope), SubmittedInput(content="First private input")
+    )
+    second = service(factory, gateway).send(
+        ongoing_target(second_scope), SubmittedInput(content="Second private input")
+    )
+    observed_at = datetime(2026, 11, 7, 12, tzinfo=UTC)
+    stale_at = observed_at - timedelta(minutes=6)
+    with factory() as session, session.begin():
+        session.execute(
+            update(GenerationAttemptModel)
+            .where(GenerationAttemptModel.id.in_((first.id, second.id)))
+            .values(updated_at=stale_at)
+        )
+    diagnostics = MagicMock()
+    recovered = service(
+        factory,
+        gateway,
+        recovery_clock=FixedClock(observed_at),
+        diagnostics=diagnostics,
+    ).resume(ongoing_target(first_scope))
+
+    assert recovered.attempts[0].status == "interrupted"
+    assert (
+        DbConversationRepository(factory).history(second_scope).attempts[0].status
+        == "pending"
+    )
+    diagnostic = diagnostics.emit.call_args.args[0]
+    assert diagnostic.name == CharactersDiagnosticName.ATTEMPT_RECOVERY
+    assert diagnostic.conversation_id == first_scope.conversation_id
+    assert diagnostic.attempt_id == first.id
+    assert diagnostic.recovered_attempt_count == 1
+    assert "First private input" not in diagnostic.model_dump_json()
 
 
 def test_budget_overflow_commits_nothing_and_calls_no_provider(

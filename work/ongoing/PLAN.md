@@ -646,7 +646,7 @@ and restart-safe service composition.
 
 ### Slice 15 — Add focused diagnostics and calendar recovery checks
 
-Status: Pending
+Status: Complete
 
 Add low-cardinality structured diagnostics for Timeline start, day creation,
 closure observation, rejected historical operations, style revision, context
@@ -665,6 +665,24 @@ Stage 9.
 Complete when maintainers can distinguish calendar, style, generation, memory,
 evolution, and historical-action failures without sensitive content or cross-area
 coupling.
+
+Delivered with a Characters-owned, allowlisted diagnostic event contract and a
+structured logging adapter. Timeline start, represented-day reservation, closure,
+historical write rejection, style revision, response-context selection,
+post-response memory/evolution outcomes, and abandoned-attempt recovery now emit
+stable identifiers, mode, calendar facts, policy versions, bounded terminal
+reasons, aggregate context counts, and latency where measured. The event schema
+cannot carry conversation text, persona details, memory content, rendered style
+instructions, or raw prompts; no product analytics or Chat-area dependency was
+introduced.
+
+Timeline production composition shares the injected UTC clock and diagnostic sink
+across navigation, first-day reservation, conversation policy, and recovery.
+Resume observes an overdue latest-day closure and reconciles inactive attempts
+only for the exact selected conversation. Recovery remains idempotent and does not
+scan or mutate unrelated continuities. Focused coverage proves structured-log
+allowlisting, style and closure outcomes, deterministic injected-time recovery,
+and isolation from another continuity with an equally stale attempt.
 
 ### Slice 16 — Update project documents for shipped Stage 8 behavior
 

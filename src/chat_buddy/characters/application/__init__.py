@@ -22,6 +22,9 @@ from chat_buddy.characters.application.continuity_service import (
 from chat_buddy.characters.application.conversation_service import (
     ConversationService,
 )
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.application.evolution import (
     BASELINE_EVOLUTION_CONFIGURATION,
     ContinuityStableEvolutionConfigurationResolver,
@@ -139,6 +142,7 @@ __all__ = [
     "EvolutionValidationResult",
     "IdentityService",
     "NoChangeEvolutionStrategy",
+    "NoOpCharactersDiagnosticObserver",
     "NoOpEvolutionExperimentReporter",
     "NoOpEvolutionObserver",
     "OngoingContextBudgeter",

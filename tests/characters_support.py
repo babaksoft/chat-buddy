@@ -12,6 +12,8 @@ from chat_buddy.characters.application import (
 )
 from chat_buddy.characters.domain import (
     BranchModeFactsResolver,
+    CharactersDiagnosticObserver,
+    Clock,
     ContinuityMode,
     ConversationScope,
     ConversationTarget,
@@ -151,6 +153,8 @@ def service(
     gateway: FakeResponse,
     context: int = 8192,
     branch_mode_facts: BranchModeFactsResolver | None = None,
+    recovery_clock: Clock | None = None,
+    diagnostics: CharactersDiagnosticObserver | None = None,
 ) -> ConversationService:
     """Compose a fresh service using only real Characters repositories.
 
@@ -163,6 +167,10 @@ def service(
             Model context window.
         branch_mode_facts:
             Optional mode-specific policy facts for branching tests.
+        recovery_clock:
+            Optional deterministic abandoned-attempt recovery clock.
+        diagnostics:
+            Optional privacy-safe diagnostic recorder.
 
     Returns:
         Fresh application service.
@@ -177,6 +185,8 @@ def service(
         registry(gateway, context),
         ResponseStyleService(DbResponseStyleRepository(factory)),
         branch_mode_facts=branch_mode_facts,
+        recovery_clock=recovery_clock,
+        diagnostics=diagnostics,
     )
 
 

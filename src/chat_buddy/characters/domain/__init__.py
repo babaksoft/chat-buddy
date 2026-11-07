@@ -55,6 +55,11 @@ from chat_buddy.characters.domain.conversation import (
     ResponseContextProvenance,
     SubmittedInput,
 )
+from chat_buddy.characters.domain.diagnostics import (
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
+)
 from chat_buddy.characters.domain.errors import (
     ActiveContinuityError,
     ActiveStorylineError,
@@ -312,6 +317,9 @@ __all__ = [
     "BranchModeFacts",
     "BranchModeFactsResolver",
     "ChangeMemoryStateCommand",
+    "CharactersDiagnostic",
+    "CharactersDiagnosticName",
+    "CharactersDiagnosticObserver",
     "Clock",
     "CompletedTurn",
     "ConfirmationConflictError",

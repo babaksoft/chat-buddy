@@ -7,6 +7,10 @@ from chat_buddy.characters.infrastructure.clock import (
 from chat_buddy.characters.infrastructure.conversation_factory import (
     create_conversation_service,
 )
+from chat_buddy.characters.infrastructure.diagnostics import (
+    LoggingCharactersDiagnosticObserver,
+    default_characters_diagnostic_observer,
+)
 from chat_buddy.characters.infrastructure.evolution_observability import (
     LoggingMetricsEvolutionObserver,
     create_phoenix_evolution_observer,
@@ -27,6 +31,7 @@ from chat_buddy.characters.infrastructure.profile_factory import (
 )
 
 __all__ = [
+    "LoggingCharactersDiagnosticObserver",
     "LoggingMetricsEvolutionObserver",
     "SystemLocalTimezoneSource",
     "SystemUtcClock",
@@ -43,5 +48,6 @@ __all__ = [
     "create_storyline_services",
     "create_timeline_interaction_services",
     "create_timeline_services",
+    "default_characters_diagnostic_observer",
     "default_evolution_observer",
 ]

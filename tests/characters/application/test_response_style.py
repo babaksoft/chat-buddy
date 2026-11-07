@@ -1,5 +1,6 @@
 """Tests for response-style defaults and deterministic rendering."""
 
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from chat_buddy.characters.application import (
     default_response_style,
 )
 from chat_buddy.characters.domain import (
+    CharactersDiagnosticName,
     ContinuityMode,
     NarrativePlacement,
     ResponseLength,
@@ -78,6 +80,28 @@ class FakeStyleRepository:
             settings=settings, revision=self.current.revision + 1
         )
         return StyleUpdateResult(status=StyleUpdateStatus.UPDATED, style=self.current)
+
+
+def test_style_update_emits_only_revision_diagnostics() -> None:
+    """Describe a style revision without rendered instructions or authored text."""
+
+    continuity_id = uuid4()
+    current = VersionedResponseStyleSettings(
+        settings=default_response_style(ContinuityMode.TIMELINE), revision=1
+    )
+    diagnostics = Mock()
+    service = ResponseStyleService(
+        FakeStyleRepository(current), diagnostics=diagnostics
+    )
+
+    result = service.update(continuity_id, current.settings, 1)
+
+    assert result.status == StyleUpdateStatus.UPDATED
+    diagnostic = diagnostics.emit.call_args.args[0]
+    assert diagnostic.name == CharactersDiagnosticName.RESPONSE_STYLE_REVISION
+    assert diagnostic.continuity_id == continuity_id
+    assert diagnostic.terminal_reason == "updated"
+    assert "instruction" not in diagnostic.model_dump()
 
 
 @pytest.mark.parametrize(

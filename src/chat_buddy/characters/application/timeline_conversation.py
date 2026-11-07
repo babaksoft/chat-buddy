@@ -4,9 +4,15 @@ from datetime import datetime
 from uuid import UUID
 
 from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.domain import (
     ArchivedContinuityError,
     BranchModeFacts,
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
     Clock,
     ContinuityLifecycle,
     ContinuityMode,
@@ -35,6 +41,7 @@ class TimelineConversationAdapter:
         graphs: ConversationGraphRepository,
         clock: Clock,
         calendar: TimelineCalendarPolicy | None = None,
+        diagnostics: CharactersDiagnosticObserver | None = None,
     ) -> None:
         """Bind Timeline ownership, graph, calendar, and clock dependencies.
 
@@ -49,6 +56,8 @@ class TimelineConversationAdapter:
                 Injected aware-UTC time source.
             calendar:
                 Optional deterministic calendar policy.
+            diagnostics:
+                Optional privacy-safe structured diagnostic sink.
         """
 
         self._timelines = timelines
@@ -56,6 +65,7 @@ class TimelineConversationAdapter:
         self._graphs = graphs
         self._clock = clock
         self._calendar = calendar or TimelineCalendarPolicy()
+        self._diagnostics = diagnostics or NoOpCharactersDiagnosticObserver()
 
     def inspect(
         self, target: ConversationTarget, history: ConversationHistory
@@ -207,11 +217,19 @@ class TimelineConversationAdapter:
 
         latest = self._days.latest(timeline)
         if latest is None or latest.id != day.id:
+            self._emit_rejection(
+                timeline,
+                day,
+                TimelineGraphActionUnavailableReason.NOT_LATEST_DAY,
+            )
             raise TimelineDayReadOnlyError(
                 "Only the latest represented Timeline day can accept writes",
                 TimelineGraphActionUnavailableReason.NOT_LATEST_DAY,
             )
         if day.is_closed:
+            self._emit_rejection(
+                timeline, day, TimelineGraphActionUnavailableReason.CLOSED_DAY
+            )
             raise TimelineDayReadOnlyError(
                 "Closed Timeline days are read-only",
                 TimelineGraphActionUnavailableReason.CLOSED_DAY,
@@ -230,6 +248,21 @@ class TimelineConversationAdapter:
             timeline.revision,
             selected.selected_leaf_id,
         )
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_CLOSURE,
+                continuity_id=timeline.id,
+                conversation_id=day.scope.conversation_id,
+                entry_id=day.id,
+                attempt_id=result.interrupted_attempt_id,
+                mode=ContinuityMode.TIMELINE,
+                local_date=day.boundary.local_date,
+                boundary_timezone=day.boundary.timezone,
+                policy="timeline_calendar",
+                version="1.0.0",
+                terminal_reason=result.status.value,
+            )
+        )
         if result.status == DayClosureStatus.STALE_REVISION:
             timeline = self._timelines.get(
                 timeline.identity_id, timeline.persona_id, timeline.id
@@ -238,23 +271,35 @@ class TimelineConversationAdapter:
             if timeline.lifecycle != ContinuityLifecycle.ACTIVE:
                 raise ArchivedContinuityError("Archived Timelines are read-only")
             if refreshed.is_closed:
+                self._emit_rejection(
+                    timeline,
+                    refreshed,
+                    TimelineGraphActionUnavailableReason.CLOSED_DAY,
+                )
                 raise TimelineDayReadOnlyError(
                     "Closed Timeline days are read-only",
                     TimelineGraphActionUnavailableReason.CLOSED_DAY,
                 )
 
+            self._emit_rejection(
+                timeline,
+                refreshed,
+                TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
+            )
             raise TimelineDayReadOnlyError(
                 "Timeline state changed while observing the day boundary",
                 TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
             )
 
+        self._emit_rejection(
+            timeline, day, TimelineGraphActionUnavailableReason.CLOSED_DAY
+        )
         raise TimelineDayReadOnlyError(
             "Closed Timeline days are read-only",
             TimelineGraphActionUnavailableReason.CLOSED_DAY,
         )
 
-    @staticmethod
-    def _validate_clock(day: TimelineDay, current_at: datetime) -> None:
+    def _validate_clock(self, day: TimelineDay, current_at: datetime) -> None:
         """Reject an injected instant that predates committed day facts.
 
         Args:
@@ -271,7 +316,55 @@ class TimelineConversationAdapter:
         if current_at < day.boundary.opens_at or (
             day.closed_at is not None and current_at < day.closed_at
         ):
+            self._diagnostics.emit(
+                CharactersDiagnostic(
+                    name=CharactersDiagnosticName.TIMELINE_HISTORICAL_REJECTION,
+                    continuity_id=day.entry.continuity_id,
+                    conversation_id=day.scope.conversation_id,
+                    entry_id=day.id,
+                    mode=ContinuityMode.TIMELINE,
+                    local_date=day.boundary.local_date,
+                    boundary_timezone=day.boundary.timezone,
+                    policy="timeline_calendar",
+                    version="1.0.0",
+                    terminal_reason=(
+                        TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS.value
+                    ),
+                )
+            )
             raise TimelineDayReadOnlyError(
                 "The clock predates committed Timeline day facts",
                 TimelineGraphActionUnavailableReason.MISSING_OR_CONTRADICTORY_FACTS,
             )
+
+    def _emit_rejection(
+        self,
+        timeline: Timeline,
+        day: TimelineDay,
+        reason: TimelineGraphActionUnavailableReason,
+    ) -> None:
+        """Emit one content-free rejected Timeline operation.
+
+        Args:
+            timeline:
+                Owning Timeline snapshot.
+            day:
+                Exact rejected represented day.
+            reason:
+                Stable read-only policy reason.
+        """
+
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_HISTORICAL_REJECTION,
+                continuity_id=timeline.id,
+                conversation_id=day.scope.conversation_id,
+                entry_id=day.id,
+                mode=ContinuityMode.TIMELINE,
+                local_date=day.boundary.local_date,
+                boundary_timezone=day.boundary.timezone,
+                policy="timeline_graph_actions",
+                version="1.0.0",
+                terminal_reason=reason.value,
+            )
+        )

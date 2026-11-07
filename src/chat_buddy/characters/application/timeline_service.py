@@ -1,14 +1,22 @@
 """Timeline start, navigation, and permanent archive orchestration."""
 
+from time import perf_counter
 from uuid import UUID
 
 from chat_buddy.characters.application.calendar import TimelineCalendarPolicy
+from chat_buddy.characters.application.diagnostics import (
+    NoOpCharactersDiagnosticObserver,
+)
 from chat_buddy.characters.application.starting_relationship import (
     resolve_starting_relationship,
 )
 from chat_buddy.characters.domain import (
     ApplicationLocalTimezoneSource,
+    CharactersDiagnostic,
+    CharactersDiagnosticName,
+    CharactersDiagnosticObserver,
     Clock,
+    ContinuityMode,
     ConversationGraphRepository,
     DayClosureStatus,
     StartAvailability,
@@ -35,6 +43,7 @@ class TimelineService:
         calendar: TimelineCalendarPolicy | None = None,
         graphs: ConversationGraphRepository | None = None,
         clock: Clock | None = None,
+        diagnostics: CharactersDiagnosticObserver | None = None,
     ) -> None:
         """Initialize Timeline lifecycle operations.
 
@@ -51,6 +60,8 @@ class TimelineService:
                 Optional selected-path reader used to observe closure on resume.
             clock:
                 Optional injected clock paired with the graph reader.
+            diagnostics:
+                Optional privacy-safe structured diagnostic sink.
 
         Raises:
             ValueError:
@@ -66,6 +77,7 @@ class TimelineService:
         self._calendar = calendar or TimelineCalendarPolicy()
         self._graphs = graphs
         self._clock = clock
+        self._diagnostics = diagnostics or NoOpCharactersDiagnosticObserver()
 
     def start(self, review: TimelineStartReview) -> TimelineStartResult:
         """Confirm a reviewed Timeline.
@@ -91,8 +103,10 @@ class TimelineService:
                 If the injected application-local timezone is invalid.
         """
 
+        started = perf_counter()
         confirmed = self._timelines.find_reviewed_confirmation(review)
         if confirmed is not None:
+            self._emit_start(confirmed, perf_counter() - started)
             return confirmed
 
         timezone = self._calendar.capture_timezone(self._timezone_source)
@@ -103,9 +117,11 @@ class TimelineService:
             }
         )
 
-        return self._timelines.start(
+        result = self._timelines.start(
             request, resolve_starting_relationship(review.relationship)
         )
+        self._emit_start(result, perf_counter() - started)
+        return result
 
     def start_availability(
         self, identity_id: UUID, persona_id: UUID
@@ -235,6 +251,21 @@ class TimelineService:
             timeline.revision,
             selected.selected_leaf_id,
         )
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_CLOSURE,
+                continuity_id=timeline.id,
+                conversation_id=latest.scope.conversation_id,
+                entry_id=latest.id,
+                attempt_id=result.interrupted_attempt_id,
+                mode=ContinuityMode.TIMELINE,
+                local_date=latest.boundary.local_date,
+                boundary_timezone=latest.boundary.timezone,
+                policy="timeline_calendar",
+                version="1.0.0",
+                terminal_reason=result.status.value,
+            )
+        )
         if result.status in {
             DayClosureStatus.CLOSED,
             DayClosureStatus.CLOSURE_RACE,
@@ -246,3 +277,29 @@ class TimelineService:
             )
 
         return timeline
+
+    def _emit_start(self, result: TimelineStartResult, latency_seconds: float) -> None:
+        """Emit one content-free Timeline start outcome.
+
+        Args:
+            result:
+                Repository start outcome.
+            latency_seconds:
+                Monotonic start duration.
+        """
+
+        timeline = result.timeline
+        self._diagnostics.emit(
+            CharactersDiagnostic(
+                name=CharactersDiagnosticName.TIMELINE_START,
+                continuity_id=timeline.id if timeline is not None else None,
+                mode=ContinuityMode.TIMELINE,
+                boundary_timezone=(
+                    timeline.calendar_timezone.name if timeline is not None else None
+                ),
+                policy="timeline_calendar",
+                version="1.0.0",
+                terminal_reason=result.status.value,
+                latency_seconds=latency_seconds,
+            )
+        )
