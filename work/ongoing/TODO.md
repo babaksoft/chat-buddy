@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 17 — Prove the Stage 8 milestone and area isolation.
+Next delivery focus: Stage 9 — Harden and prepare Characters extraction.
 
 Deferred product exploration:
 

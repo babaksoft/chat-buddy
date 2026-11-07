@@ -236,6 +236,8 @@ has no Chat dependency or effect.
 
 ## Stage 8 — Add Timeline and response-style controls
 
+**Status: Complete.**
+
 - Add one dated conversation per active local Timeline day.
 - Store UTC timestamps plus the resolved immutable local date and IANA timezone.
 - Capture the local-first application's IANA timezone automatically at Timeline
@@ -260,6 +262,8 @@ temporal memory, latest-open-day graph rules, closed-history immutability, and
 response styles are deterministic and tested, including DST boundaries.
 
 ## Stage 9 — Harden and prepare Characters extraction
+
+**Status: Pending sliced plan.**
 
 - Add PostgreSQL tests for each schema and migration history.
 - Test each area's domain invariants, repositories, service workflows, context

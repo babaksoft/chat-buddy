@@ -740,7 +740,7 @@ wording, and points to Stage 9 as the next delivery focus.
 
 ### Slice 17 — Prove the Stage 8 milestone and area isolation
 
-Status: Pending
+Status: Complete
 
 Add one deterministic acceptance journey that:
 
@@ -777,6 +777,18 @@ Complete when closure, missing-day behavior, captured-zone stability, temporal
 memory and evolution, latest-open-day graph rules, closed-history immutability, and
 response-style controls are deterministic and tested across DST boundaries, and
 the full required suite passes.
+
+Delivered with one deterministic Stage 8 acceptance journey over real Characters
+repositories and fake providers. The journey proves Timeline lifecycle and
+captured-zone behavior, atomic first interaction, immutable response-style
+snapshots across sends and retries, normal and DST day boundaries, missing days,
+temporal memory and evolution, alternative-driven projection replay, closed-day
+graph guards, and the Timeline evaluation gates.
+
+The PostgreSQL milestone wrapper runs the complete Characters migration chain
+beside populated Chat data, checks Characters-only foreign-key ownership, reruns
+the journey, and exercises concurrent first-send and evolution reservations while
+asserting that Chat rows and migration state remain unchanged.
 
 ## Explicitly deferred
 
