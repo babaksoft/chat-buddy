@@ -1,7 +1,7 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 14 — Ship Timeline chat, style, memory, evolution, 
-and history guidance UI.
+Next delivery focus: Stage 8, Slice 15 — Add focused diagnostics and calendar
+recovery checks.
 
 Deferred product exploration:
 

@@ -71,6 +71,7 @@ def render_conversation(
     archived: bool,
     branch_action: BranchActionRenderer | None = None,
     read_only: bool = False,
+    read_only_reason: str | None = None,
 ) -> UUID | None:
     """Render durable controls for one exact mode-owned conversation.
 
@@ -88,6 +89,8 @@ def render_conversation(
         read_only:
             Whether ordinary conversation writes are disabled while branching may
             remain available.
+        read_only_reason:
+            Optional explanation rendered beside each historical persona response.
 
     Returns:
         Selected persona leaf identifier, or None when the graph is empty or could
@@ -112,6 +115,7 @@ def render_conversation(
             archived or active or read_only,
             archived or active,
             render_branch,
+            read_only_reason,
         )
         if unmatched:
             for attempt in history.attempts:
@@ -153,7 +157,7 @@ def render_conversation(
             if submitted:
                 with st.chat_message("user"):
                     st.markdown(submitted)
-            _stream_attempt(service, target, attempt)
+            stream_attempt(service, target, attempt)
             st.rerun()
         return graph.selected_leaf_id
     except StaleSelectionError:
@@ -186,6 +190,7 @@ def _transcript(
     writes_disabled: bool,
     branch_writes_disabled: bool,
     branch_action: BranchActionRenderer,
+    read_only_reason: str | None,
 ) -> None:
     """Render the selected path and every valid graph action.
 
@@ -206,6 +211,8 @@ def _transcript(
             Whether mode-specific branch writes are blocked.
         branch_action:
             Mode-specific branch renderer.
+        read_only_reason:
+            Explanation for unavailable historical graph actions.
     """
 
     views = {node.message.id: node for node in graph.nodes}
@@ -217,6 +224,8 @@ def _transcript(
             if view is None or message.role != "persona":
                 continue
             _response_details(view)
+            if read_only_reason is not None:
+                st.caption(read_only_reason)
             displayed_alternatives.update(
                 _alternatives(
                     service,
@@ -282,7 +291,11 @@ def _response_details(view: GraphNodeView, compact: bool = False) -> None:
     )
     behavior_detail = (
         f"Style: {provenance.response_style.name} "
-        f"{provenance.response_style.version} · evolution: "
+        f"{provenance.response_style.version} · "
+        f"{provenance.response_style.scene_description.value} description, "
+        f"{provenance.response_style.response_length.value} length, "
+        f"{provenance.response_style.narrative_placement.value.replace('_', ' ')} "
+        f"(revision {provenance.response_style.source_revision}) · evolution: "
         f"{provenance.evolution_strategy.name} "
         f"{provenance.evolution_strategy.version}"
     )
@@ -399,7 +412,7 @@ def _response_actions(
         and st.button("Retry response", key=f"{key}_retry_{view.message.id}")
     ):
         attempt = service.retry_completed_response(target)
-        _stream_attempt(service, target, attempt)
+        stream_attempt(service, target, attempt)
         st.rerun()
     branch_action(service, target, graph, view, key, branch_writes_disabled)
 
@@ -555,7 +568,7 @@ def _selected_leaf(graph: ConversationGraphView) -> UUID:
     return graph.selected_leaf_id
 
 
-def _stream_attempt(
+def stream_attempt(
     service: ConversationService,
     target: ConversationTarget,
     attempt: GenerationAttempt,

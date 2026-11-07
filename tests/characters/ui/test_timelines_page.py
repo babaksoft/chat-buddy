@@ -19,8 +19,12 @@ from chat_buddy.characters.domain import (
     ContinuityLifecycle,
     ContinuityMode,
     DayBoundary,
+    DayReservationResult,
+    DayReservationStatus,
+    GenerationAttempt,
     Identity,
     IdentityDetails,
+    Message,
     Persona,
     PersonaCore,
     RelationshipIntent,
@@ -96,8 +100,25 @@ def services() -> Generator[tuple[Mock, Mock, Mock, TimelineNavigation], None, N
             return_value=(identities, personas, timelines),
         ),
         patch.object(timelines_page, "_prepare_start") as navigate,
+        patch.object(timelines_page, "render_response_style") as style,
+        patch.object(timelines_page, "render_conversation") as conversation,
+        patch.object(timelines_page, "render_storyline_memory") as memory,
+        patch.object(timelines_page, "render_evolution_inspection"),
+        patch.object(timelines_page, "create_continuity_memory_service"),
+        patch.object(timelines_page, "create_evolution_inspection_service"),
+        patch.object(timelines_page, "create_conversation_service"),
+        patch.object(
+            timelines_page, "create_timeline_interaction_services"
+        ) as interactions,
+        patch.object(timelines_page, "stream_attempt") as stream,
     ):
+        interactions.return_value = (Mock(), Mock(), Mock())
         timelines.navigate = navigate
+        timelines.style = style
+        timelines.conversation = conversation
+        timelines.memory = memory
+        timelines.interactions = interactions
+        timelines.stream = stream
         yield identities, personas, timelines, navigation
 
 
@@ -160,7 +181,7 @@ def test_resume_renders_application_observed_offline_closure(
     app.run()
 
     assert any("2026-11-02 · closed" == button.label for button in app.button)
-    assert "closed and permanently read-only" in app.info[-1].value
+    assert any("closed and permanently read-only" in item.value for item in app.info)
 
 
 def test_empty_timeline_is_valid_and_navigation_creates_no_day(
@@ -183,7 +204,7 @@ def test_empty_timeline_is_valid_and_navigation_creates_no_day(
     )
     app.run()
 
-    assert "No days have been represented yet" in app.info[-1].value
+    assert any("No days have been represented yet" in item.value for item in app.info)
     assert not hasattr(timelines, "reserve")
 
 
@@ -217,6 +238,82 @@ def test_archive_requires_confirmation_and_preserves_selection(
 
     timelines.archive.assert_called_once_with(*scope, navigation.timeline.revision)
     assert app.session_state["characters_timeline_scope"] == scope
+
+
+def test_closed_day_explains_absent_graph_actions_and_reuses_derived_panels(
+    services: tuple[Mock, Mock, Mock, TimelineNavigation],
+) -> None:
+    """Render closed history with early guidance plus Timeline-scoped tools.
+
+    Args:
+        services:
+            Timeline services and active navigation.
+    """
+
+    timelines, navigation = services[2], services[3]
+    closed = navigation.days[0]
+    app = AppTest.from_function(_render)
+    app.session_state["characters_timeline_scope"] = (
+        navigation.timeline.identity_id,
+        navigation.timeline.persona_id,
+        navigation.timeline.id,
+    )
+    app.session_state["characters_timeline_day_id"] = closed.id
+    app.run()
+
+    assert not app.exception
+    call = timelines.conversation.call_args
+    assert call.kwargs["read_only"] is True
+    assert "Retry, alternative selection" in call.kwargs["read_only_reason"]
+    timelines.memory.assert_called_once()
+    assert timelines.memory.call_args.kwargs["mode_label"] == "Timeline"
+
+
+def test_first_send_reserves_day_atomically_then_streams_owned_attempt(
+    services: tuple[Mock, Mock, Mock, TimelineNavigation],
+) -> None:
+    """Create no day until input, then stream the exact atomic reservation.
+
+    Args:
+        services:
+            Timeline services and active navigation.
+    """
+
+    timelines, navigation = services[2], services[3]
+    timelines.resume.return_value = navigation.model_copy(update={"days": ()})
+    days, _, generation = timelines.interactions.return_value
+    reserved_day = navigation.days[-1]
+    attempt = GenerationAttempt.model_construct(id=uuid4())
+    days.reserve.return_value = DayReservationResult(
+        status=DayReservationStatus.RESERVED,
+        day=reserved_day,
+        user_message=Message.model_construct(),
+        attempt=attempt,
+    )
+    app = AppTest.from_function(_render)
+    app.session_state["characters_timeline_scope"] = (
+        navigation.timeline.identity_id,
+        navigation.timeline.persona_id,
+        navigation.timeline.id,
+    )
+    app.run()
+    days.reserve.assert_not_called()
+
+    app.chat_input[0].set_value("Hello today").run()
+
+    days.reserve.assert_called_once()
+    assert days.reserve.call_args.args[:3] == (
+        navigation.timeline.identity_id,
+        navigation.timeline.persona_id,
+        navigation.timeline.id,
+    )
+    assert days.reserve.call_args.args[3].content == "Hello today"
+    assert days.reserve.call_args.args[4] is generation
+    timelines.stream.assert_called_once()
+    target = timelines.stream.call_args.args[1]
+    assert target.scope == reserved_day.scope
+    assert target.entry_id == reserved_day.id
+    assert timelines.stream.call_args.args[2] is attempt
 
 
 def _timeline(

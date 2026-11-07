@@ -102,6 +102,7 @@ def ongoing_services() -> (
         patch.object(ongoing_page, "render_ongoing") as conversation,
         patch.object(ongoing_page, "create_evolution_inspection_service"),
         patch.object(ongoing_page, "render_evolution_inspection"),
+        patch.object(ongoing_page, "render_response_style"),
         patch.object(ongoing_page, "_navigate_to_new_ongoing") as navigate,
     ):
         continuity_service.conversation = conversation

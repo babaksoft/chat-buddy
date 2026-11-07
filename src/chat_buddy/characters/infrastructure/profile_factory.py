@@ -3,6 +3,7 @@
 from chat_buddy.characters.application import (
     ContinuityMemoryService,
     ContinuityService,
+    ConversationService,
     EvolutionEntryHistory,
     EvolutionInspectionService,
     EvolutionProjectionService,
@@ -11,8 +12,10 @@ from chat_buddy.characters.application import (
     ResponseStyleService,
     StorylineForkService,
     StorylineService,
+    TimelineDayService,
     TimelineService,
 )
+from chat_buddy.characters.domain import EffectiveGeneration
 
 
 def create_response_style_service() -> ResponseStyleService:
@@ -153,6 +156,42 @@ def create_timeline_services() -> (
             graphs=conversations,
             clock=SystemUtcClock(),
         ),
+    )
+
+
+def create_timeline_interaction_services() -> (
+    tuple[TimelineDayService, ConversationService, EffectiveGeneration]
+):
+    """Build atomic first-day reservation and Timeline conversation operations.
+
+    Returns:
+        Day reservation, conversation orchestration, and default first-attempt
+        generation selected from the configured Characters model registry.
+    """
+
+    from chat_buddy.characters.infrastructure.clock import SystemUtcClock
+    from chat_buddy.characters.infrastructure.conversation_factory import (
+        create_conversation_service,
+    )
+    from chat_buddy.characters.infrastructure.db import CharactersSessionLocal
+    from chat_buddy.characters.infrastructure.db.repositories import (
+        DbConversationRepository,
+        DbTimelineDayRepository,
+        DbTimelineRepository,
+    )
+    from chat_buddy.characters.infrastructure.llm import create_model_registry
+
+    clock = SystemUtcClock()
+    models = create_model_registry()
+    return (
+        TimelineDayService(
+            DbTimelineRepository(CharactersSessionLocal),
+            DbTimelineDayRepository(CharactersSessionLocal),
+            DbConversationRepository(CharactersSessionLocal),
+            clock,
+        ),
+        create_conversation_service(CharactersSessionLocal, clock),
+        models.resolve_default("response"),
     )
 
 

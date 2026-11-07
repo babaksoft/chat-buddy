@@ -99,9 +99,14 @@ def services() -> Generator[tuple[Mock, Mock, Mock, list[SceneSequence]], None, 
         patch.object(storylines_page, "create_continuity_memory_service") as memories,
         patch.object(storylines_page, "render_storyline_memory"),
         patch.object(storylines_page, "render_evolution_inspection"),
+        patch.object(storylines_page, "render_response_style"),
+        patch.object(storylines_page, "create_response_style_service") as styles,
         patch.object(storylines_page, "_navigate_to_new_storyline") as navigate,
     ):
         memories.return_value = Mock()
+        styles.return_value.resolve.return_value = active.scenes[
+            0
+        ].details.response_style
         storylines.navigate = navigate
         yield identities, personas, storylines, [active, archived]
 

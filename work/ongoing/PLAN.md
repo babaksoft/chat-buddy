@@ -595,7 +595,7 @@ shell routing.
 
 ### Slice 14 — Ship Timeline chat, style, memory, evolution, and history guidance UI
 
-Status: Pending
+Status: Complete
 
 Add the complete interaction surface:
 
@@ -624,6 +624,25 @@ management, evolution correction, and restart.
 
 Complete when all Stage 8 behavior is usable through focused Characters pages and
 the UI cannot bypass calendar, ownership, or revision guards.
+
+Delivered with a shared continuity-scoped response-style editor on Ongoing,
+Storyline, and Timeline. Its revision-bound controls preview the three effective
+presentation choices, apply only to the next reserved response, and retain each
+completed message's exact style controls and generation provenance without showing
+raw prompt instructions. New Storyline scenes snapshot the current style at scene
+creation instead of relying on the superseded fixed UI default.
+
+Timeline now supports atomic first-day send, streaming and recovery, ordinary
+same-day conversation, retry, alternative selection, and in-place branching
+through the existing application guards. Creation and empty-history guidance make
+clear that viewing creates no day and that prior days close permanently. Closed
+messages explain why retry, selection, and branching are unavailable, and no
+historical action is rendered. Timeline memory and relationship/persona evolution
+reuse the continuity-scoped inspection and guarded correction surfaces with
+day-aware provenance and archive behavior. Widget keys include complete continuity
+or day ownership, and focused Streamlit coverage exercises style revisions and
+scope isolation, atomic first send, closed-history guidance, derived-state panels,
+and restart-safe service composition.
 
 ### Slice 15 — Add focused diagnostics and calendar recovery checks
 

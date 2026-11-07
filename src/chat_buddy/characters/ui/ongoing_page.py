@@ -20,12 +20,14 @@ from chat_buddy.characters.domain import (
 from chat_buddy.characters.infrastructure import (
     create_evolution_inspection_service,
     create_ongoing_services,
+    create_response_style_service,
 )
 from chat_buddy.characters.ui.evolution_inspection import (
     render_evolution_inspection,
 )
 from chat_buddy.characters.ui.new_ongoing_page import render_new_ongoing
 from chat_buddy.characters.ui.ongoing import render_ongoing
+from chat_buddy.characters.ui.response_style import render_response_style
 
 _SCOPE_KEY = "characters_continuity_scope"
 
@@ -90,6 +92,12 @@ def _render_page(
         )
         st.rerun()
 
+    render_response_style(
+        create_response_style_service(),
+        selected.id,
+        f"characters_ongoing_style_{selected.id}",
+        selected.lifecycle == ContinuityLifecycle.ARCHIVED,
+    )
     render_ongoing(selected)
     render_evolution_inspection(
         create_evolution_inspection_service(),

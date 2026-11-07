@@ -5,21 +5,40 @@ from uuid import UUID
 import streamlit as st
 
 from chat_buddy.characters.application import (
+    ConversationService,
     IdentityService,
     PersonaService,
+    TimelineDayService,
     TimelineService,
 )
 from chat_buddy.characters.domain import (
     ContinuityLifecycle,
+    ContinuityMode,
+    ConversationTarget,
+    DayReservationStatus,
+    EffectiveGeneration,
+    EvolutionScope,
     Identity,
     Persona,
+    SubmittedInput,
     Timeline,
     TimelineDay,
     TimelineGroup,
     TimelineNavigation,
     TimelineRevisionStatus,
 )
-from chat_buddy.characters.infrastructure import create_timeline_services
+from chat_buddy.characters.infrastructure import (
+    create_continuity_memory_service,
+    create_conversation_service,
+    create_evolution_inspection_service,
+    create_response_style_service,
+    create_timeline_interaction_services,
+    create_timeline_services,
+)
+from chat_buddy.characters.ui.evolution_inspection import render_evolution_inspection
+from chat_buddy.characters.ui.ongoing import render_conversation, stream_attempt
+from chat_buddy.characters.ui.response_style import render_response_style
+from chat_buddy.characters.ui.storyline_memory import render_storyline_memory
 
 _SCOPE_KEY = "characters_timeline_scope"
 _DAY_KEY = "characters_timeline_day_id"
@@ -219,23 +238,55 @@ def _render_timeline(
         st.info("Archived Timelines and their represented days are read-only.")
     else:
         _render_archive(timeline, service)
+    render_response_style(
+        create_response_style_service(),
+        timeline.id,
+        f"characters_timeline_style_{timeline.id}",
+        timeline.lifecycle == ContinuityLifecycle.ARCHIVED,
+    )
     st.write("Days")
+    selected_leaf_id = None
     if not navigation.days:
         st.info(
             "No days have been represented yet. A day appears with the first message "
             "sent on a local calendar date."
         )
-        return
-    selected = _selected_day(navigation)
-    for day in navigation.days:
-        if st.button(
-            _day_label(day, navigation),
-            key=f"characters_select_timeline_day_{day.id}",
-            type="primary" if day.id == selected.id else "secondary",
+        if timeline.lifecycle == ContinuityLifecycle.ACTIVE:
+            _render_first_interaction(timeline)
+    else:
+        selected = _selected_day(navigation)
+        for day in navigation.days:
+            if st.button(
+                _day_label(day, navigation),
+                key=f"characters_select_timeline_day_{day.id}",
+                type="primary" if day.id == selected.id else "secondary",
+            ):
+                st.session_state[_DAY_KEY] = day.id
+                st.rerun()
+        selected_leaf_id = _render_day(selected, navigation)
+        if (
+            selected.is_closed
+            and selected.id == navigation.days[-1].id
+            and timeline.lifecycle == ContinuityLifecycle.ACTIVE
         ):
-            st.session_state[_DAY_KEY] = day.id
-            st.rerun()
-    _render_day(selected, navigation)
+            _render_first_interaction(timeline)
+
+    render_storyline_memory(
+        create_continuity_memory_service(),
+        timeline,
+        selected_leaf_id,
+        mode_label="Timeline",
+    )
+    render_evolution_inspection(
+        create_evolution_inspection_service(),
+        EvolutionScope(
+            identity_id=timeline.identity_id,
+            persona_id=timeline.persona_id,
+            continuity_id=timeline.id,
+        ),
+        timeline.relationship,
+        timeline.lifecycle,
+    )
 
 
 def _render_archive(timeline: Timeline, service: TimelineService) -> None:
@@ -314,14 +365,17 @@ def _day_label(day: TimelineDay, navigation: TimelineNavigation) -> str:
     return f"{day.boundary.local_date.isoformat()} · {state}"
 
 
-def _render_day(day: TimelineDay, navigation: TimelineNavigation) -> None:
-    """Render one represented day's immutable calendar status.
+def _render_day(day: TimelineDay, navigation: TimelineNavigation) -> UUID | None:
+    """Render one represented day's immutable calendar status and conversation.
 
     Args:
         day:
             Selected represented day.
         navigation:
             Owning Timeline navigation.
+
+    Returns:
+        Selected persona leaf identifier, when the day graph is nonempty.
     """
 
     st.subheader(day.boundary.local_date.isoformat())
@@ -331,6 +385,134 @@ def _render_day(day: TimelineDay, navigation: TimelineNavigation) -> None:
         st.info("This represented day is read-only because its Timeline is archived.")
     else:
         st.success("This is the current open represented day.")
+    target = ConversationTarget(
+        scope=day.scope,
+        mode=ContinuityMode.TIMELINE,
+        entry_id=day.id,
+    )
+    read_only = day.is_closed or day.id != navigation.days[-1].id
+    reason = None
+    if day.is_closed:
+        reason = (
+            "This day is permanently closed. Retry, alternative selection, and "
+            "Branch from here are unavailable for every historical message."
+        )
+    elif day.id != navigation.days[-1].id:
+        reason = (
+            "Only the latest open day can change. Historical graph actions are "
+            "unavailable."
+        )
+    return render_conversation(
+        create_conversation_service(),
+        target,
+        f"characters_timeline_day_{day.id}",
+        navigation.timeline.lifecycle == ContinuityLifecycle.ARCHIVED,
+        read_only=read_only,
+        read_only_reason=reason,
+    )
+
+
+def _render_first_interaction(timeline: Timeline) -> None:
+    """Reserve and stream the first interaction for the current local day.
+
+    Args:
+        timeline:
+            Active Timeline accepting a possible new represented day.
+    """
+
+    st.info(
+        "Sending the first message represents the current local calendar day. "
+        "Earlier days remain permanently read-only; merely viewing this page "
+        "creates nothing."
+    )
+    submitted = st.chat_input(
+        "Start today's Timeline day",
+        key=f"characters_timeline_first_input_{timeline.id}_{timeline.revision}",
+    )
+    if not submitted:
+        return
+    days, conversations, generation = create_timeline_interaction_services()
+    _reserve_first_interaction(days, conversations, generation, timeline, submitted)
+
+
+def _reserve_first_interaction(
+    days: TimelineDayService,
+    conversations: ConversationService,
+    generation: EffectiveGeneration,
+    timeline: Timeline,
+    content: str,
+) -> None:
+    """Handle one explicit atomic day reservation outcome.
+
+    Args:
+        days:
+            Clock-driven atomic day reservation service.
+        conversations:
+            Timeline-aware streaming service.
+        generation:
+            Effective default generation for the first attempt.
+        timeline:
+            Active owning Timeline.
+        content:
+            Validated user-authored first message.
+    """
+
+    result = days.reserve(
+        timeline.identity_id,
+        timeline.persona_id,
+        timeline.id,
+        SubmittedInput(content=content),
+        generation,
+    )
+    if result.status == DayReservationStatus.REUSED_OPEN_DAY:
+        st.info("Today's open day already exists. Reloading it now.")
+        st.rerun()
+    if result.status != DayReservationStatus.RESERVED:
+        _reservation_failure(result.status)
+        return
+    if result.day is None or result.attempt is None:
+        raise ValueError("A successful Timeline reservation is incomplete")
+    target = ConversationTarget(
+        scope=result.day.scope,
+        mode=ContinuityMode.TIMELINE,
+        entry_id=result.day.id,
+    )
+    with st.chat_message("user"):
+        st.markdown(content)
+    stream_attempt(conversations, target, result.attempt)
+    st.session_state[_DAY_KEY] = result.day.id
+    st.rerun()
+
+
+def _reservation_failure(status: DayReservationStatus) -> None:
+    """Explain a failed atomic day reservation without retrying a stale write.
+
+    Args:
+        status:
+            Stable application-level reservation outcome.
+    """
+
+    guidance = {
+        DayReservationStatus.ARCHIVED: "This Timeline was archived and is read-only.",
+        DayReservationStatus.CLOCK_MOVED_BACKWARD: (
+            "The current clock contradicts saved day boundaries. Check the system "
+            "clock before trying again."
+        ),
+        DayReservationStatus.DAY_CLOSED: (
+            "The day closed while the message was being reserved. Reload and try "
+            "again on the current day."
+        ),
+        DayReservationStatus.OPEN_ATTEMPT: (
+            "A response attempt is already active. Reload its saved progress."
+        ),
+    }
+    st.warning(
+        guidance.get(
+            status,
+            "Timeline state changed while reserving the day. Reload and review it "
+            "before sending again.",
+        )
+    )
 
 
 def _prepare_start(identity_id: UUID, persona_id: UUID) -> None:

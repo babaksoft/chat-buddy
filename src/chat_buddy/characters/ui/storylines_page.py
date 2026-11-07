@@ -23,7 +23,6 @@ from chat_buddy.characters.domain import (
     IncompleteLatestSceneError,
     LockedSceneSetupError,
     Persona,
-    ResponseStyle,
     Scene,
     SceneAppendEligibility,
     SceneDetails,
@@ -39,6 +38,7 @@ from chat_buddy.characters.infrastructure import (
     create_continuity_memory_service,
     create_conversation_service,
     create_evolution_inspection_service,
+    create_response_style_service,
     create_storyline_fork_service,
     create_storyline_services,
 )
@@ -47,17 +47,13 @@ from chat_buddy.characters.ui.evolution_inspection import (
 )
 from chat_buddy.characters.ui.new_storyline_page import render_new_storyline
 from chat_buddy.characters.ui.ongoing import render_conversation
+from chat_buddy.characters.ui.response_style import render_response_style
 from chat_buddy.characters.ui.storyline_memory import (
     clear_storyline_memory_state,
     render_storyline_memory,
 )
 
 _SCOPE_KEY = "characters_storyline_scope"
-_STYLE = ResponseStyle(
-    name="storyline.default",
-    version="1.0.0",
-    instruction="Respond naturally within the current scene.",
-)
 
 
 def render_storylines_page() -> None:
@@ -256,6 +252,13 @@ def _render_storyline(
     else:
         _render_storyline_actions(sequence, service)
 
+    render_response_style(
+        create_response_style_service(),
+        storyline.id,
+        f"characters_storyline_style_{storyline.id}",
+        storyline.lifecycle == ContinuityLifecycle.ARCHIVED,
+    )
+
     st.write("Scenes")
     selected = _selected_scene(sequence)
     for scene in sequence.scenes:
@@ -370,8 +373,9 @@ def _render_next_scene(
         st.caption(reason)
     if append:
         try:
+            style = create_response_style_service().resolve(sequence.storyline.id)
             updated = service.append_next(
-                SceneDetails(title=title, setup=setup, response_style=_STYLE),
+                SceneDetails(title=title, setup=setup, response_style=style),
                 eligibility,
             )
         except (IncompleteLatestSceneError, StaleSelectionError, StaleStorylineError):
@@ -404,8 +408,10 @@ def _render_scene(
     st.subheader(f"Scene {scene.position}: {scene.details.title}")
     st.write(scene.details.setup)
     st.caption(
-        f"Style: {scene.details.response_style.name} "
-        f"{scene.details.response_style.version}"
+        "Scene-start style snapshot: "
+        f"{scene.details.response_style.scene_description.value} description, "
+        f"{scene.details.response_style.response_length.value} length, "
+        f"{scene.details.response_style.narrative_placement.value.replace('_', ' ')}"
     )
     if storyline.lifecycle == ContinuityLifecycle.ARCHIVED:
         return _render_scene_conversation(scene, sequence)
@@ -493,6 +499,12 @@ def _render_scene_conversation(scene: Scene, sequence: SceneSequence) -> UUID | 
             )
         ),
         read_only=scene.id != sequence.scenes[-1].id,
+        read_only_reason=(
+            "This earlier scene is read-only. Retry and alternative selection are "
+            "unavailable; Branch from here uses the reviewed Storyline fork flow."
+            if scene.id != sequence.scenes[-1].id
+            else None
+        ),
     )
 
 

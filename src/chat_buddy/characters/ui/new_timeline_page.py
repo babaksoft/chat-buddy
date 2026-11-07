@@ -167,6 +167,11 @@ def _render_definition(
         raise TypeError("New Timeline profile selections have invalid types")
     st.subheader("Define Timeline")
     st.caption(f"{identity.details.name} and {persona.core.name} · Timeline")
+    st.info(
+        "A Timeline creates a day only when you send its first message. At the "
+        "local calendar boundary, previous days become permanently read-only; "
+        "only the latest open day supports retry, alternatives, and branching."
+    )
     availability = service.start_availability(identity.id, persona.id)
     if availability.reason is not None:
         st.info(availability.reason)

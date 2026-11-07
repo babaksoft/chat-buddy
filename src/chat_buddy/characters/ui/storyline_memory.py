@@ -1,4 +1,4 @@
-"""Continuity-scoped Storyline memory and conflict controls."""
+"""Continuity-scoped Storyline and Timeline memory controls."""
 
 from typing import Literal
 from uuid import UUID
@@ -25,6 +25,7 @@ from chat_buddy.characters.domain import (
     StaleMemoryConflictError,
     StaleMemoryRevisionError,
     Storyline,
+    Timeline,
 )
 
 _CORRECTION_TARGET_KEY = "characters_storyline_memory_correction_target"
@@ -32,10 +33,11 @@ _CORRECTION_TARGET_KEY = "characters_storyline_memory_correction_target"
 
 def render_storyline_memory(
     service: ContinuityMemoryService,
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
+    mode_label: str = "Storyline",
 ) -> None:
-    """Render one Storyline's memory lineages and extraction conflicts.
+    """Render one continuity's memory lineages and extraction conflicts.
 
     Args:
         service:
@@ -44,6 +46,8 @@ def render_storyline_memory(
             Selected continuity and complete profile ownership.
         selected_leaf_id:
             Selected branch checkpoint used only to invalidate stale widgets.
+        mode_label:
+            User-facing owning continuity mode.
     """
 
     memories = service.list_memories(storyline.id)
@@ -51,17 +55,21 @@ def render_storyline_memory(
     read_only = storyline.lifecycle == ContinuityLifecycle.ARCHIVED
 
     st.divider()
-    st.subheader("Storyline memory")
+    entry_label = "day" if mode_label == "Timeline" else "scene"
+    st.subheader(f"{mode_label} memory")
     st.caption(
-        "Memory is scoped to this Storyline. It is never shared with Ongoing or Chat."
+        f"Memory is scoped to this {mode_label}. It is never shared with other "
+        "continuities, Ongoing, or Chat."
     )
     if read_only:
-        st.info("Archived Storyline memory is read-only.")
+        st.info(f"Archived {mode_label} memory is read-only.")
 
     if not memories:
-        st.info("No memories have been extracted for this Storyline yet.")
+        st.info(f"No memories have been extracted for this {mode_label} yet.")
     for memory in memories:
-        _render_memory(service, storyline, selected_leaf_id, memory, read_only)
+        _render_memory(
+            service, storyline, selected_leaf_id, memory, read_only, entry_label
+        )
 
     unresolved = tuple(
         conflict
@@ -84,6 +92,7 @@ def render_storyline_memory(
             memories,
             conflict,
             read_only,
+            entry_label,
         )
     if dismissed:
         with st.expander(f"Dismissed conflicts ({len(dismissed)})"):
@@ -100,10 +109,11 @@ def clear_storyline_memory_state() -> None:
 
 def _render_memory(
     service: ContinuityMemoryService,
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
     read_only: bool,
+    entry_label: str,
 ) -> None:
     """Render one complete memory lineage and guarded lifecycle actions.
 
@@ -118,6 +128,8 @@ def _render_memory(
             Complete immutable memory lineage.
         read_only:
             Whether archival prevents mutations.
+        entry_label:
+            User-facing temporal entry name.
     """
 
     current = memory.current
@@ -135,7 +147,7 @@ def _render_memory(
                 f"turn{'s' if len(memory.evidence) != 2 else ''}."
             )
         _render_lineage(memory)
-        _render_evidence(memory)
+        _render_evidence(memory, entry_label)
         if read_only:
             return
         if current.state == MemoryRevisionState.ACTIVE:
@@ -172,21 +184,25 @@ def _render_lineage(memory: ContinuityMemory) -> None:
             st.caption(f"Created {revision.created_at.isoformat()}")
 
 
-def _render_evidence(memory: ContinuityMemory) -> None:
+def _render_evidence(memory: ContinuityMemory, entry_label: str) -> None:
     """Render source, temporal, and extraction-strategy provenance.
 
     Args:
         memory:
             Complete logical memory with supporting evidence.
+        entry_label:
+            User-facing temporal entry name.
     """
 
     with st.expander(f"Source evidence ({len(memory.evidence)})"):
         for index, evidence in enumerate(memory.evidence, start=1):
             extraction = evidence.extraction
-            st.markdown(f"**Evidence {index} · scene {evidence.learned.position}**")
+            st.markdown(
+                f"**Evidence {index} · {entry_label} {evidence.learned.position}**"
+            )
             st.write(
-                f"Occurred in scene {evidence.occurrence.position}; learned in scene "
-                f"{evidence.learned.position}; persona checkpoint "
+                f"Occurred in {entry_label} {evidence.occurrence.position}; learned "
+                f"in {entry_label} {evidence.learned.position}; persona checkpoint "
                 f"{evidence.persona_checkpoint}."
             )
             st.caption(
@@ -202,7 +218,7 @@ def _render_evidence(memory: ContinuityMemory) -> None:
 
 def _render_correction(
     service: ContinuityMemoryService,
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
 ) -> None:
@@ -281,7 +297,7 @@ def _change_state(
 
 def _render_deletion(
     service: ContinuityMemoryService,
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
 ) -> None:
@@ -325,11 +341,12 @@ def _render_deletion(
 
 def _render_conflict(
     service: ContinuityMemoryService,
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memories: tuple[ContinuityMemory, ...],
     conflict: MemoryConflict,
     read_only: bool,
+    entry_label: str,
 ) -> None:
     """Render proposed evidence separately from current memory.
 
@@ -346,6 +363,8 @@ def _render_conflict(
             Unresolved extraction conflict.
         read_only:
             Whether archival prevents dismissal or correction.
+        entry_label:
+            User-facing temporal entry name.
     """
 
     target = next((row for row in memories if row.id == conflict.memory_id), None)
@@ -357,7 +376,7 @@ def _render_conflict(
     with st.expander(f"Conflict: {conflict.proposed_subject}"):
         st.markdown("**New evidence proposes**")
         st.write(conflict.proposed_content)
-        _render_conflict_evidence(conflict)
+        _render_conflict_evidence(conflict, entry_label)
         st.markdown("**Current memory**")
         if target is None:
             st.write("This conflict does not target an existing memory.")
@@ -399,17 +418,20 @@ def _render_conflict(
                 st.rerun()
 
 
-def _render_conflict_evidence(conflict: MemoryConflict) -> None:
+def _render_conflict_evidence(conflict: MemoryConflict, entry_label: str) -> None:
     """Render the exact new source and temporal provenance for a conflict.
 
     Args:
         conflict:
             Conflict whose proposed evidence is being inspected.
+        entry_label:
+            User-facing temporal entry name.
     """
 
     evidence = conflict.evidence
     st.caption(
-        f"New evidence: scene {evidence.learned.position}, occurrence scene "
+        f"New evidence: {entry_label} {evidence.learned.position}, occurrence "
+        f"{entry_label} "
         f"{evidence.occurrence.position}, persona checkpoint "
         f"{evidence.persona_checkpoint}, {evidence.extraction.provider}/"
         f"{evidence.extraction.model}, created {evidence.created_at.isoformat()}."
@@ -417,7 +439,7 @@ def _render_conflict_evidence(conflict: MemoryConflict) -> None:
 
 
 def _correction_target(
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
 ) -> bool:
@@ -447,7 +469,7 @@ def _correction_target(
 
 
 def _memory_key(
-    storyline: Storyline,
+    storyline: Storyline | Timeline,
     selected_leaf_id: UUID | None,
     memory: ContinuityMemory,
 ) -> str:
