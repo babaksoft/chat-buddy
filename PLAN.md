@@ -2,7 +2,7 @@
 
 Status: Living plan
 
-Last updated: 2026-11-02
+Last updated: 2026-11-07
 
 ## How to use this plan
 
@@ -196,7 +196,7 @@ application tests.
   permits a fresh independent Storyline while retaining read-only history.
 - Start with one scene and append only the next named scene after the latest has a
   complete exchange; do not pre-create, insert, or reorder scenes.
-- Store scene setup separately from title and fixed response style.
+- Store scene setup separately from title; keep response style continuity-scoped.
 - Add provenance-aware Characters memory scoped to a continuity and selected
   branch.
 - Track source message, occurrence time, learned time, and active, superseded,

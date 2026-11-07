@@ -70,6 +70,7 @@ def test_review_start_manage_archive_and_release_pair(
         ),
         patch.object(storylines_page, "create_evolution_inspection_service"),
         patch.object(storylines_page, "render_evolution_inspection"),
+        patch.object(storylines_page, "render_response_style"),
     ):
         app = AppTest.from_function(_render_new).run()
         app.text_input(key="characters_new_storyline_name").set_value("Long Road")

@@ -1,6 +1,6 @@
 # Ongoing status
 
-Next delivery focus: Stage 8, Slice 16 — Update project documents for shipped Stage 8 behavior.
+Next delivery focus: Stage 8, Slice 17 — Prove the Stage 8 milestone and area isolation.
 
 Deferred product exploration:
 

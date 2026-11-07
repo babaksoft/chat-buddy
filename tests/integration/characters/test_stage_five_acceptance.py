@@ -115,7 +115,10 @@ def prove_stage_five_milestone(factory: sessionmaker[Session]) -> None:
     recovered_responses.chunks = ("Recovered answer",)
     recovered = _service(factory, recovered_responses, FakeSummary())
     incomplete = recovered.resume(ongoing_target(scope))
-    assert incomplete.attempts[-1].incomplete_output == "Uncommitted fragment"
+    failed_attempt = next(
+        attempt for attempt in incomplete.attempts if attempt.id == failed.id
+    )
+    assert failed_attempt.incomplete_output == "Uncommitted fragment"
     continuation = recovered.continue_incomplete_turn(ongoing_target(scope))
     assert continuation.user_message_id == failed.user_message_id
     assert list(recovered.stream(ongoing_target(scope), continuation.id)) == [

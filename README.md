@@ -36,6 +36,8 @@ experiences:
 - Navigate every active or archived continuity by its identity and persona, and
   resume its conversation history.
 - Stream persona responses through a Characters-owned Ollama configuration.
+- Choose scene-description level, response length, and narrative placement for
+  the next persona response in any continuity.
 - Compress long conversations with continuity-scoped rolling summaries.
 - Recover incomplete turns without committing partial output.
 - Retry a completed persona response up to three times and select any saved
@@ -48,16 +50,25 @@ experiences:
   Storyline scene while preserving saved futures.
 - Fork an older Storyline scene into an independently owned Storyline under an
   exact duplicate of either source profile.
-- Use branch-aware, time-aware Storyline memory extracted after complete turns.
+- Start a named Timeline whose conversations advance by the application's local
+  calendar, without creating empty days when no interaction occurs.
+- Resume the latest open Timeline day, or start the current day after an older
+  one closes permanently at its local calendar boundary.
+- Retry, select alternatives, and branch within the latest open Timeline day;
+  closed Timeline history remains readable and cannot be changed or forked.
+- Use branch-aware, time-aware Storyline and Timeline memory extracted after
+  complete turns.
 - Inspect memory evidence and revisions; correct, exclude, reactivate, or
   permanently delete memories; and review extraction conflicts.
 - Let relationships and persona behavior evolve conservatively from completed,
-  selected turns in either continuity mode.
+  selected turns in any continuity mode.
 - Inspect qualitative relationship state, milestones, active persona adaptations,
   exact supporting exchanges, and diagnostic provenance.
 - Correct, exclude, or restore an inferred interpretation without editing the
   conversation or authored persona.
 - Archive a Storyline as read-only and start a fresh independent Storyline for the
+  same identity and persona.
+- Archive a Timeline as read-only and start a fresh independent Timeline for the
   same identity and persona.
 - Duplicate frozen profiles when authored changes are needed.
 
@@ -66,23 +77,34 @@ experiences:
 | Area | Purpose | Context and memory | Persistence |
 |---|---|---|---|
 | Chat | General conversations | Conversation summaries and user-controlled Chat-wide memory | PostgreSQL `chat` schema |
-| Characters | Persona-based Ongoing and Storyline continuities | Ongoing rolling summaries; scene-local Storyline summaries and continuity-scoped Storyline memory | PostgreSQL `characters` schema |
+| Characters | Persona-based Ongoing, Storyline, and Timeline continuities | Ongoing rolling summaries; entry-local summaries; continuity-scoped Storyline and Timeline memory | PostgreSQL `characters` schema |
 
 Chat and Characters are independent product areas. They do not share
 conversations, memories, repositories, prompts, or database records. Streamlit
 provides only the common navigation shell.
 
-Characters supports Ongoing and Storyline conversations. Each continuity belongs
-to one identity and persona, starts with an explicit relationship state, and
-remains isolated from other continuities. Ongoing uses a rolling summary and does
-not extract long-term memory. A Storyline owns ordered scenes and its own extracted
-memory; branch and scene-time rules prevent unrelated or future knowledge from
-entering a prompt. Storyline memory crosses into another continuity only through a
-reviewed Storyline fork, which creates an independent lineage by remapping copied
-evidence. In both modes, accepted relationship evolution and persona adaptations
-remain continuity-scoped, follow the selected conversation path, and affect later
-responses. A reviewed Storyline fork copies only evolution supported by copied
-history; a fresh continuity inherits none.
+Characters supports Ongoing, Storyline, and Timeline conversations. Each
+continuity belongs to one identity and persona, starts with an explicit
+relationship state, and remains isolated from other continuities. Ongoing uses a
+rolling summary and does not extract long-term memory. A Storyline owns ordered
+scenes. A Timeline owns only the local-calendar days on which interaction begins;
+it captures the application's IANA timezone when started, creates no placeholder
+days, and permanently closes each represented day at its stored local boundary.
+Storyline and Timeline each own extracted memory, with branch- and entry-time
+rules preventing unrelated or future knowledge from entering a prompt. Timeline
+responses use only the current day's transcript as short-term history; eligible
+memory and relationship or persona evolution carry continuity across days.
+
+Storyline memory crosses into another continuity only through a reviewed
+Storyline fork, which creates an independent lineage by remapping copied evidence.
+Timeline history is never forked: alternatives must be explored in its latest
+open day. In all three modes, accepted relationship evolution and persona
+adaptations remain continuity-scoped, follow the selected conversation path, and
+affect later responses. A reviewed Storyline fork copies only evolution supported
+by copied history; a fresh continuity inherits none. Each continuity also owns
+response-style controls for scene description, response length, and narrative
+placement. A saved change applies to the next newly reserved response, while each
+existing persona message retains the exact style used to generate it.
 
 ## Local-first behavior and cloud usage
 
@@ -100,9 +122,11 @@ external provider.
 
 Chat and Characters use separate provider configuration. Depending on the
 Characters operation, its Ollama endpoint may receive the authored identity and
-persona, starting relationship, eligible Storyline memory, scene setup, compatible
-summary, current relationship and persona adaptations, selected-path messages, and
-the current or newly completed turn. Evolution inference sends a bounded
+persona, starting relationship, eligible Storyline or Timeline memory, scene or
+current-day context, compatible summary, current relationship and persona
+adaptations, the effective response-style instruction, selected-path messages,
+and the current or newly completed turn. A Timeline response does not send prior
+days' transcripts as short-term context. Evolution inference sends a bounded
 continuity snapshot to that same configured endpoint. Data sent to an Ollama
 endpoint remains under the control of that endpoint and selected model. If either
 points to a hosted or remote service, that eligible context leaves the local
@@ -228,14 +252,27 @@ default page; use the sidebar to open the focused Characters pages.
    exchange, append the next scene. Older scenes remain readable; branching from
    one with later scenes opens a reviewed fork that exactly duplicates either the
    identity or persona and leaves the source unchanged.
-6. On the selected Storyline, inspect its memory and conflicts below the scene.
-   Corrections, exclusions, reactivations, and confirmed permanent deletions affect
-   that Storyline only. Archived Storylines and their memory are read-only.
-7. Expand **Relationship evolution** on an Ongoing or Storyline page to inspect
-   the starting state, current qualitative state, adaptations, evidence, and
-   diagnostics. Confirmed corrections affect future context without rewriting
-   conversation history.
-8. Navigate active or archived histories under their identity and persona.
+6. For calendar-day continuity, open **New Timeline**, select the profiles, name
+   the Timeline, define its starting relationship, then review and confirm it. The
+   application captures its local timezone, but creates no day until the first
+   message is sent.
+7. Use **Timelines** to continue the latest open day or begin the current day after
+   the previous one closes. Missing days are not filled in. Closed days remain
+   readable, but only the latest open day offers retry, alternative selection, and
+   branching.
+8. Expand **Response style** on an Ongoing, Storyline, or Timeline page to change
+   scene description, response length, or narrative placement. Save before
+   sending; the next newly reserved response uses the change, and older responses
+   keep their original style.
+9. On the selected Storyline or Timeline, inspect its memory and conflicts below
+   the current entry. Corrections, exclusions, reactivations, and confirmed
+   permanent deletions affect that continuity only. Archived continuities and
+   their memory are read-only.
+10. Expand **Relationship evolution** on any continuity page to inspect the
+    starting state, current qualitative state, adaptations, evidence, and
+    diagnostics. Confirmed corrections affect future context without rewriting
+    conversation history.
+11. Navigate active or archived histories under their identity and persona.
 
 Confirming the first continuity permanently freezes the selected identity and
 persona. Duplicate a frozen profile to create an editable variant. Archived
@@ -292,8 +329,11 @@ export CHARACTERS_OUTPUT_TOKENS=1024
 
 The response, summary, memory-extraction, and evolution models are independently
 selectable but must all be available through the configured Characters Ollama
-endpoint. Storyline memory extraction and continuity evolution use their own
-bounded input selection; evolution does not make Ongoing memory-bearing.
+endpoint. Storyline and Timeline memory extraction and continuity evolution use
+their own bounded input selection; evolution does not make Ongoing memory-bearing.
+Timeline calendar capture uses the runtime host's local IANA timezone (including
+`TZ` when set) and exposes no separate application setting or per-Timeline timezone
+control.
 
 The Characters database URL is currently source-configured in
 `src/chat_buddy/characters/infrastructure/config/settings.py` and defaults to the

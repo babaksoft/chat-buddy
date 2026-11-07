@@ -2,7 +2,7 @@
 
 Status: Living design
 
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 ## Purpose and scope
 
@@ -558,6 +558,12 @@ messages. Other scene transcripts and titles are not short-term context.
 Response-memory selection has its own budget and strategy version; optional
 memories never displace required prompt blocks.
 
+Timeline response context uses the same general order with the target day's
+calendar facts and selected-path messages. Only that day's compatible summary and
+transcript are short-term context. Earlier-day transcripts and summaries are not
+included; eligible continuity memory, relationship state, and persona adaptation
+carry long-term state across represented or missing days.
+
 Ongoing, Storyline, and Timeline each own one current, optimistically revised
 response-style setting. Its bounded controls are scene-description level, response
 length, and narrative placement. Attempt reservation renders and stores the exact
@@ -590,8 +596,9 @@ The application validates and persists accepted effects with source provenance.
 
 Continuity memory extraction has one retryable effect per source persona message
 for Storyline and Timeline. It moves from reserved to terminal no-change or
-applied, cannot roll back the visible turn, and cannot duplicate a terminal effect. Failures leave the same
-effect retryable. Selection first builds an immutable, dedicated-budget snapshot
+applied, cannot roll back the visible turn, and cannot duplicate a terminal
+effect. Failures leave the same effect retryable. Selection first builds an
+immutable, dedicated-budget snapshot
 containing identity and persona labels, starting relationship, compatible summary,
 recent selected-path turns, eligible memories, and the exact source turn marked
 as new evidence. Explicit mode adapters supply Storyline scene setup and selected

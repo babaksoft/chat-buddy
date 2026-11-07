@@ -686,7 +686,7 @@ and isolation from another continuity with an equally stale attempt.
 
 ### Slice 16 — Update project documents for shipped Stage 8 behavior
 
-Status: Pending
+Status: Complete
 
 Reserve this slice for project-document maintenance after the implementation and
 UI behavior are final.
@@ -725,6 +725,18 @@ checks remain Slice 17 work.
 
 Complete when README accurately summarizes shipped Stage 8 behavior for users,
 DESIGN and ADRs form one coherent contract, and project planning points to Stage 9.
+
+Delivered with the stable README expanded to cover Timeline creation and resume,
+application-local calendar capture, missing and permanently closed days,
+latest-open-day graph actions, Timeline memory and evolution, and
+continuity-scoped response-style controls. Local/cloud data-flow text now
+distinguishes current-day Timeline context from prior-day durable state without
+introducing an operator timezone setting.
+
+The living design now states Timeline response-context order explicitly and is
+reconciled with the final continuity-owned style and no-Timeline-fork behavior.
+The root plan marks Stage 8 complete, removes its superseded fixed-scene-style
+wording, and points to Stage 9 as the next delivery focus.
 
 ### Slice 17 — Prove the Stage 8 milestone and area isolation
 

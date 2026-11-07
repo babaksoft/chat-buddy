@@ -66,6 +66,7 @@ def test_reviewed_start_commits_and_selects_scoped_history(
         ),
         patch.object(ongoing_page, "create_evolution_inspection_service"),
         patch.object(ongoing_page, "render_evolution_inspection"),
+        patch.object(ongoing_page, "render_response_style"),
         patch.object(
             ongoing,
             "create_conversation_service",
